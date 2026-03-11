@@ -1,0 +1,77 @@
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/access-manager-bot"
+    target-branch: "main"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+      timezone: "Europe/Amsterdam"
+    labels: ["deps", "security"]
+    allow:
+      - dependency-type: "direct"
+    ignore:
+      - dependency-name: "pip"
+    rebase-strategy: "disabled"
+    groups:
+      minor-and-patch:
+        applies-to: "version-updates"
+        update-types: ["minor", "patch"]
+        patterns: ["*"]
+    open-pull-requests-limit: 2
+
+  - package-ecosystem: "pip"
+    directory: "/membership-checker-bot"
+    target-branch: "main"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+      timezone: "Europe/Amsterdam"
+    labels: ["deps", "security"]
+    allow:
+      - dependency-type: "direct"
+    ignore:
+      - dependency-name: "pip"
+    rebase-strategy: "disabled"
+    groups:
+      minor-and-patch:
+        applies-to: "version-updates"
+        update-types: ["minor", "patch"]
+        patterns: ["*"]
+    open-pull-requests-limit: 2
+
+  - package-ecosystem: "docker"
+    directory: "/access-manager-bot"
+    target-branch: "main"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+      timezone: "Europe/Amsterdam"
+    labels: ["deps", "security"]
+    rebase-strategy: "disabled"
+    groups:
+      minor-and-patch:
+        applies-to: "version-updates"
+        update-types: ["minor", "patch"]
+        patterns: ["*"]
+    open-pull-requests-limit: 2
+
+  - package-ecosystem: "docker"
+    directory: "/membership-checker-bot"
+    target-branch: "main"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+      timezone: "Europe/Amsterdam"
+    labels: ["deps", "security"]
+    rebase-strategy: "disabled"
+    groups:
+      minor-and-patch:
+        applies-to: "version-updates"
+        update-types: ["minor", "patch"]
+        patterns: ["*"]
+    open-pull-requests-limit: 2
