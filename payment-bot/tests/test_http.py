@@ -137,3 +137,6 @@ async def test_metrics_endpoint() -> None:
 
         assert response.status == 200
         assert "payment_bot_build_info" in body
+        assert "python_info" in body
+        assert "process_cpu_seconds_total" in body
+        assert "gc_objects_collected_total" in body

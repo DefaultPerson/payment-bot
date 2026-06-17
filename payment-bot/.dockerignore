@@ -1,0 +1,16 @@
+.env
+.env.*
+!.env.example
+config.toml
+logs/
+.venv/
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.log
+.git/
+.gitignore
+Dockerfile
+docker-compose.yml
