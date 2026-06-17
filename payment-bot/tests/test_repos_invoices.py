@@ -18,6 +18,7 @@ from bot.models import (
 from bot.repos.invoices import (
     create_pending_cryptobot_invoice,
     get_active_cryptobot_invoices,
+    get_active_cryptobot_invoices_after_id,
     lock_invoice_by_id,
     lock_invoice_by_provider_id,
     mark_expired_cryptobot_invoices,
@@ -119,6 +120,14 @@ class FakeAsyncSession:
         now = next(value for value in params.values() if isinstance(value, datetime))
         if statement._limit_clause is not None:
             limit = statement._limit_clause.value
+            after_id = next(
+                (
+                    value
+                    for key, value in params.items()
+                    if key.startswith("id_") and isinstance(value, int)
+                ),
+                None,
+            )
             invoices = [
                 invoice
                 for invoice in self.invoices
@@ -126,6 +135,7 @@ class FakeAsyncSession:
                 and invoice.status is InvoiceStatus.active
                 and invoice.provider_invoice_id is not None
                 and invoice.expires_at > now
+                and (after_id is None or (invoice.id is not None and invoice.id > after_id))
             ]
             return FakeScalarResult(
                 sorted(invoices, key=lambda invoice: (invoice.id or 0, invoice.created_at))[
@@ -326,6 +336,44 @@ async def test_get_active_cryptobot_invoices_excludes_expired_and_missing_provid
     statement = session.scalars_statements[0]
     assert statement._limit_clause.value == 10
     assert statement._order_by_clauses
+
+
+async def test_get_active_cryptobot_invoices_preserves_first_page_behavior() -> None:
+    session = FakeAsyncSession()
+    now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
+    invoices = [
+        make_invoice(invoice_id=3, provider_invoice_id="3", expires_at=now + timedelta(1)),
+        make_invoice(invoice_id=1, provider_invoice_id="1", expires_at=now + timedelta(1)),
+        make_invoice(invoice_id=2, provider_invoice_id="2", expires_at=now + timedelta(1)),
+    ]
+    session.invoices.extend(invoices)
+
+    first_page = await get_active_cryptobot_invoices(session, now=now, limit=2)
+
+    assert [invoice.id for invoice in first_page] == [1, 2]
+
+
+async def test_get_active_cryptobot_invoices_after_id_returns_ordered_batch_after_cursor() -> None:
+    session = FakeAsyncSession()
+    now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
+    session.invoices.extend(
+        [
+            make_invoice(invoice_id=4, provider_invoice_id="4", expires_at=now + timedelta(1)),
+            make_invoice(invoice_id=1, provider_invoice_id="1", expires_at=now + timedelta(1)),
+            make_invoice(invoice_id=3, provider_invoice_id="3", expires_at=now + timedelta(1)),
+            make_invoice(invoice_id=2, provider_invoice_id="2", expires_at=now + timedelta(1)),
+            make_invoice(invoice_id=5, provider_invoice_id=None, expires_at=now + timedelta(1)),
+        ],
+    )
+
+    batch = await get_active_cryptobot_invoices_after_id(
+        session,
+        now=now,
+        limit=2,
+        after_id=2,
+    )
+
+    assert [invoice.id for invoice in batch] == [3, 4]
 
 
 async def test_lock_invoice_by_provider_id_uses_row_lock_and_returns_none_when_missing() -> None:

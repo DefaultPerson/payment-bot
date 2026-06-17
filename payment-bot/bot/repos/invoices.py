@@ -87,6 +87,31 @@ async def get_active_cryptobot_invoices(
     return list(result.all())
 
 
+async def get_active_cryptobot_invoices_after_id(
+    session: AsyncSession,
+    *,
+    now: datetime,
+    limit: int,
+    after_id: int | None = None,
+) -> list[Invoice]:
+    statement = (
+        select(Invoice)
+        .where(
+            Invoice.provider == InvoiceProvider.cryptobot,
+            Invoice.status == InvoiceStatus.active,
+            Invoice.provider_invoice_id.is_not(None),
+            Invoice.expires_at > now,
+        )
+        .order_by(Invoice.id.asc())
+        .limit(limit)
+    )
+    if after_id is not None:
+        statement = statement.where(Invoice.id > after_id)
+
+    result = await session.scalars(statement)
+    return list(result.all())
+
+
 async def lock_invoice_by_provider_id(
     session: AsyncSession,
     provider_invoice_id: str,
