@@ -57,7 +57,9 @@ def setup_json_logging(settings: Settings) -> None:
     file_handler.setFormatter(formatter)
 
     root_logger = logging.getLogger()
-    root_logger.handlers.clear()
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+        handler.close()
     root_logger.setLevel(level)
     root_logger.addHandler(stdout_handler)
     root_logger.addHandler(file_handler)

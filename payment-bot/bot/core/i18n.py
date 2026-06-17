@@ -4,6 +4,10 @@ import json
 from pathlib import Path
 from typing import Any
 
+TELEGRAM_LANGUAGE_ALIASES = {
+    "uk": "ua",
+}
+
 
 class JsonI18n:
     def __init__(
@@ -21,7 +25,7 @@ class JsonI18n:
         return set(self._translations)
 
     def gettext(self, key: str, language: str | None = None, **kwargs: Any) -> str:
-        selected_language = self._resolve_language(language)
+        selected_language = self.resolve_language(language)
         template = self._translations[selected_language].get(key)
         if template is None and selected_language != self.fallback_language:
             template = self._translations[self.fallback_language].get(key)
@@ -29,10 +33,18 @@ class JsonI18n:
             return key
         return template.format(**kwargs)
 
-    def _resolve_language(self, language: str | None) -> str:
-        if language in self._translations:
-            return language
+    def resolve_language(self, language: str | None) -> str:
+        normalized = self.normalize_language(language)
+        if normalized in self._translations:
+            return normalized
         return self.fallback_language
+
+    def normalize_language(self, language: str | None) -> str | None:
+        if not language:
+            return None
+
+        normalized = language.replace("_", "-").split("-", maxsplit=1)[0].lower()
+        return TELEGRAM_LANGUAGE_ALIASES.get(normalized, normalized)
 
     def _load_translations(self) -> dict[str, dict[str, str]]:
         translations: dict[str, dict[str, str]] = {}
