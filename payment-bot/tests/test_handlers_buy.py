@@ -12,9 +12,10 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from bot.config import Settings
 from bot.core.i18n import JsonI18n
-from bot.models import UserStatus
+from bot.models import InvoiceStatus, UserStatus
 from bot.payments.cryptobot import CryptoBotAPIError, CryptoBotInvoice
 from tests.test_handlers_user import (
+    FakeBadRequestMessage,
     FakeCallback,
     FakeChat,
     FakeMessage,
@@ -41,6 +42,8 @@ class FakeTariffRecord:
 class FakeInvoiceRecord:
     id: int
     payload: str
+    status: InvoiceStatus = InvoiceStatus.active
+    provider_invoice_id: str | None = None
 
 
 async def test_buy_callback_edits_tariff_list(monkeypatch) -> None:
@@ -126,7 +129,7 @@ async def test_cryptobot_invoice_callback_returns_payment_url(monkeypatch) -> No
         return FakeUserRecord(id=7, tg_id=700, lang_code="en", status=UserStatus.basic)
 
     async def fake_create_invoice(
-        session: FakeSession,
+        session_factory_arg: FakeSessionFactory,
         settings: Settings,
         client: object,
         user: FakeUserRecord,
@@ -136,7 +139,7 @@ async def test_cryptobot_invoice_callback_returns_payment_url(monkeypatch) -> No
     ) -> SimpleNamespace:
         service_calls.append(
             {
-                "session": session,
+                "session_factory": session_factory_arg,
                 "settings": settings,
                 "client": client,
                 "user": user,
@@ -184,7 +187,7 @@ async def test_cryptobot_invoice_callback_returns_payment_url(monkeypatch) -> No
         cryptobot_client=client,
     )
 
-    assert service_calls[0]["session"] is session_factory.session
+    assert service_calls[0]["session_factory"] is session_factory
     assert service_calls[0]["settings"] is settings
     assert service_calls[0]["client"] is client
     assert service_calls[0]["tariff_code"] == "1m"
@@ -202,13 +205,40 @@ async def test_cryptobot_invoice_callback_returns_payment_url(monkeypatch) -> No
     assert callback.answers == [{"text": None}]
     assert callback_message.edits == [
         {
-            "text": "Invoice created. Use the payment button below to complete your purchase.",
+            "text": (
+                "Invoice created. Use the payment button below to complete your purchase.\n"
+                "https://t.me/CryptoBot?start=pay"
+            ),
             "reply_markup": "payment-keyboard",
         }
     ]
 
 
-async def test_cryptobot_invoice_callback_rolls_back_database_errors(monkeypatch) -> None:
+async def test_cryptobot_invoice_callback_allows_missing_injected_client() -> None:
+    import bot.handlers.buy as buy_module
+
+    callback = FakeCallback(
+        data="pay:cryptobot:1m",
+        from_user=FakeTelegramUser(id=700, language_code="en"),
+        message=FakeMessage(chat=FakeChat(id=700)),
+    )
+
+    await buy_module.cryptobot_invoice_callback(
+        callback,
+        settings=Settings(),
+        i18n=JsonI18n(),
+        session_factory=FakeSessionFactory(),
+    )
+
+    assert callback.answers == [
+        {
+            "text": "Could not create invoice. Please try again or contact support.",
+            "show_alert": True,
+        }
+    ]
+
+
+async def test_cryptobot_invoice_callback_surfaces_service_database_errors(monkeypatch) -> None:
     import bot.handlers.buy as buy_module
 
     async def fake_ensure_minimal_user(session: FakeSession, **kwargs: Any) -> FakeUserRecord:
@@ -236,7 +266,7 @@ async def test_cryptobot_invoice_callback_rolls_back_database_errors(monkeypatch
         cryptobot_client=object(),
     )
 
-    assert session_factory.session.rollbacks == 1
+    assert session_factory.session.commits == 1
     assert callback.answers == [
         {"text": "Something went wrong. Please try again later.", "show_alert": True}
     ]
@@ -280,7 +310,7 @@ async def test_cryptobot_invoice_callback_provider_errors_do_not_send_pay_url(
         cryptobot_client=object(),
     )
 
-    assert session_factory.session.rollbacks == 1
+    assert session_factory.session.commits == 1
     assert payment_keyboard_called is False
     assert callback.answers == [
         {
@@ -289,6 +319,82 @@ async def test_cryptobot_invoice_callback_provider_errors_do_not_send_pay_url(
         }
     ]
     assert callback_message.edits == []
+
+
+async def test_cryptobot_invoice_callback_alert_fallback_includes_payment_url(monkeypatch) -> None:
+    import bot.handlers.buy as buy_module
+
+    async def fake_ensure_minimal_user(session: FakeSession, **kwargs: Any) -> FakeUserRecord:
+        return FakeUserRecord(id=7, tg_id=700, lang_code="en", status=UserStatus.basic)
+
+    async def fake_create_invoice(*args: Any, **kwargs: Any) -> SimpleNamespace:
+        return SimpleNamespace(
+            pay_url="https://t.me/CryptoBot?start=pay",
+            quote=SimpleNamespace(gross_usd=Decimal("81.44")),
+            invoice=object(),
+        )
+
+    monkeypatch.setattr(buy_module, "ensure_minimal_user", fake_ensure_minimal_user)
+    monkeypatch.setattr(buy_module, "create_cryptobot_invoice_for_user", fake_create_invoice)
+    monkeypatch.setattr(buy_module, "payment_keyboard", lambda *args: "payment-keyboard")
+
+    callback = FakeCallback(
+        data="pay:cryptobot:1m",
+        from_user=FakeTelegramUser(id=700, language_code="en"),
+        message=FakeBadRequestMessage(chat=FakeChat(id=700)),
+    )
+
+    await buy_module.cryptobot_invoice_callback(
+        callback,
+        settings=Settings(),
+        i18n=JsonI18n(),
+        session_factory=FakeSessionFactory(),
+        cryptobot_client=object(),
+    )
+
+    assert callback.answers == [
+        {
+            "text": (
+                "Invoice created. Use the payment button below to complete your purchase.\n"
+                "https://t.me/CryptoBot?start=pay"
+            ),
+            "show_alert": True,
+        }
+    ]
+
+
+async def test_cryptobot_invoice_callback_transport_errors_do_not_bubble(monkeypatch) -> None:
+    import bot.handlers.buy as buy_module
+
+    async def fake_ensure_minimal_user(session: FakeSession, **kwargs: Any) -> FakeUserRecord:
+        return FakeUserRecord(id=7, tg_id=700, lang_code="en", status=UserStatus.basic)
+
+    async def fail_create_invoice(*args: Any, **kwargs: Any) -> None:
+        raise RuntimeError("network timeout")
+
+    monkeypatch.setattr(buy_module, "ensure_minimal_user", fake_ensure_minimal_user)
+    monkeypatch.setattr(buy_module, "create_cryptobot_invoice_for_user", fail_create_invoice)
+
+    callback = FakeCallback(
+        data="pay:cryptobot:1m",
+        from_user=FakeTelegramUser(id=700, language_code="en"),
+        message=FakeMessage(chat=FakeChat(id=700)),
+    )
+
+    await buy_module.cryptobot_invoice_callback(
+        callback,
+        settings=Settings(),
+        i18n=JsonI18n(),
+        session_factory=FakeSessionFactory(),
+        cryptobot_client=object(),
+    )
+
+    assert callback.answers == [
+        {
+            "text": "Could not create invoice. Please try again or contact support.",
+            "show_alert": True,
+        }
+    ]
 
 
 async def test_bad_cryptobot_callback_data_answers_generic_alert(monkeypatch) -> None:
@@ -318,12 +424,14 @@ async def test_bad_cryptobot_callback_data_answers_generic_alert(monkeypatch) ->
     ]
 
 
-async def test_create_cryptobot_invoice_for_user_persists_provider_fields(monkeypatch) -> None:
+async def test_create_cryptobot_invoice_for_user_commits_before_provider_call(monkeypatch) -> None:
     import bot.services.payments as payments_module
 
     settings = Settings(bot={"support_username": "HydraSupport"})
     user = FakeUserRecord(id=7, tg_id=700, lang_code="en", status=UserStatus.basic)
     session = FakeSession()
+    session_factory = FakeSessionFactory()
+    session_factory.session = session
     client_calls: list[dict[str, Any]] = []
     repo_calls: list[dict[str, Any]] = []
     now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
@@ -337,6 +445,7 @@ async def test_create_cryptobot_invoice_for_user_persists_provider_fields(monkey
 
     class FakeClient:
         async def create_invoice(self, **kwargs: Any) -> CryptoBotInvoice:
+            client_calls.append({"commits_before_provider": session.commits})
             client_calls.append(kwargs)
             return provider_invoice
 
@@ -351,6 +460,10 @@ async def test_create_cryptobot_invoice_for_user_persists_provider_fields(monkey
     async def fake_mark_provider_created(*args: Any, **kwargs: Any) -> FakeInvoiceRecord:
         repo_calls.append({"name": "mark", "args": args, **kwargs})
         return args[1]
+
+    async def fake_lock_invoice_by_id(*args: Any, **kwargs: Any) -> FakeInvoiceRecord:
+        repo_calls.append({"name": "lock", "args": args, **kwargs})
+        return FakeInvoiceRecord(id=77, payload="inv:00000000-0000-0000-0000-000000000001")
 
     monkeypatch.setattr(payments_module.uuid, "uuid4", lambda: UUID(int=1))
     monkeypatch.setattr(
@@ -368,9 +481,10 @@ async def test_create_cryptobot_invoice_for_user_persists_provider_fields(monkey
         "mark_invoice_provider_created",
         fake_mark_provider_created,
     )
+    monkeypatch.setattr(payments_module, "lock_invoice_by_id", fake_lock_invoice_by_id)
 
     created = await payments_module.create_cryptobot_invoice_for_user(
-        session,
+        session_factory,
         settings,
         FakeClient(),
         user,
@@ -388,6 +502,7 @@ async def test_create_cryptobot_invoice_for_user_persists_provider_fields(monkey
     assert repo_calls[1]["expires_at"] == now + timedelta(seconds=3600)
     assert repo_calls[1]["payload"] == "inv:00000000-0000-0000-0000-000000000001"
     assert client_calls == [
+        {"commits_before_provider": 1},
         {
             "amount": Decimal("81.44"),
             "payload": "inv:00000000-0000-0000-0000-000000000001",
@@ -397,11 +512,14 @@ async def test_create_cryptobot_invoice_for_user_persists_provider_fields(monkey
             "expires_in": 3600,
         }
     ]
-    assert repo_calls[2]["name"] == "mark"
-    assert repo_calls[2]["provider_invoice_id"] == "crypto-123"
-    assert repo_calls[2]["raw_payload"] == provider_invoice.raw
+    assert repo_calls[2]["name"] == "lock"
+    assert repo_calls[2]["args"] == (session, 77)
+    assert repo_calls[3]["name"] == "mark"
+    assert repo_calls[3]["provider_invoice_id"] == "crypto-123"
+    assert repo_calls[3]["raw_payload"] == provider_invoice.raw
     assert created.pay_url == "https://t.me/CryptoBot?start=pay"
     assert created.quote.gross_usd == Decimal("81.44")
+    assert session.commits == 2
 
 
 async def test_create_cryptobot_invoice_for_user_rejects_missing_provider_pay_url(
@@ -431,6 +549,9 @@ async def test_create_cryptobot_invoice_for_user_rejects_missing_provider_pay_ur
     async def fake_mark_provider_created(*args: Any, **kwargs: Any) -> None:
         mark_calls.append(args)
 
+    async def fake_lock_invoice_by_id(*args: Any, **kwargs: Any) -> FakeInvoiceRecord:
+        return FakeInvoiceRecord(id=77, payload="payload")
+
     monkeypatch.setattr(
         payments_module,
         "ensure_configured_tariff",
@@ -446,10 +567,12 @@ async def test_create_cryptobot_invoice_for_user_rejects_missing_provider_pay_ur
         "mark_invoice_provider_created",
         fake_mark_provider_created,
     )
+    monkeypatch.setattr(payments_module, "lock_invoice_by_id", fake_lock_invoice_by_id)
 
+    session_factory = FakeSessionFactory()
     with pytest.raises(CryptoBotAPIError, match="missing pay URL"):
         await payments_module.create_cryptobot_invoice_for_user(
-            FakeSession(),
+            session_factory,
             Settings(),
             FakeClient(),
             FakeUserRecord(id=7, tg_id=700, lang_code="en", status=UserStatus.basic),
@@ -459,3 +582,4 @@ async def test_create_cryptobot_invoice_for_user_rejects_missing_provider_pay_ur
         )
 
     assert mark_calls == []
+    assert session_factory.session.commits == 2

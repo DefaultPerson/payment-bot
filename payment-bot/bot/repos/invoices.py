@@ -101,6 +101,12 @@ async def lock_invoice_by_provider_id(
     )
 
 
+async def lock_invoice_by_id(session: AsyncSession, invoice_id: int) -> Invoice | None:
+    return await session.scalar(
+        select(Invoice).where(Invoice.id == invoice_id).with_for_update(),
+    )
+
+
 async def mark_invoice_paid(
     session: AsyncSession,
     invoice: Invoice,

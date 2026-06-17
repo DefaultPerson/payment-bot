@@ -104,7 +104,7 @@ async def cryptobot_invoice_callback(
     settings: Settings,
     i18n: JsonI18n,
     session_factory: async_sessionmaker[AsyncSession],
-    cryptobot_client: CryptoBotClient | None,
+    cryptobot_client: CryptoBotClient | None = None,
 ) -> None:
     context = callback_context(callback, settings)
     tariff_code = _parse_prefixed_callback(getattr(callback, "data", None), CB_CRYPTOBOT_PREFIX)
@@ -121,7 +121,6 @@ async def cryptobot_invoice_callback(
         )
         return
 
-    lang_code = i18n.resolve_language(context.language_code)
     try:
         async with session_scope(session_factory) as session:
             user = await ensure_minimal_user(
@@ -130,18 +129,27 @@ async def cryptobot_invoice_callback(
                 i18n=i18n,
                 language_code=context.language_code,
             )
-            created = await create_cryptobot_invoice_for_user(
-                session,
-                settings,
-                cryptobot_client,
-                user,
-                tariff_code,
-                _support_url(settings),
-                datetime.now(UTC),
-            )
             lang_code = user.lang_code
     except SQLAlchemyError:
-        logger.exception("failed to create CryptoBot invoice")
+        logger.exception("failed to resolve CryptoBot invoice user")
+        await callback.answer(
+            i18n.gettext("error.generic", context.language_code),
+            show_alert=True,
+        )
+        return
+
+    try:
+        created = await create_cryptobot_invoice_for_user(
+            session_factory,
+            settings,
+            cryptobot_client,
+            user,
+            tariff_code,
+            _support_url(settings),
+            datetime.now(UTC),
+        )
+    except SQLAlchemyError:
+        logger.exception("failed to persist CryptoBot invoice")
         await callback.answer(i18n.gettext("error.generic", lang_code), show_alert=True)
         return
     except CryptoBotAPIError:
@@ -155,10 +163,17 @@ async def cryptobot_invoice_callback(
         logger.info("invalid CryptoBot invoice callback data: %r", getattr(callback, "data", None))
         await callback.answer(i18n.gettext("error.generic", lang_code), show_alert=True)
         return
+    except Exception:
+        logger.exception("unexpected CryptoBot invoice creation failure")
+        await callback.answer(
+            i18n.gettext("buy.invoice.failed", lang_code),
+            show_alert=True,
+        )
+        return
 
     await _edit_text_or_answer(
         callback,
-        i18n.gettext("buy.invoice.created", lang_code),
+        _invoice_created_text(i18n, lang_code, created.pay_url),
         reply_markup=payment_keyboard(i18n, settings, lang_code, created.pay_url),
     )
 
@@ -198,6 +213,10 @@ def _parse_prefixed_callback(data: str | None, prefix: str) -> str | None:
         return None
     value = data.removeprefix(prefix).strip()
     return value or None
+
+
+def _invoice_created_text(i18n: JsonI18n, lang_code: str, pay_url: str) -> str:
+    return f"{i18n.gettext('buy.invoice.created', lang_code)}\n{pay_url}"
 
 
 async def _edit_text_or_answer(

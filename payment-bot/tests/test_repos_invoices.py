@@ -18,6 +18,7 @@ from bot.models import (
 from bot.repos.invoices import (
     create_pending_cryptobot_invoice,
     get_active_cryptobot_invoices,
+    lock_invoice_by_id,
     lock_invoice_by_provider_id,
     mark_expired_cryptobot_invoices,
     mark_invoice_paid,
@@ -78,6 +79,13 @@ class FakeAsyncSession:
         params = statement.compile().params
 
         if entity is Invoice:
+            invoice_id = params.get("id_1")
+            if invoice_id is not None:
+                return next(
+                    (invoice for invoice in self.invoices if invoice.id == invoice_id),
+                    None,
+                )
+
             provider_invoice_id = next(
                 (
                     value
@@ -336,6 +344,21 @@ async def test_lock_invoice_by_provider_id_uses_row_lock_and_returns_none_when_m
     assert missing is None
     assert session.scalar_statements[0]._for_update_arg is not None
     assert session.scalar_statements[1]._for_update_arg is not None
+
+
+async def test_lock_invoice_by_id_uses_row_lock() -> None:
+    session = FakeAsyncSession()
+    invoice = make_invoice(
+        invoice_id=7,
+        provider_invoice_id="abc",
+        expires_at=datetime(2026, 6, 17, 13, 0, tzinfo=UTC),
+    )
+    session.invoices.append(invoice)
+
+    locked = await lock_invoice_by_id(session, 7)
+
+    assert locked is invoice
+    assert session.scalar_statements[0]._for_update_arg is not None
 
 
 async def test_mark_invoice_paid_sets_fields_and_preserves_existing_paid_at() -> None:
