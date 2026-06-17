@@ -47,3 +47,6 @@ data/
 
 # Compiled translations (regenerated on build)
 *.mo
+
+# Local git worktrees
+.worktrees/
