@@ -52,11 +52,29 @@ def test_phase2_default_tariffs_are_available() -> None:
     assert settings.tariffs.gold_monthly_price_usd == Decimal("50")
 
 
+def test_phase2_tariff_codes_must_be_unique() -> None:
+    with pytest.raises(ValidationError, match="tariff codes must be unique"):
+        Settings(
+            tariffs={
+                "items": [
+                    {"code": "1m", "duration_months": 1, "base_price_usd": Decimal("79")},
+                    {"code": "1m", "duration_months": 3, "base_price_usd": Decimal("237")},
+                ]
+            }
+        )
+
+
 def test_phase2_access_defaults_are_empty_and_safe() -> None:
     settings = Settings()
 
     assert settings.access.protected_chats == []
     assert settings.access.invite_link_ttl_seconds == 24 * 60 * 60
+
+
+def test_example_env_can_load_with_blank_cryptobot_token() -> None:
+    settings = load_settings(config_path="config.example.toml", env_file=".env.example")
+
+    assert settings.cryptobot.token is None
 
 
 def test_cryptobot_token_env_alias_is_supported(tmp_path: Path) -> None:
@@ -69,15 +87,16 @@ def test_cryptobot_token_env_alias_is_supported(tmp_path: Path) -> None:
     assert settings.cryptobot.token.get_secret_value() == "crypto-secret"
 
 
-def test_cryptobot_token_env_alias_rejects_empty_value(tmp_path: Path) -> None:
+def test_cryptobot_token_env_alias_normalizes_empty_value(tmp_path: Path) -> None:
     env_file = tmp_path / ".env"
     env_file.write_text("CRYPTOBOT_TOKEN=\n", encoding="utf-8")
 
-    with pytest.raises(ValidationError, match="CRYPTOBOT_TOKEN"):
-        load_settings(config_path=tmp_path / "missing.toml", env_file=env_file)
+    settings = load_settings(config_path=tmp_path / "missing.toml", env_file=env_file)
+
+    assert settings.cryptobot.token is None
 
 
-def test_cryptobot_token_env_alias_rejects_empty_value_when_disabled(tmp_path: Path) -> None:
+def test_cryptobot_token_env_alias_allows_empty_value_when_disabled(tmp_path: Path) -> None:
     config_path = tmp_path / "config.toml"
     config_path.write_text(
         """
@@ -89,8 +108,10 @@ def test_cryptobot_token_env_alias_rejects_empty_value_when_disabled(tmp_path: P
     env_file = tmp_path / ".env"
     env_file.write_text("CRYPTOBOT_TOKEN=\n", encoding="utf-8")
 
-    with pytest.raises(ValidationError, match="CRYPTOBOT_TOKEN"):
-        load_settings(config_path=config_path, env_file=env_file)
+    settings = load_settings(config_path=config_path, env_file=env_file)
+
+    assert settings.cryptobot.enabled is False
+    assert settings.cryptobot.token is None
 
 
 def test_admin_ids_parse_from_csv() -> None:

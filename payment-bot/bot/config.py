@@ -58,6 +58,11 @@ class CryptoBotConfig(BaseModel):
     poll_interval_seconds: int = Field(default=30, ge=1)
     poll_batch_size: int = Field(default=50, ge=1, le=100)
 
+    @field_validator("token", mode="before")
+    @classmethod
+    def blank_token_is_none(cls, value: Any) -> Any:
+        return _blank_secret_to_none(value)
+
 
 class TariffConfig(BaseModel):
     code: str
@@ -94,6 +99,19 @@ class TariffsConfig(BaseModel):
             ),
         ],
     )
+
+    @model_validator(mode="after")
+    def validate_unique_codes(self) -> TariffsConfig:
+        seen: set[str] = set()
+        duplicates: set[str] = set()
+        for tariff in self.items:
+            if tariff.code in seen:
+                duplicates.add(tariff.code)
+            seen.add(tariff.code)
+        if duplicates:
+            msg = "tariff codes must be unique"
+            raise ValueError(msg)
+        return self
 
 
 class ProtectedChatConfig(BaseModel):
@@ -185,6 +203,11 @@ class Settings(BaseSettings):
             raise ValueError(msg)
         return normalized
 
+    @field_validator("cryptobot_token", mode="before")
+    @classmethod
+    def blank_cryptobot_token_is_none(cls, value: Any) -> Any:
+        return _blank_secret_to_none(value)
+
     @model_validator(mode="after")
     def apply_flat_aliases_and_validate_cryptobot_token(self) -> Settings:
         if self.service_channel_id is not None:
@@ -232,3 +255,11 @@ def load_settings(
         model_config = SettingsConfigDict(**settings_model_config)
 
     return TomlSettings(_env_file=env_file)
+
+
+def _blank_secret_to_none(value: Any) -> Any:
+    if isinstance(value, SecretStr):
+        return None if not value.get_secret_value().strip() else value
+    if isinstance(value, str) and not value.strip():
+        return None
+    return value
