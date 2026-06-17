@@ -1,4 +1,40 @@
 """Database models."""
-from bot.models.base import Base, SchemaVersionMarker
+from bot.models.base import (
+    Base,
+    BroadcastLog,
+    Invoice,
+    InvoiceProvider,
+    InvoiceStatus,
+    Promo,
+    PromoKind,
+    PromoRedemption,
+    ProviderEvent,
+    Referral,
+    ReferralEarning,
+    SchemaVersionMarker,
+    Subscription,
+    SubscriptionSource,
+    Tariff,
+    User,
+    UserStatus,
+)
 
-__all__ = ["Base", "SchemaVersionMarker"]
+__all__ = [
+    "Base",
+    "BroadcastLog",
+    "Invoice",
+    "InvoiceProvider",
+    "InvoiceStatus",
+    "Promo",
+    "PromoKind",
+    "PromoRedemption",
+    "ProviderEvent",
+    "Referral",
+    "ReferralEarning",
+    "SchemaVersionMarker",
+    "Subscription",
+    "SubscriptionSource",
+    "Tariff",
+    "User",
+    "UserStatus",
+]
