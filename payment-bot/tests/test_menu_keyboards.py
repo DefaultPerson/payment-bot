@@ -22,6 +22,15 @@ PROFILE_DISPLAY_KEYS = {
     "profile.next_tier.none",
 }
 
+BUY_DISPLAY_KEYS = {
+    "buy.title",
+    "buy.tariff.button",
+    "buy.quote.text",
+    "buy.pay.cryptobot",
+    "buy.invoice.created",
+    "buy.invoice.failed",
+}
+
 
 def command_names(commands: list) -> set[str]:
     return {f"/{command.command}" for command in commands}
@@ -192,13 +201,67 @@ def test_profile_keyboard_contains_expected_actions_and_support_url() -> None:
     assert "https://t.me/HydraSupport" in keyboard_urls(keyboard)
 
 
+def test_tariff_keyboard_contains_active_tariffs_and_support_url() -> None:
+    settings = Settings(
+        bot={"support_username": "HydraSupport"},
+        tariffs={
+            "items": [
+                {
+                    "code": "active",
+                    "duration_months": 1,
+                    "base_price_usd": "10",
+                    "active": True,
+                },
+                {
+                    "code": "inactive",
+                    "duration_months": 2,
+                    "base_price_usd": "20",
+                    "active": False,
+                },
+            ]
+        },
+    )
+    keyboards = keyboard_module()
+
+    keyboard = keyboards.tariff_keyboard(JsonI18n(), settings, "en")
+
+    assert f"{keyboards.CB_TARIFF_PREFIX}active" in keyboard_callback_data(keyboard)
+    assert f"{keyboards.CB_TARIFF_PREFIX}inactive" not in keyboard_callback_data(keyboard)
+    assert "https://t.me/HydraSupport" in keyboard_urls(keyboard)
+
+
+def test_tariff_detail_keyboard_contains_cryptobot_payment_action() -> None:
+    keyboards = keyboard_module()
+
+    keyboard = keyboards.tariff_detail_keyboard(JsonI18n(), "3m", "en")
+
+    assert f"{keyboards.CB_CRYPTOBOT_PREFIX}3m" in keyboard_callback_data(keyboard)
+    assert "Pay with CryptoBot" in keyboard_texts(keyboard)
+
+
+def test_payment_keyboard_points_to_provider_url_and_support() -> None:
+    keyboards = keyboard_module()
+    settings = Settings(bot={"support_username": "HydraSupport"})
+
+    keyboard = keyboards.payment_keyboard(
+        JsonI18n(),
+        settings,
+        "en",
+        pay_url="https://t.me/CryptoBot?start=pay",
+    )
+
+    assert "https://t.me/CryptoBot?start=pay" in keyboard_urls(keyboard)
+    assert "https://t.me/HydraSupport" in keyboard_urls(keyboard)
+
+
 def test_locale_files_include_profile_display_contract_keys() -> None:
     locales_dir = Path(__file__).resolve().parents[1] / "bot" / "locales"
 
     for locale_path in locales_dir.glob("*.json"):
         locale_data = json.loads(locale_path.read_text(encoding="utf-8"))
 
-        assert PROFILE_DISPLAY_KEYS <= set(locale_data), locale_path.name
+        assert PROFILE_DISPLAY_KEYS | BUY_DISPLAY_KEYS <= set(locale_data), locale_path.name
+
 
 
 def test_profile_text_locale_formats_expected_kwargs() -> None:

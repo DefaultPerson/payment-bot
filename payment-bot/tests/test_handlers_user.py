@@ -911,7 +911,13 @@ async def test_support_callback_answers_when_edit_raises_bad_request(monkeypatch
     ]
 
 
-@pytest.mark.parametrize("callback_data", [CB_BUY, CB_PROMO, CB_REFERRAL, CB_RENEW, CB_ENTER_CHAT])
+def test_buy_button_is_not_a_future_callback() -> None:
+    import bot.handlers.support as support_module
+
+    assert CB_BUY not in support_module.FUTURE_CALLBACKS
+
+
+@pytest.mark.parametrize("callback_data", [CB_PROMO, CB_REFERRAL, CB_RENEW, CB_ENTER_CHAT])
 async def test_future_buttons_answer_coming_soon_without_db_mutation(callback_data: str) -> None:
     import bot.handlers.support as support_module
 

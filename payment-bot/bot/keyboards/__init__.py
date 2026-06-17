@@ -1,6 +1,7 @@
 from bot.keyboards.menu import (
     CB_ADMIN,
     CB_BUY,
+    CB_CRYPTOBOT_PREFIX,
     CB_ENTER_CHAT,
     CB_LANGUAGE,
     CB_PROFILE,
@@ -8,16 +9,21 @@ from bot.keyboards.menu import (
     CB_REFERRAL,
     CB_RENEW,
     CB_SUPPORT,
+    CB_TARIFF_PREFIX,
     LANG_PREFIX,
     language_keyboard,
     main_menu_keyboard,
+    payment_keyboard,
     profile_keyboard,
     support_keyboard,
+    tariff_detail_keyboard,
+    tariff_keyboard,
 )
 
 __all__ = [
     "CB_ADMIN",
     "CB_BUY",
+    "CB_CRYPTOBOT_PREFIX",
     "CB_ENTER_CHAT",
     "CB_LANGUAGE",
     "CB_PROFILE",
@@ -25,9 +31,13 @@ __all__ = [
     "CB_REFERRAL",
     "CB_RENEW",
     "CB_SUPPORT",
+    "CB_TARIFF_PREFIX",
     "LANG_PREFIX",
     "language_keyboard",
     "main_menu_keyboard",
+    "payment_keyboard",
     "profile_keyboard",
     "support_keyboard",
+    "tariff_detail_keyboard",
+    "tariff_keyboard",
 ]

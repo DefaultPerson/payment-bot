@@ -15,6 +15,8 @@ CB_RENEW = "renew"
 CB_ENTER_CHAT = "enter_chat"
 CB_ADMIN = "admin"
 LANG_PREFIX = "lang:"
+CB_TARIFF_PREFIX = "tariff:"
+CB_CRYPTOBOT_PREFIX = "pay:cryptobot:"
 
 LANGUAGE_CODES = ("ru", "ua", "en")
 
@@ -120,6 +122,78 @@ def profile_keyboard(i18n: JsonI18n, settings: Settings, lang_code: str) -> Inli
             [
                 InlineKeyboardButton(
                     text=i18n.gettext("profile.button.support", lang_code),
+                    url=_support_url(settings),
+                )
+            ],
+        ]
+    )
+
+
+def tariff_keyboard(i18n: JsonI18n, settings: Settings, lang_code: str) -> InlineKeyboardMarkup:
+    rows = []
+    for tariff in settings.tariffs.items:
+        if not tariff.active:
+            continue
+
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=i18n.gettext(
+                        "buy.tariff.button",
+                        lang_code,
+                        months=tariff.duration_months,
+                        price=f"{tariff.base_price_usd:.2f}",
+                    ),
+                    callback_data=f"{CB_TARIFF_PREFIX}{tariff.code}",
+                )
+            ]
+        )
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=i18n.gettext("support.button", lang_code),
+                url=_support_url(settings),
+            )
+        ]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def tariff_detail_keyboard(
+    i18n: JsonI18n,
+    tariff_code: str,
+    lang_code: str,
+) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=i18n.gettext("buy.pay.cryptobot", lang_code),
+                    callback_data=f"{CB_CRYPTOBOT_PREFIX}{tariff_code}",
+                )
+            ]
+        ]
+    )
+
+
+def payment_keyboard(
+    i18n: JsonI18n,
+    settings: Settings,
+    lang_code: str,
+    pay_url: str,
+) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=i18n.gettext("buy.pay.cryptobot", lang_code),
+                    url=pay_url,
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=i18n.gettext("support.button", lang_code),
                     url=_support_url(settings),
                 )
             ],
