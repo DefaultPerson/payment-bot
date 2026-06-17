@@ -2,9 +2,9 @@
 
 Telegram payment bot for Hydra Monitors subscriptions.
 
-This repository state contains Phase 1: the service scaffold plus subscription
-domain models, Alembic schema, localized menus, user profile/language/support
-flows, and admin-only manual subscription grants.
+This repository state contains Phase 2: the service scaffold, subscription
+domain models, localized menus, admin-only manual grants, and CryptoBot purchase
+flow with polling-based payment finalization.
 
 ## Local Requirements
 
@@ -52,7 +52,7 @@ Apply database migrations:
 alembic upgrade head
 ```
 
-Telegram commands implemented in Phase 1:
+Telegram commands currently implemented:
 
 ```text
 /start
@@ -61,6 +61,36 @@ Telegram commands implemented in Phase 1:
 /support
 /grant <user_id> <days>   # admins only
 ```
+
+## CryptoBot
+
+Set `CRYPTOBOT_TOKEN` to enable live Crypto Pay invoices. Keep it blank, or set
+`cryptobot.enabled = false`, to run local tests and menu flows without starting
+the CryptoBot poller.
+
+The `[cryptobot]` section controls the Crypto Pay API host, accepted assets,
+invoice TTL, poll interval, poll batch size, and fee percentage used for quotes.
+Use `api_url = "https://testnet-pay.crypt.bot"` with a testnet token for local
+payment testing.
+
+Tariffs are configured in `[[tariffs.items]]`. The bot syncs the selected
+configured tariff into the database before creating an invoice, so changing
+durations or prices is a config change plus restart.
+
+Protected chats are configured in `[access]`:
+
+```toml
+[access]
+invite_link_ttl_seconds = 86400
+protected_chats = [
+  { chat_id = -1001234567890, title = "Hydra Monitors" },
+]
+```
+
+Paid CryptoBot invoices extend the subscription in one database transaction.
+After commit, the poller sends a service-channel payment event and one-time
+invite links. Telegram delivery failures do not roll back payment processing;
+access-link delivery is retried by the running poller.
 
 Run the bot:
 
