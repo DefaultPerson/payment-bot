@@ -3,7 +3,11 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from bot.models import UserStatus
-from bot.services.subscriptions import calculate_extension, minimum_status_after_grant
+from bot.services.subscriptions import (
+    calculate_extension,
+    minimum_status_after_grant,
+    status_after_total_active_days,
+)
 
 
 def test_calculate_extension_starts_from_now_without_current_subscription() -> None:
@@ -54,3 +58,21 @@ def test_minimum_status_after_grant_never_downgrades_existing_tiers(
     expected: UserStatus,
 ) -> None:
     assert minimum_status_after_grant(current) is expected
+
+
+@pytest.mark.parametrize(
+    ("current", "total_active_days", "expected"),
+    [
+        (UserStatus.basic, 0, UserStatus.basic),
+        (UserStatus.basic, 1, UserStatus.bronze),
+        (UserStatus.basic, 90, UserStatus.silver),
+        (UserStatus.bronze, 180, UserStatus.gold),
+        (UserStatus.gold, 10, UserStatus.gold),
+    ],
+)
+def test_status_after_total_active_days_promotes_without_downgrading(
+    current: UserStatus,
+    total_active_days: int,
+    expected: UserStatus,
+) -> None:
+    assert status_after_total_active_days(current, total_active_days) is expected

@@ -83,7 +83,12 @@ async def language_callback(
 
     try:
         async with session_scope(session_factory) as session:
-            await ensure_minimal_user(session, tg_id=context.tg_id, i18n=i18n)
+            await ensure_minimal_user(
+                session,
+                tg_id=context.tg_id,
+                i18n=i18n,
+                language_code=context.language_code,
+            )
             user = await update_user_language(session, tg_id=context.tg_id, lang_code=lang_code)
             persisted_lang_code = user.lang_code
     except SQLAlchemyError:
@@ -129,7 +134,12 @@ async def _resolve_user_language(
         return i18n.resolve_language(language_code)
 
     async with session_scope(session_factory) as session:
-        user = await ensure_minimal_user(session, tg_id=tg_id, i18n=i18n)
+        user = await ensure_minimal_user(
+            session,
+            tg_id=tg_id,
+            i18n=i18n,
+            language_code=language_code,
+        )
         return user.lang_code
 
 

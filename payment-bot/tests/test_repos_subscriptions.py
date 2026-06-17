@@ -176,3 +176,15 @@ async def test_extend_manual_subscription_extends_expired_subscription_from_now(
     assert user.total_active_days == 19
     assert user.status is UserStatus.bronze
     assert session.flushed == 1
+
+
+async def test_extend_manual_subscription_recalculates_loyalty_tier() -> None:
+    session = FakeAsyncSession()
+    user = make_user(user_id=9, total_active_days=80)
+    now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
+    session.add(user)
+
+    await extend_manual_subscription(session, user=user, days=100, now=now)
+
+    assert user.total_active_days == 180
+    assert user.status is UserStatus.gold

@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import pytest
+from sqlalchemy.dialects import postgresql
 
 from bot.core.i18n import JsonI18n
 from bot.models import User, UserStatus
@@ -20,6 +21,7 @@ class FakeAsyncSession:
     def __init__(self) -> None:
         self.users: list[User] = []
         self.flushed = 0
+        self.executed_statements: list[Any] = []
         self._next_user_id = 1
 
     def add(self, instance: Any) -> None:
@@ -32,6 +34,31 @@ class FakeAsyncSession:
             if user.id is None:
                 user.id = self._next_user_id
                 self._next_user_id += 1
+
+    async def execute(self, statement: Any) -> None:
+        self.executed_statements.append(statement)
+        if getattr(getattr(statement, "table", None), "name", None) != User.__tablename__:
+            msg = f"unsupported fake execute for {statement}"
+            raise AssertionError(msg)
+
+        params = statement.compile(dialect=postgresql.dialect()).params
+        if any(user.tg_id == params["tg_id"] for user in self.users):
+            return
+
+        self.add(
+            User(
+                id=None,
+                tg_id=params["tg_id"],
+                username=params["username"],
+                first_name=params["first_name"],
+                lang_code=params["lang_code"],
+                status=params["status"],
+                total_active_days=params["total_active_days"],
+                referrer_id=None,
+                created_at=params["created_at"],
+                updated_at=params["updated_at"],
+            )
+        )
 
     async def scalar(self, statement: Any) -> Any:
         entity = statement.column_descriptions[0]["entity"]
@@ -147,7 +174,7 @@ async def test_upsert_user_from_telegram_updates_existing_user_without_new_creat
     assert updated is user
     assert updated.username == "new_name"
     assert updated.first_name == "New"
-    assert updated.lang_code == "en"
+    assert updated.lang_code == "ru"
     assert updated.created_at == original_created_at
     assert updated.updated_at > original_created_at
     assert len(session.users) == 1
@@ -180,7 +207,7 @@ async def test_upsert_user_from_telegram_keeps_existing_language_for_bad_telegra
     assert session.flushed == 2
 
 
-async def test_upsert_user_from_telegram_updates_existing_language_for_telegram_uk_alias() -> None:
+async def test_upsert_user_preserves_existing_language_for_telegram_uk_alias() -> None:
     session = FakeAsyncSession()
     i18n = JsonI18n()
     user = make_user(tg_id=12345, lang_code="ru")
@@ -197,7 +224,7 @@ async def test_upsert_user_from_telegram_updates_existing_language_for_telegram_
     )
 
     assert updated is user
-    assert updated.lang_code == "ua"
+    assert updated.lang_code == "ru"
     assert session.flushed == 2
 
 
@@ -249,6 +276,26 @@ async def test_ensure_minimal_user_creates_missing_user_with_fallback_language()
     assert user.status is UserStatus.basic
     assert user.total_active_days == 0
     assert session.flushed == 1
+
+
+async def test_ensure_minimal_user_creates_missing_user_with_telegram_language() -> None:
+    session = FakeAsyncSession()
+    i18n = JsonI18n()
+
+    user = await ensure_minimal_user(session, tg_id=54321, i18n=i18n, language_code="uk")
+
+    assert user.lang_code == "ua"
+
+
+async def test_ensure_minimal_user_uses_postgres_conflict_safe_insert() -> None:
+    session = FakeAsyncSession()
+    i18n = JsonI18n()
+
+    await ensure_minimal_user(session, tg_id=54321, i18n=i18n, language_code="en")
+
+    assert len(session.executed_statements) == 1
+    compiled = str(session.executed_statements[0].compile(dialect=postgresql.dialect()))
+    assert "ON CONFLICT (tg_id) DO NOTHING" in compiled
 
 
 async def test_ensure_minimal_user_returns_existing_user_without_overwriting() -> None:

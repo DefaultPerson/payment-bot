@@ -161,7 +161,10 @@ async def test_profile_command_fetches_subscription_and_answers_formatted_profil
     settings = Settings()
     i18n = JsonI18n()
     session_factory = FakeSessionFactory()
-    message = FakeMessage(from_user=FakeTelegramUser(id=1001), chat=FakeChat(id=1001))
+    message = FakeMessage(
+        from_user=FakeTelegramUser(id=1001, language_code="uk"),
+        chat=FakeChat(id=1001),
+    )
 
     await profile_module.profile(
         message,
@@ -175,6 +178,7 @@ async def test_profile_command_fetches_subscription_and_answers_formatted_profil
         "session": session_factory.session,
         "tg_id": 1001,
         "i18n": i18n,
+        "language_code": "uk",
     }
     assert calls[1] == {
         "name": "subscription",
@@ -546,7 +550,14 @@ async def test_language_callback_updates_language_and_commands(monkeypatch) -> N
         bot=bot,
     )
 
-    assert ensure_calls == [{"session": session_factory.session, "tg_id": 500, "i18n": i18n}]
+    assert ensure_calls == [
+        {
+            "session": session_factory.session,
+            "tg_id": 500,
+            "i18n": i18n,
+            "language_code": "ru",
+        }
+    ]
     assert update_calls == [{"session": session_factory.session, "tg_id": 500, "lang_code": "en"}]
     assert session_factory.session.commits == 1
     assert command_calls == [

@@ -13,48 +13,57 @@ CB_REFERRAL = "referral"
 CB_PROMO = "promo"
 CB_RENEW = "renew"
 CB_ENTER_CHAT = "enter_chat"
+CB_ADMIN = "admin"
 LANG_PREFIX = "lang:"
 
 LANGUAGE_CODES = ("ru", "ua", "en")
 
 
 def main_menu_keyboard(i18n: JsonI18n, lang_code: str, *, is_admin: bool) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
+    rows = [
+        [
+            InlineKeyboardButton(
+                text=i18n.gettext("menu.button.buy", lang_code),
+                callback_data=CB_BUY,
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text=i18n.gettext("menu.button.profile", lang_code),
+                callback_data=CB_PROFILE,
+            ),
+            InlineKeyboardButton(
+                text=i18n.gettext("menu.button.language", lang_code),
+                callback_data=CB_LANGUAGE,
+            ),
+        ],
+        [
+            InlineKeyboardButton(
+                text=i18n.gettext("menu.button.referral", lang_code),
+                callback_data=CB_REFERRAL,
+            ),
+            InlineKeyboardButton(
+                text=i18n.gettext("menu.button.promo", lang_code),
+                callback_data=CB_PROMO,
+            ),
+        ],
+        [
+            InlineKeyboardButton(
+                text=i18n.gettext("menu.button.support", lang_code),
+                callback_data=CB_SUPPORT,
+            )
+        ],
+    ]
+    if is_admin:
+        rows.append(
             [
                 InlineKeyboardButton(
-                    text=i18n.gettext("menu.button.buy", lang_code),
-                    callback_data=CB_BUY,
+                    text=i18n.gettext("menu.button.admin", lang_code),
+                    callback_data=CB_ADMIN,
                 )
-            ],
-            [
-                InlineKeyboardButton(
-                    text=i18n.gettext("menu.button.profile", lang_code),
-                    callback_data=CB_PROFILE,
-                ),
-                InlineKeyboardButton(
-                    text=i18n.gettext("menu.button.language", lang_code),
-                    callback_data=CB_LANGUAGE,
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text=i18n.gettext("menu.button.referral", lang_code),
-                    callback_data=CB_REFERRAL,
-                ),
-                InlineKeyboardButton(
-                    text=i18n.gettext("menu.button.promo", lang_code),
-                    callback_data=CB_PROMO,
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text=i18n.gettext("menu.button.support", lang_code),
-                    callback_data=CB_SUPPORT,
-                )
-            ],
-        ]
-    )
+            ]
+        )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def language_keyboard(i18n: JsonI18n, lang_code: str) -> InlineKeyboardMarkup:

@@ -36,7 +36,12 @@ async def profile(
         return
 
     try:
-        text, lang_code = await _build_profile_response(context.tg_id, i18n, session_factory)
+        text, lang_code = await _build_profile_response(
+            context.tg_id,
+            context.language_code,
+            i18n,
+            session_factory,
+        )
     except SQLAlchemyError:
         logger.exception("failed to build profile response")
         await message.answer(i18n.gettext("error.generic", context.language_code))
@@ -56,7 +61,12 @@ async def profile_callback(
         return
 
     try:
-        text, lang_code = await _build_profile_response(context.tg_id, i18n, session_factory)
+        text, lang_code = await _build_profile_response(
+            context.tg_id,
+            context.language_code,
+            i18n,
+            session_factory,
+        )
     except SQLAlchemyError:
         logger.exception("failed to build profile callback response")
         await callback.answer(i18n.gettext("error.generic", context.language_code), show_alert=True)
@@ -70,11 +80,17 @@ async def profile_callback(
 
 async def _build_profile_response(
     tg_id: int,
+    language_code: str | None,
     i18n: JsonI18n,
     session_factory: async_sessionmaker[AsyncSession],
 ) -> tuple[str, str]:
     async with session_scope(session_factory) as session:
-        user = await ensure_minimal_user(session, tg_id=tg_id, i18n=i18n)
+        user = await ensure_minimal_user(
+            session,
+            tg_id=tg_id,
+            i18n=i18n,
+            language_code=language_code,
+        )
         subscription = await get_subscription_for_user(session, user.id)
         view = build_profile_view(user, subscription, now=datetime.now(UTC))
         lang_code = user.lang_code

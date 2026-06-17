@@ -86,8 +86,9 @@ async def grant(
         language,
         user_id=target_tg_id,
         days=days,
+        expires_at=_format_expiry(expires_at),
     )
-    await message.answer(f"{success_text} Expires at {_format_expiry(expires_at)}")
+    await message.answer(success_text)
 
 
 async def grant_forbidden(message: Message, i18n: JsonI18n) -> None:

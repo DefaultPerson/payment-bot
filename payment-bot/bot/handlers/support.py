@@ -14,6 +14,7 @@ from bot.core.db import session_scope
 from bot.core.i18n import JsonI18n
 from bot.handlers.start import callback_context, message_context
 from bot.keyboards import (
+    CB_ADMIN,
     CB_BUY,
     CB_ENTER_CHAT,
     CB_PROMO,
@@ -26,7 +27,7 @@ from bot.repos.users import ensure_minimal_user, upsert_user_from_telegram
 
 logger = logging.getLogger(__name__)
 
-FUTURE_CALLBACKS = frozenset({CB_BUY, CB_PROMO, CB_REFERRAL, CB_RENEW, CB_ENTER_CHAT})
+FUTURE_CALLBACKS = frozenset({CB_ADMIN, CB_BUY, CB_PROMO, CB_REFERRAL, CB_RENEW, CB_ENTER_CHAT})
 
 
 async def support(
@@ -89,7 +90,12 @@ async def _resolve_user_language(
         return i18n.resolve_language(language_code)
 
     async with session_scope(session_factory) as session:
-        user = await ensure_minimal_user(session, tg_id=tg_id, i18n=i18n)
+        user = await ensure_minimal_user(
+            session,
+            tg_id=tg_id,
+            i18n=i18n,
+            language_code=language_code,
+        )
         return user.lang_code
 
 

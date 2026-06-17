@@ -11,6 +11,7 @@
   "menu.button.promo": "Promo code",
   "menu.button.language": "Language",
   "menu.button.support": "Support",
+  "menu.button.admin": "Admin",
   "profile.button.renew": "Renew access",
   "profile.button.enter_chat": "Enter chat",
   "profile.button.support": "Support",
@@ -34,5 +35,5 @@
   "error.generic": "Something went wrong. Please try again later.",
   "grant.usage": "Usage: /grant <telegram_id> <days>",
   "grant.forbidden": "Only admins can grant access.",
-  "grant.success": "Granted access to user {user_id} for {days} days."
+  "grant.success": "Granted access to user {user_id} for {days} days. Expires at {expires_at}."
 }

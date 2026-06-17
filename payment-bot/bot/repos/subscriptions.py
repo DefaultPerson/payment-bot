@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.models import Subscription, SubscriptionSource, User, UserStatus
-from bot.services.subscriptions import calculate_extension, minimum_status_after_grant
+from bot.services.subscriptions import calculate_extension, status_after_total_active_days
 
 
 async def get_subscription_for_user(
@@ -44,7 +44,10 @@ async def extend_manual_subscription(
         subscription.updated_at = now
 
     locked_user.total_active_days = (locked_user.total_active_days or 0) + days
-    locked_user.status = minimum_status_after_grant(locked_user.status or UserStatus.basic)
+    locked_user.status = status_after_total_active_days(
+        locked_user.status or UserStatus.basic,
+        locked_user.total_active_days,
+    )
     locked_user.updated_at = now
 
     await session.flush()

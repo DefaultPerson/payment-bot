@@ -11,6 +11,7 @@
   "menu.button.promo": "Промокод",
   "menu.button.language": "Язык",
   "menu.button.support": "Поддержка",
+  "menu.button.admin": "Админка",
   "profile.button.renew": "Продлить доступ",
   "profile.button.enter_chat": "Войти в чат",
   "profile.button.support": "Поддержка",
@@ -34,5 +35,5 @@
   "error.generic": "Что-то пошло не так. Попробуйте позже.",
   "grant.usage": "Использование: /grant <telegram_id> <дней>",
   "grant.forbidden": "Только администраторы могут выдавать доступ.",
-  "grant.success": "Доступ выдан пользователю {user_id} на {days} дней."
+  "grant.success": "Доступ выдан пользователю {user_id} на {days} дней. Истекает: {expires_at}."
 }

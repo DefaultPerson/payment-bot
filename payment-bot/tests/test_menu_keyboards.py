@@ -151,6 +151,16 @@ def test_main_menu_keyboard_contains_user_and_future_feature_buttons() -> None:
     } <= keyboard_callback_data(keyboard)
 
 
+def test_main_menu_keyboard_contains_admin_button_for_admins() -> None:
+    keyboards = keyboard_module()
+
+    user_keyboard = keyboards.main_menu_keyboard(JsonI18n(), "en", is_admin=False)
+    admin_keyboard = keyboards.main_menu_keyboard(JsonI18n(), "en", is_admin=True)
+
+    assert keyboards.CB_ADMIN not in keyboard_callback_data(user_keyboard)
+    assert keyboards.CB_ADMIN in keyboard_callback_data(admin_keyboard)
+
+
 def test_language_keyboard_offers_supported_locales() -> None:
     keyboards = keyboard_module()
 

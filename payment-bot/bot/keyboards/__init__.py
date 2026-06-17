@@ -1,4 +1,5 @@
 from bot.keyboards.menu import (
+    CB_ADMIN,
     CB_BUY,
     CB_ENTER_CHAT,
     CB_LANGUAGE,
@@ -15,6 +16,7 @@ from bot.keyboards.menu import (
 )
 
 __all__ = [
+    "CB_ADMIN",
     "CB_BUY",
     "CB_ENTER_CHAT",
     "CB_LANGUAGE",

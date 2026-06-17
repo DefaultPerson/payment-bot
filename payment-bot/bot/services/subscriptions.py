@@ -4,6 +4,15 @@ from datetime import datetime, timedelta
 
 from bot.models import UserStatus
 
+SILVER_ACTIVE_DAYS = 90
+GOLD_ACTIVE_DAYS = 180
+STATUS_RANK = {
+    UserStatus.basic: 0,
+    UserStatus.bronze: 1,
+    UserStatus.silver: 2,
+    UserStatus.gold: 3,
+}
+
 
 def calculate_extension(
     *,
@@ -20,6 +29,19 @@ def calculate_extension(
 
 
 def minimum_status_after_grant(current: UserStatus) -> UserStatus:
-    if current is UserStatus.basic:
-        return UserStatus.bronze
-    return current
+    return status_after_total_active_days(current, 1)
+
+
+def status_after_total_active_days(
+    current: UserStatus,
+    total_active_days: int,
+) -> UserStatus:
+    earned = UserStatus.basic
+    if total_active_days >= GOLD_ACTIVE_DAYS:
+        earned = UserStatus.gold
+    elif total_active_days >= SILVER_ACTIVE_DAYS:
+        earned = UserStatus.silver
+    elif total_active_days > 0:
+        earned = UserStatus.bronze
+
+    return max(current, earned, key=STATUS_RANK.__getitem__)

@@ -309,7 +309,7 @@ async def test_admin_grant_extends_subscription_notifies_service_channel_and_rep
     assert "admin_id=100" in service_channel.calls[0]
     assert "target_tg_id=123" in service_channel.calls[0]
     assert message.answers == [
-        {"text": "Granted access to user 123 for 10 days. Expires at 2026-06-27 12:30 UTC"}
+        {"text": "Granted access to user 123 for 10 days. Expires at 2026-06-27 12:30 UTC."}
     ]
 
 
@@ -353,7 +353,7 @@ async def test_admin_grant_replies_when_service_channel_does_not_deliver(
 
     assert len(service_channel.calls) == 1
     assert message.answers == [
-        {"text": "Granted access to user 123 for 10 days. Expires at 2026-06-27 12:30 UTC"}
+        {"text": "Granted access to user 123 for 10 days. Expires at 2026-06-27 12:30 UTC."}
     ]
 
 
