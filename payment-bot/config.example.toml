@@ -1,0 +1,18 @@
+[bot]
+supported_languages = ["ru", "ua", "en"]
+fallback_language = "ru"
+support_username = "HMonitorsBot"
+
+[service_channel]
+chat_id = -1001234567890
+thread_id = 0
+
+[http]
+host = "127.0.0.1"
+port = 8080
+bot_cache_seconds = 30
+
+[logging]
+file_path = "logs/payment-bot.log"
+max_bytes = 5242880
+backup_count = 5
