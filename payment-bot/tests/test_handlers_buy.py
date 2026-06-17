@@ -113,6 +113,7 @@ async def test_tariff_callback_edits_quote_detail(monkeypatch) -> None:
 
     text = callback_message.edits[0]["text"]
     assert "3 months" in text
+    assert "USDT, TON, BTC" in text
     assert "$219.90" in text
     assert "$213.30" in text
     assert callback.answers == [{"text": None}]

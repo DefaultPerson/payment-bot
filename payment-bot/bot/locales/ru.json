@@ -26,7 +26,7 @@
   "profile.next_tier.none": "Максимальный уровень",
   "buy.title": "Выберите тариф:",
   "buy.tariff.button": "{months} мес. - ${price}",
-  "buy.quote.text": "{months} мес.\n\nИтого: ${gross_usd}\nСтоимость доступа: ${net_usd}\nКомиссия платежа: ${fee_usd}",
+  "buy.quote.text": "{months} мес.\n\nИтого: ${gross_usd}\nСтоимость доступа: ${net_usd}\nКомиссия платежа: ${fee_usd}\nДоступные активы: {accepted_assets}",
   "buy.pay.cryptobot": "Оплатить через CryptoBot",
   "buy.invoice.created": "Счет создан. Используйте кнопку оплаты ниже, чтобы завершить покупку.",
   "buy.invoice.failed": "Не удалось создать счет. Попробуйте еще раз или напишите в поддержку.",

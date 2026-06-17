@@ -48,14 +48,27 @@ def quote_tariff(settings: Settings, code: str, status: UserStatus) -> TariffQuo
 
 def _net_amount(settings: Settings, tariff: TariffConfig, status: UserStatus) -> Decimal:
     if status is UserStatus.silver:
-        return settings.tariffs.silver_monthly_price_usd * tariff.duration_months
+        return _fixed_status_amount(
+            settings.tariffs.silver_monthly_price_usd,
+            tariff,
+        )
     if status is UserStatus.gold:
-        return settings.tariffs.gold_monthly_price_usd * tariff.duration_months
+        return _fixed_status_amount(
+            settings.tariffs.gold_monthly_price_usd,
+            tariff,
+        )
 
     net = _apply_percent_discount(tariff.base_price_usd, tariff.duration_discount_percent)
     if status is UserStatus.bronze:
         return _apply_percent_discount(net, settings.tariffs.bronze_discount_percent)
     return net
+
+
+def _fixed_status_amount(monthly_price: Decimal, tariff: TariffConfig) -> Decimal:
+    return _apply_percent_discount(
+        monthly_price * tariff.duration_months,
+        tariff.duration_discount_percent,
+    )
 
 
 def _apply_percent_discount(value: Decimal, percent: Decimal) -> Decimal:

@@ -94,7 +94,7 @@ async def tariff_callback(
 
     await _edit_text_or_answer(
         callback,
-        _format_quote_text(i18n, lang_code, quote),
+        _format_quote_text(i18n, settings, lang_code, quote),
         reply_markup=tariff_detail_keyboard(i18n, tariff_code, lang_code),
     )
 
@@ -197,7 +197,12 @@ async def _resolve_user_language(
         return user.lang_code
 
 
-def _format_quote_text(i18n: JsonI18n, lang_code: str, quote: TariffQuote) -> str:
+def _format_quote_text(
+    i18n: JsonI18n,
+    settings: Settings,
+    lang_code: str,
+    quote: TariffQuote,
+) -> str:
     return i18n.gettext(
         "buy.quote.text",
         lang_code,
@@ -205,6 +210,7 @@ def _format_quote_text(i18n: JsonI18n, lang_code: str, quote: TariffQuote) -> st
         gross_usd=f"{quote.gross_usd:.2f}",
         net_usd=f"{quote.net_usd:.2f}",
         fee_usd=f"{quote.fee_usd:.2f}",
+        accepted_assets=", ".join(settings.cryptobot.accepted_assets),
     )
 
 

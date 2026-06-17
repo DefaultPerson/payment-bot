@@ -26,7 +26,7 @@
   "profile.next_tier.none": "Highest tier",
   "buy.title": "Choose a tariff:",
   "buy.tariff.button": "{months} months - ${price}",
-  "buy.quote.text": "{months} months\n\nTotal: ${gross_usd}\nAccess amount: ${net_usd}\nPayment fee: ${fee_usd}",
+  "buy.quote.text": "{months} months\n\nTotal: ${gross_usd}\nAccess amount: ${net_usd}\nPayment fee: ${fee_usd}\nAccepted assets: {accepted_assets}",
   "buy.pay.cryptobot": "Pay with CryptoBot",
   "buy.invoice.created": "Invoice created. Use the payment button below to complete your purchase.",
   "buy.invoice.failed": "Could not create invoice. Please try again or contact support.",
