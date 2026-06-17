@@ -1,0 +1,31 @@
+from bot.keyboards.menu import (
+    CB_BUY,
+    CB_ENTER_CHAT,
+    CB_LANGUAGE,
+    CB_PROFILE,
+    CB_PROMO,
+    CB_REFERRAL,
+    CB_RENEW,
+    CB_SUPPORT,
+    LANG_PREFIX,
+    language_keyboard,
+    main_menu_keyboard,
+    profile_keyboard,
+    support_keyboard,
+)
+
+__all__ = [
+    "CB_BUY",
+    "CB_ENTER_CHAT",
+    "CB_LANGUAGE",
+    "CB_PROFILE",
+    "CB_PROMO",
+    "CB_REFERRAL",
+    "CB_RENEW",
+    "CB_SUPPORT",
+    "LANG_PREFIX",
+    "language_keyboard",
+    "main_menu_keyboard",
+    "profile_keyboard",
+    "support_keyboard",
+]
