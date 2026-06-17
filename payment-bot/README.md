@@ -2,9 +2,9 @@
 
 Telegram payment bot for Hydra Monitors subscriptions.
 
-This repository state contains Phase 0: service scaffold, configuration,
-PostgreSQL and Redis wiring, Alembic baseline, JSON logging, local health and
-metrics endpoints, graceful shutdown, Docker runtime, and `/start`.
+This repository state contains Phase 1: the service scaffold plus subscription
+domain models, Alembic schema, localized menus, user profile/language/support
+flows, and admin-only manual subscription grants.
 
 ## Local Requirements
 
@@ -44,6 +44,22 @@ make test
 make lint
 make alembic-sql
 make docker-build
+```
+
+Apply database migrations:
+
+```bash
+alembic upgrade head
+```
+
+Telegram commands implemented in Phase 1:
+
+```text
+/start
+/profile
+/language
+/support
+/grant <user_id> <days>   # admins only
 ```
 
 Run the bot:
