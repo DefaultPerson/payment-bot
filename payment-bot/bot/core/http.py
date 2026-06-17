@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -9,8 +10,8 @@ from typing import Any
 from aiohttp import web
 from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, generate_latest
 
-
 CheckCallable = Callable[[], bool | Awaitable[bool]]
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -62,6 +63,7 @@ async def _health(request: web.Request) -> web.Response:
         try:
             checks[key] = await _call_check(check)
         except Exception:
+            logger.warning("health dependency check failed", extra={"dependency": key})
             checks[key] = False
 
     healthy = all(checks.values())
