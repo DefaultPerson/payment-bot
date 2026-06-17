@@ -4,7 +4,11 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from bot.models import Subscription, SubscriptionSource, User, UserStatus
-from bot.repos.subscriptions import extend_manual_subscription, get_subscription_for_user
+from bot.repos.subscriptions import (
+    extend_manual_subscription,
+    extend_paid_subscription,
+    get_subscription_for_user,
+)
 
 
 class FakeAsyncSession:
@@ -188,3 +192,63 @@ async def test_extend_manual_subscription_recalculates_loyalty_tier() -> None:
 
     assert user.total_active_days == 180
     assert user.status is UserStatus.gold
+
+
+async def test_extend_paid_subscription_sets_source_and_last_invoice() -> None:
+    session = FakeAsyncSession()
+    user = make_user(user_id=10)
+    session.add(user)
+    now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
+
+    subscription = await extend_paid_subscription(
+        session,
+        user=user,
+        days=30,
+        source=SubscriptionSource.cryptobot,
+        last_invoice_id=99,
+        now=now,
+    )
+
+    assert subscription.user_id == user.id
+    assert subscription.started_at == now
+    assert subscription.expires_at == now + timedelta(days=30)
+    assert subscription.source is SubscriptionSource.cryptobot
+    assert subscription.last_invoice_id == 99
+    assert user.total_active_days == 30
+    assert user.status is UserStatus.bronze
+    assert session.flushed == 1
+    assert session.scalar_queries[:2] == [
+        (User, "id", True),
+        (Subscription, "user_id", True),
+    ]
+
+
+async def test_extend_paid_subscription_extends_from_future_and_preserves_higher_status() -> None:
+    session = FakeAsyncSession()
+    user = make_user(user_id=11, status=UserStatus.gold, total_active_days=5)
+    now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
+    current_expires_at = now + timedelta(days=7)
+    subscription = make_subscription(
+        user_id=user.id,
+        started_at=now - timedelta(days=20),
+        expires_at=current_expires_at,
+    )
+    session.add(user)
+    session.add(subscription)
+
+    updated = await extend_paid_subscription(
+        session,
+        user=user,
+        days=30,
+        source=SubscriptionSource.cryptobot,
+        last_invoice_id=101,
+        now=now,
+    )
+
+    assert updated is subscription
+    assert updated.expires_at == current_expires_at + timedelta(days=30)
+    assert updated.source is SubscriptionSource.cryptobot
+    assert updated.last_invoice_id == 101
+    assert user.total_active_days == 35
+    assert user.status is UserStatus.gold
+    assert session.flushed == 1

@@ -7,19 +7,23 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Protocol
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from bot.config import Settings
 from bot.core.db import session_scope
-from bot.models import Invoice, InvoiceStatus, User
+from bot.models import Invoice, InvoiceStatus, Subscription, SubscriptionSource, Tariff, User
 from bot.payments.cryptobot import CryptoBotAPIError, CryptoBotInvoice
 from bot.repos.invoices import (
     create_pending_cryptobot_invoice,
     lock_invoice_by_id,
+    lock_invoice_by_provider_id,
+    mark_invoice_paid,
     mark_invoice_provider_created,
 )
+from bot.repos.subscriptions import extend_paid_subscription
 from bot.repos.tariffs import ensure_configured_tariff
-from bot.services.pricing import TariffQuote, quote_tariff
+from bot.services.pricing import TariffQuote, quote_tariff, tariff_duration_days
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +54,13 @@ class PreparedInvoice:
     quote: TariffQuote
     payload: str
     description: str
+
+
+@dataclass(frozen=True, slots=True)
+class PaidInvoiceResult:
+    processed: bool
+    invoice: Invoice
+    subscription: Subscription | None
 
 
 async def create_cryptobot_invoice_for_user(
@@ -93,6 +104,50 @@ async def create_cryptobot_invoice_for_user(
             raw_payload=provider_invoice.raw,
         )
     return CreatedInvoice(invoice=invoice, quote=prepared.quote, pay_url=provider_invoice.pay_url)
+
+
+async def process_paid_cryptobot_invoice(
+    session: AsyncSession,
+    *,
+    provider_invoice: CryptoBotInvoice,
+    now: datetime,
+) -> PaidInvoiceResult:
+    invoice = await lock_invoice_by_provider_id(session, provider_invoice.invoice_id)
+    if invoice is None:
+        msg = f"invoice for provider invoice {provider_invoice.invoice_id} was not found"
+        raise LookupError(msg)
+
+    if invoice.status is InvoiceStatus.paid:
+        return PaidInvoiceResult(processed=False, invoice=invoice, subscription=None)
+
+    if provider_invoice.payload != invoice.payload:
+        msg = "provider invoice payload mismatch"
+        raise ValueError(msg)
+
+    if invoice.tariff_id is None:
+        msg = "invoice tariff_id is missing"
+        raise ValueError(msg)
+    if invoice.id is None:
+        msg = "invoice must have an id before payment processing"
+        raise ValueError(msg)
+
+    user = await _load_paid_invoice_user(session, invoice.user_id)
+    tariff = await _load_paid_invoice_tariff(session, invoice.tariff_id)
+    subscription = await extend_paid_subscription(
+        session,
+        user=user,
+        days=tariff_duration_days(tariff.duration_months),
+        source=SubscriptionSource.cryptobot,
+        last_invoice_id=invoice.id,
+        now=now,
+    )
+    await mark_invoice_paid(
+        session,
+        invoice,
+        paid_at=now,
+        raw_payload=provider_invoice.raw,
+    )
+    return PaidInvoiceResult(processed=True, invoice=invoice, subscription=subscription)
 
 
 async def _prepare_local_invoice(
@@ -151,6 +206,22 @@ async def _create_provider_invoice(
         msg = "missing pay URL in CryptoBot invoice"
         raise CryptoBotAPIError(msg)
     return provider_invoice
+
+
+async def _load_paid_invoice_user(session: AsyncSession, user_id: int) -> User:
+    user = await session.scalar(select(User).where(User.id == user_id).with_for_update())
+    if user is None:
+        msg = f"user with id {user_id} was not found"
+        raise LookupError(msg)
+    return user
+
+
+async def _load_paid_invoice_tariff(session: AsyncSession, tariff_id: int) -> Tariff:
+    tariff = await session.scalar(select(Tariff).where(Tariff.id == tariff_id))
+    if tariff is None:
+        msg = f"tariff with id {tariff_id} was not found"
+        raise LookupError(msg)
+    return tariff
 
 
 async def _cancel_unusable_invoice(

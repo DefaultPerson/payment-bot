@@ -23,6 +23,47 @@ async def extend_manual_subscription(
     days: int,
     now: datetime,
 ) -> Subscription:
+    return await _extend_subscription(
+        session,
+        user=user,
+        days=days,
+        source=SubscriptionSource.manual,
+        last_invoice_id=None,
+        now=now,
+        update_paid_fields=False,
+    )
+
+
+async def extend_paid_subscription(
+    session: AsyncSession,
+    *,
+    user: User,
+    days: int,
+    source: SubscriptionSource,
+    last_invoice_id: int,
+    now: datetime,
+) -> Subscription:
+    return await _extend_subscription(
+        session,
+        user=user,
+        days=days,
+        source=source,
+        last_invoice_id=last_invoice_id,
+        now=now,
+        update_paid_fields=True,
+    )
+
+
+async def _extend_subscription(
+    session: AsyncSession,
+    *,
+    user: User,
+    days: int,
+    source: SubscriptionSource,
+    last_invoice_id: int | None,
+    now: datetime,
+    update_paid_fields: bool,
+) -> Subscription:
     locked_user = await _lock_user_for_update(session, user)
     subscription = await _get_subscription_for_user_for_update(session, locked_user.id)
     current_expires_at = subscription.expires_at if subscription is not None else None
@@ -33,7 +74,8 @@ async def extend_manual_subscription(
             user_id=locked_user.id,
             started_at=now,
             expires_at=new_expires_at,
-            source=SubscriptionSource.manual,
+            source=source,
+            last_invoice_id=last_invoice_id if update_paid_fields else None,
             stars_subscription_active=False,
             created_at=now,
             updated_at=now,
@@ -42,6 +84,9 @@ async def extend_manual_subscription(
     else:
         subscription.expires_at = new_expires_at
         subscription.updated_at = now
+        if update_paid_fields:
+            subscription.source = source
+            subscription.last_invoice_id = last_invoice_id
 
     locked_user.total_active_days = (locked_user.total_active_days or 0) + days
     locked_user.status = status_after_total_active_days(
