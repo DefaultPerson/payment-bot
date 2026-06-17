@@ -107,6 +107,35 @@ async def test_set_user_commands_scopes_commands_to_chat() -> None:
     assert bot.calls[0]["language_code"] == "en"
 
 
+async def test_set_user_commands_maps_internal_ua_to_telegram_uk() -> None:
+    class FakeBot:
+        def __init__(self) -> None:
+            self.calls: list[dict] = []
+
+        async def set_my_commands(self, commands, *, scope=None, language_code=None) -> None:
+            self.calls.append(
+                {
+                    "commands": commands,
+                    "scope": scope,
+                    "language_code": language_code,
+                }
+            )
+
+    bot = FakeBot()
+
+    await menu_module().set_user_commands(
+        bot,
+        JsonI18n(),
+        Settings(),
+        chat_id=42,
+        lang_code="ua",
+        is_admin=False,
+    )
+
+    assert len(bot.calls) == 1
+    assert bot.calls[0]["language_code"] == "uk"
+
+
 def test_main_menu_keyboard_contains_user_and_future_feature_buttons() -> None:
     keyboards = keyboard_module()
 

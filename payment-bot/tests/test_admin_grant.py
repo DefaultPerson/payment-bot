@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import pytest
+from sqlalchemy.exc import SQLAlchemyError
 
 from bot.config import Settings
 from bot.core.i18n import JsonI18n
@@ -354,3 +355,31 @@ async def test_admin_grant_replies_when_service_channel_does_not_deliver(
     assert message.answers == [
         {"text": "Granted access to user 123 for 10 days. Expires at 2026-06-27 12:30 UTC"}
     ]
+
+
+async def test_admin_grant_surfaces_database_errors_as_localized_reply(monkeypatch) -> None:
+    import bot.handlers.admin.grant as grant_module
+
+    async def fail_ensure_minimal_user(*args: Any, **kwargs: Any) -> None:
+        raise SQLAlchemyError("database unavailable")
+
+    monkeypatch.setattr(grant_module, "ensure_minimal_user", fail_ensure_minimal_user)
+
+    session_factory = FakeSessionFactory()
+    service_channel = FakeServiceChannel()
+    message = FakeMessage(
+        text="/grant 123 10",
+        from_user=FakeTelegramUser(id=100, language_code="en"),
+    )
+
+    await grant_module.grant(
+        message,
+        settings=Settings(admin_ids=[100]),
+        i18n=JsonI18n(),
+        session_factory=session_factory,
+        service_channel=service_channel,
+    )
+
+    assert session_factory.session.rollbacks == 1
+    assert service_channel.calls == []
+    assert message.answers == [{"text": "Something went wrong. Please try again later."}]

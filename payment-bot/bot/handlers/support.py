@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
+
 from aiogram import F, Router
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from bot.config import Settings
@@ -21,6 +24,8 @@ from bot.keyboards import (
 )
 from bot.repos.users import ensure_minimal_user, upsert_user_from_telegram
 
+logger = logging.getLogger(__name__)
+
 FUTURE_CALLBACKS = frozenset({CB_BUY, CB_PROMO, CB_REFERRAL, CB_RENEW, CB_ENTER_CHAT})
 
 
@@ -31,7 +36,12 @@ async def support(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     context = message_context(message, settings)
-    lang_code = await _upsert_message_user_language(context, i18n, session_factory)
+    try:
+        lang_code = await _upsert_message_user_language(context, i18n, session_factory)
+    except SQLAlchemyError:
+        logger.exception("failed to resolve support command user")
+        await message.answer(i18n.gettext("error.generic", context.language_code))
+        return
     await message.answer(
         _support_text(i18n, settings, lang_code),
         reply_markup=support_keyboard(i18n, settings, lang_code),
@@ -45,12 +55,17 @@ async def support_callback(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     context = callback_context(callback, settings)
-    lang_code = await _resolve_user_language(
-        context.tg_id,
-        context.language_code,
-        i18n,
-        session_factory,
-    )
+    try:
+        lang_code = await _resolve_user_language(
+            context.tg_id,
+            context.language_code,
+            i18n,
+            session_factory,
+        )
+    except SQLAlchemyError:
+        logger.exception("failed to resolve support callback user")
+        await callback.answer(i18n.gettext("error.generic", context.language_code), show_alert=True)
+        return
     await _edit_text_or_answer(
         callback,
         _support_text(i18n, settings, lang_code),

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 from aiogram import Bot, Router
 from aiogram.filters import CommandStart
 from aiogram.types import Message
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from bot.config import Settings
@@ -13,6 +15,8 @@ from bot.core.i18n import JsonI18n
 from bot.core.menu import set_user_commands
 from bot.keyboards import main_menu_keyboard
 from bot.repos.users import upsert_user_from_telegram
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,16 +81,21 @@ async def start(
     lang_code = i18n.resolve_language(context.language_code)
 
     if context.tg_id is not None:
-        async with session_scope(session_factory) as session:
-            user = await upsert_user_from_telegram(
-                session,
-                tg_id=context.tg_id,
-                username=context.username,
-                first_name=context.first_name,
-                language_code=context.language_code,
-                i18n=i18n,
-            )
-            lang_code = user.lang_code
+        try:
+            async with session_scope(session_factory) as session:
+                user = await upsert_user_from_telegram(
+                    session,
+                    tg_id=context.tg_id,
+                    username=context.username,
+                    first_name=context.first_name,
+                    language_code=context.language_code,
+                    i18n=i18n,
+                )
+                lang_code = user.lang_code
+        except SQLAlchemyError:
+            logger.exception("failed to upsert user on start")
+            await message.answer(i18n.gettext("error.generic", lang_code))
+            return
 
         if context.chat_id is not None:
             await set_user_commands(

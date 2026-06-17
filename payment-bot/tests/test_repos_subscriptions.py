@@ -12,6 +12,7 @@ class FakeAsyncSession:
         self.users: list[User] = []
         self.subscriptions: list[Subscription] = []
         self.flushed = 0
+        self.scalar_queries: list[tuple[type, str, bool]] = []
         self._next_user_id = 1
         self._next_subscription_id = 1
 
@@ -36,6 +37,10 @@ class FakeAsyncSession:
         entity = statement.column_descriptions[0]["entity"]
         field = statement.whereclause.left.key
         value = statement.whereclause.right.value
+        self.scalar_queries.append((entity, field, statement._for_update_arg is not None))
+
+        if entity is User and field == "id":
+            return next((user for user in self.users if user.id == value), None)
 
         if entity is Subscription and field == "user_id":
             return next(
@@ -120,6 +125,10 @@ async def test_extend_manual_subscription_creates_missing_subscription() -> None
     assert user.total_active_days == 10
     assert user.status is UserStatus.bronze
     assert session.flushed == 2
+    assert session.scalar_queries[:2] == [
+        (User, "id", True),
+        (Subscription, "user_id", True),
+    ]
 
 
 async def test_extend_manual_subscription_extends_from_future_expiration() -> None:

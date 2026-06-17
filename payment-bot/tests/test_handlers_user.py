@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.methods import SendMessage
+from sqlalchemy.exc import SQLAlchemyError
 
 from bot.config import Settings
 from bot.core.i18n import JsonI18n
@@ -187,6 +188,31 @@ async def test_profile_command_fetches_subscription_and_answers_formatted_profil
     assert calls[4] == {"name": "keyboard", "args": (i18n, settings, "ua")}
     assert session_factory.session.commits == 1
     assert message.answers == [{"text": "formatted profile", "reply_markup": profile_markup}]
+
+
+async def test_profile_command_surfaces_database_errors_as_localized_reply(monkeypatch) -> None:
+    import bot.handlers.profile as profile_module
+
+    async def fail_ensure_minimal_user(*args: Any, **kwargs: Any) -> None:
+        raise SQLAlchemyError("database unavailable")
+
+    monkeypatch.setattr(profile_module, "ensure_minimal_user", fail_ensure_minimal_user)
+
+    session_factory = FakeSessionFactory()
+    message = FakeMessage(
+        from_user=FakeTelegramUser(id=1001, language_code="en"),
+        chat=FakeChat(id=1001),
+    )
+
+    await profile_module.profile(
+        message,
+        settings=Settings(),
+        i18n=JsonI18n(),
+        session_factory=session_factory,
+    )
+
+    assert session_factory.session.rollbacks == 1
+    assert message.answers == [{"text": "Something went wrong. Please try again later."}]
 
 
 async def test_profile_callback_edits_message_and_acknowledges(monkeypatch) -> None:
@@ -419,6 +445,35 @@ async def test_language_command_preserves_new_user_telegram_locale(monkeypatch) 
         }
     ]
     assert message.answers == [{"text": "Change interface language", "reply_markup": "keyboard"}]
+
+
+async def test_language_command_surfaces_database_errors_as_localized_reply(monkeypatch) -> None:
+    import bot.handlers.language as language_module
+
+    async def fail_upsert_user_from_telegram(*args: Any, **kwargs: Any) -> None:
+        raise SQLAlchemyError("database unavailable")
+
+    monkeypatch.setattr(
+        language_module,
+        "upsert_user_from_telegram",
+        fail_upsert_user_from_telegram,
+        raising=False,
+    )
+
+    session_factory = FakeSessionFactory()
+    message = FakeMessage(
+        from_user=FakeTelegramUser(id=500, language_code="en"),
+        chat=FakeChat(id=500),
+    )
+
+    await language_module.language(
+        message,
+        i18n=JsonI18n(),
+        session_factory=session_factory,
+    )
+
+    assert session_factory.session.rollbacks == 1
+    assert message.answers == [{"text": "Something went wrong. Please try again later."}]
 
 
 async def test_language_menu_callback_answers_language_menu_when_message_is_missing(
@@ -722,6 +777,36 @@ async def test_support_command_preserves_new_user_telegram_locale(monkeypatch) -
             "reply_markup": "keyboard",
         }
     ]
+
+
+async def test_support_command_surfaces_database_errors_as_localized_reply(monkeypatch) -> None:
+    import bot.handlers.support as support_module
+
+    async def fail_upsert_user_from_telegram(*args: Any, **kwargs: Any) -> None:
+        raise SQLAlchemyError("database unavailable")
+
+    monkeypatch.setattr(
+        support_module,
+        "upsert_user_from_telegram",
+        fail_upsert_user_from_telegram,
+        raising=False,
+    )
+
+    session_factory = FakeSessionFactory()
+    message = FakeMessage(
+        from_user=FakeTelegramUser(id=800, language_code="en"),
+        chat=FakeChat(id=800),
+    )
+
+    await support_module.support(
+        message,
+        settings=Settings(bot={"support_username": "HydraSupport"}),
+        i18n=JsonI18n(),
+        session_factory=session_factory,
+    )
+
+    assert session_factory.session.rollbacks == 1
+    assert message.answers == [{"text": "Something went wrong. Please try again later."}]
 
 
 async def test_support_callback_edits_support_text_and_keyboard(monkeypatch) -> None:

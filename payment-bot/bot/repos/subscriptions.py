@@ -23,13 +23,14 @@ async def extend_manual_subscription(
     days: int,
     now: datetime,
 ) -> Subscription:
-    subscription = await get_subscription_for_user(session, user.id)
+    locked_user = await _lock_user_for_update(session, user)
+    subscription = await _get_subscription_for_user_for_update(session, locked_user.id)
     current_expires_at = subscription.expires_at if subscription is not None else None
     new_expires_at = calculate_extension(now=now, current_expires_at=current_expires_at, days=days)
 
     if subscription is None:
         subscription = Subscription(
-            user_id=user.id,
+            user_id=locked_user.id,
             started_at=now,
             expires_at=new_expires_at,
             source=SubscriptionSource.manual,
@@ -42,9 +43,30 @@ async def extend_manual_subscription(
         subscription.expires_at = new_expires_at
         subscription.updated_at = now
 
-    user.total_active_days = (user.total_active_days or 0) + days
-    user.status = minimum_status_after_grant(user.status or UserStatus.basic)
-    user.updated_at = now
+    locked_user.total_active_days = (locked_user.total_active_days or 0) + days
+    locked_user.status = minimum_status_after_grant(locked_user.status or UserStatus.basic)
+    locked_user.updated_at = now
 
     await session.flush()
     return subscription
+
+
+async def _lock_user_for_update(session: AsyncSession, user: User) -> User:
+    if user.id is None:
+        msg = "user must be persisted before extending a subscription"
+        raise ValueError(msg)
+
+    locked_user = await session.scalar(select(User).where(User.id == user.id).with_for_update())
+    if locked_user is None:
+        msg = f"user with id {user.id} was not found"
+        raise LookupError(msg)
+    return locked_user
+
+
+async def _get_subscription_for_user_for_update(
+    session: AsyncSession,
+    user_id: int,
+) -> Subscription | None:
+    return await session.scalar(
+        select(Subscription).where(Subscription.user_id == user_id).with_for_update(),
+    )

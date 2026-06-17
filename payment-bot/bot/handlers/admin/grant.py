@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 
 from aiogram.types import Message
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from bot.config import Settings
@@ -11,6 +13,8 @@ from bot.core.i18n import JsonI18n
 from bot.core.logger import ServiceChannel
 from bot.repos.subscriptions import extend_manual_subscription
 from bot.repos.users import ensure_minimal_user
+
+logger = logging.getLogger(__name__)
 
 
 def parse_grant_args(text: str) -> tuple[int, int]:
@@ -54,15 +58,20 @@ async def grant(
         return
 
     now = datetime.now(UTC)
-    async with session_scope(session_factory) as session:
-        user = await ensure_minimal_user(session, tg_id=target_tg_id, i18n=i18n)
-        subscription = await extend_manual_subscription(
-            session,
-            user=user,
-            days=days,
-            now=now,
-        )
-        expires_at = subscription.expires_at
+    try:
+        async with session_scope(session_factory) as session:
+            user = await ensure_minimal_user(session, tg_id=target_tg_id, i18n=i18n)
+            subscription = await extend_manual_subscription(
+                session,
+                user=user,
+                days=days,
+                now=now,
+            )
+            expires_at = subscription.expires_at
+    except SQLAlchemyError:
+        logger.exception("failed to apply manual grant")
+        await message.answer(i18n.gettext("error.generic", language))
+        return
 
     await _notify_service_channel(
         service_channel,

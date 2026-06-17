@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 
 from aiogram import F, Router
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from bot.config import Settings
@@ -16,6 +18,8 @@ from bot.keyboards import CB_PROFILE, profile_keyboard
 from bot.repos.subscriptions import get_subscription_for_user
 from bot.repos.users import ensure_minimal_user
 from bot.services.profile import build_profile_view, format_profile_text
+
+logger = logging.getLogger(__name__)
 
 CALLBACK_ANSWER_TEXT_LIMIT = 200
 
@@ -31,7 +35,12 @@ async def profile(
         await message.answer(i18n.gettext("error.generic", context.language_code))
         return
 
-    text, lang_code = await _build_profile_response(context.tg_id, i18n, session_factory)
+    try:
+        text, lang_code = await _build_profile_response(context.tg_id, i18n, session_factory)
+    except SQLAlchemyError:
+        logger.exception("failed to build profile response")
+        await message.answer(i18n.gettext("error.generic", context.language_code))
+        return
     await message.answer(text, reply_markup=profile_keyboard(i18n, settings, lang_code))
 
 
@@ -46,7 +55,12 @@ async def profile_callback(
         await callback.answer(i18n.gettext("error.generic", context.language_code), show_alert=True)
         return
 
-    text, lang_code = await _build_profile_response(context.tg_id, i18n, session_factory)
+    try:
+        text, lang_code = await _build_profile_response(context.tg_id, i18n, session_factory)
+    except SQLAlchemyError:
+        logger.exception("failed to build profile callback response")
+        await callback.answer(i18n.gettext("error.generic", context.language_code), show_alert=True)
+        return
     await _edit_text_or_answer(
         callback,
         text,

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
+
 from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from bot.config import Settings
@@ -14,6 +17,8 @@ from bot.handlers.start import build_start_text, callback_context, message_conte
 from bot.keyboards import CB_LANGUAGE, LANG_PREFIX, language_keyboard, main_menu_keyboard
 from bot.repos.users import ensure_minimal_user, update_user_language, upsert_user_from_telegram
 
+logger = logging.getLogger(__name__)
+
 SUPPORTED_LANGUAGE_CALLBACKS = frozenset({"ru", "ua", "en"})
 
 
@@ -23,7 +28,12 @@ async def language(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     context = message_context(message)
-    lang_code = await _upsert_message_user_language(context, i18n, session_factory)
+    try:
+        lang_code = await _upsert_message_user_language(context, i18n, session_factory)
+    except SQLAlchemyError:
+        logger.exception("failed to resolve language command user")
+        await message.answer(i18n.gettext("error.generic", context.language_code))
+        return
     await message.answer(
         i18n.gettext("commands.language", lang_code),
         reply_markup=language_keyboard(i18n, lang_code),
@@ -37,12 +47,17 @@ async def language_menu_callback(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     context = callback_context(callback, settings)
-    lang_code = await _resolve_user_language(
-        context.tg_id,
-        context.language_code,
-        i18n,
-        session_factory,
-    )
+    try:
+        lang_code = await _resolve_user_language(
+            context.tg_id,
+            context.language_code,
+            i18n,
+            session_factory,
+        )
+    except SQLAlchemyError:
+        logger.exception("failed to resolve language menu callback user")
+        await callback.answer(i18n.gettext("error.generic", context.language_code), show_alert=True)
+        return
     await _edit_text_or_answer(
         callback,
         i18n.gettext("commands.language", lang_code),
@@ -66,10 +81,15 @@ async def language_callback(
         )
         return
 
-    async with session_scope(session_factory) as session:
-        await ensure_minimal_user(session, tg_id=context.tg_id, i18n=i18n)
-        user = await update_user_language(session, tg_id=context.tg_id, lang_code=lang_code)
-        persisted_lang_code = user.lang_code
+    try:
+        async with session_scope(session_factory) as session:
+            await ensure_minimal_user(session, tg_id=context.tg_id, i18n=i18n)
+            user = await update_user_language(session, tg_id=context.tg_id, lang_code=lang_code)
+            persisted_lang_code = user.lang_code
+    except SQLAlchemyError:
+        logger.exception("failed to update language")
+        await callback.answer(i18n.gettext("error.generic", context.language_code), show_alert=True)
+        return
 
     if context.chat_id is not None:
         await set_user_commands(

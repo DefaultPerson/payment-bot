@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any, get_type_hints
 
 from aiogram import Bot
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from bot.config import Settings
@@ -278,3 +279,33 @@ async def test_start_without_from_user_or_chat_still_answers_without_db(monkeypa
     )
 
     assert "Добро пожаловать" in message.answers[0]["text"]
+
+
+async def test_start_surfaces_database_errors_as_localized_reply(monkeypatch) -> None:
+    import bot.handlers.start as start_module
+
+    async def fail_upsert(*args: Any, **kwargs: Any) -> None:
+        raise SQLAlchemyError("database unavailable")
+
+    async def fail_set_user_commands(*args: Any, **kwargs: Any) -> None:
+        raise AssertionError("commands must not be set after DB failure")
+
+    monkeypatch.setattr(start_module, "upsert_user_from_telegram", fail_upsert)
+    monkeypatch.setattr(start_module, "set_user_commands", fail_set_user_commands)
+
+    message = FakeMessage(
+        from_user=FakeTelegramUser(id=1001, language_code="en"),
+        chat=FakeChat(id=1001),
+    )
+    session_factory = FakeSessionFactory()
+
+    await start(
+        message,
+        settings=Settings(bot={"support_username": "HydraSupport"}),
+        i18n=JsonI18n(),
+        session_factory=session_factory,
+        bot=object(),
+    )
+
+    assert session_factory.session.rollbacks == 1
+    assert message.answers == [{"text": "Something went wrong. Please try again later."}]
