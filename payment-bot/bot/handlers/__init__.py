@@ -1,9 +1,15 @@
 from aiogram import Router
 
+from bot.handlers.language import create_language_router
+from bot.handlers.profile import create_profile_router
 from bot.handlers.start import create_start_router
+from bot.handlers.support import create_support_router
 
 
 def create_router() -> Router:
     router = Router(name="handlers")
     router.include_router(create_start_router())
+    router.include_router(create_profile_router())
+    router.include_router(create_language_router())
+    router.include_router(create_support_router())
     return router
