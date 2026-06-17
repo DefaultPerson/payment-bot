@@ -54,6 +54,13 @@ async def mark_invoice_provider_created(
     provider_invoice_id: str,
     raw_payload: dict[str, Any],
 ) -> Invoice:
+    if (
+        invoice.provider_invoice_id is not None
+        and invoice.provider_invoice_id != provider_invoice_id
+    ):
+        msg = "provider invoice id already set"
+        raise ValueError(msg)
+
     invoice.provider_invoice_id = provider_invoice_id
     invoice.provider_payload = raw_payload
     await session.flush()

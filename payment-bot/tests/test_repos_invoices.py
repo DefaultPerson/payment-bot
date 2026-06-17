@@ -5,6 +5,8 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
+import pytest
+
 from bot.models import (
     Invoice,
     InvoiceProvider,
@@ -231,6 +233,47 @@ async def test_mark_invoice_provider_created_persists_provider_id_and_payload() 
     assert invoice.provider_payload == {"invoice_id": 123}
     assert session.flushed == 1
     assert session.committed == 0
+
+
+async def test_mark_invoice_provider_created_is_idempotent_for_same_provider_id() -> None:
+    session = FakeAsyncSession()
+    invoice = make_invoice(
+        invoice_id=1,
+        provider_invoice_id="123",
+        expires_at=datetime(2026, 6, 17, 13, 0, tzinfo=UTC),
+    )
+
+    updated = await mark_invoice_provider_created(
+        session,
+        invoice,
+        provider_invoice_id="123",
+        raw_payload={"invoice_id": 123, "retry": True},
+    )
+
+    assert updated is invoice
+    assert invoice.provider_invoice_id == "123"
+    assert invoice.provider_payload == {"invoice_id": 123, "retry": True}
+    assert session.flushed == 1
+
+
+async def test_mark_invoice_provider_created_rejects_provider_id_remap() -> None:
+    session = FakeAsyncSession()
+    invoice = make_invoice(
+        invoice_id=1,
+        provider_invoice_id="123",
+        expires_at=datetime(2026, 6, 17, 13, 0, tzinfo=UTC),
+    )
+
+    with pytest.raises(ValueError, match="provider invoice id already set"):
+        await mark_invoice_provider_created(
+            session,
+            invoice,
+            provider_invoice_id="456",
+            raw_payload={"invoice_id": 456},
+        )
+
+    assert invoice.provider_invoice_id == "123"
+    assert session.flushed == 0
 
 
 async def test_get_active_cryptobot_invoices_excludes_expired_and_missing_provider_ids() -> None:
