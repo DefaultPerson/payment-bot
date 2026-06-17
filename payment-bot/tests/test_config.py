@@ -59,6 +59,23 @@ def test_load_settings_reads_toml(tmp_path: Path) -> None:
     assert settings.http.port == 9090
 
 
+def test_env_file_overrides_toml_values(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        """
+        [http]
+        port = 9090
+        """,
+        encoding="utf-8",
+    )
+    env_file = tmp_path / ".env"
+    env_file.write_text("HTTP__PORT=8081\n", encoding="utf-8")
+
+    settings = load_settings(config_path=config_path, env_file=env_file)
+
+    assert settings.http.port == 8081
+
+
 def test_runtime_validation_rejects_missing_service_channel() -> None:
     settings = Settings(BOT_TOKEN="123456:abcdef", DATABASE_URL="postgresql+asyncpg://u:p@h/db")
 
@@ -71,6 +88,34 @@ def test_runtime_validation_rejects_test_bot_token() -> None:
 
     with pytest.raises(ValueError, match="BOT_TOKEN"):
         settings.validate_runtime()
+
+
+def test_runtime_validation_rejects_placeholder_bot_token() -> None:
+    settings = Settings(BOT_TOKEN="123456:replace-me", service_channel={"chat_id": -100123})
+
+    with pytest.raises(ValueError, match="BOT_TOKEN"):
+        settings.validate_runtime()
+
+
+def test_flat_service_channel_env_aliases_are_supported(tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "\n".join(
+            [
+                "BOT_TOKEN=123456:abcdef",
+                "DATABASE_URL=postgresql+asyncpg://u:p@h/db",
+                "SERVICE_CHANNEL_ID=-100123",
+                "SERVICE_THREAD_ID=7",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    settings = load_settings(config_path=tmp_path / "missing.toml", env_file=env_file)
+
+    assert settings.service_channel.chat_id == -100123
+    assert settings.service_channel.thread_id == 7
+    settings.validate_runtime()
 
 
 def test_invalid_language_fallback_fails() -> None:
