@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from html import escape
 from typing import Protocol
 
 from bot.config import Settings
 from bot.core.i18n import JsonI18n
+
+INVITE_LINK_NAME_LIMIT = 32
 
 
 class SupportsAccessBot(Protocol):
@@ -43,7 +46,7 @@ async def create_protected_chat_invite_links(
     for chat in settings.access.protected_chats:
         invite = await bot.create_chat_invite_link(
             chat_id=chat.chat_id,
-            name=chat.title,
+            name=_invite_name(chat.title),
             expire_date=expire_date,
             member_limit=1,
             creates_join_request=False,
@@ -73,7 +76,9 @@ async def send_access_links(
         return
 
     invites = await create_protected_chat_invite_links(bot, settings, now=now)
-    links = "\n".join(f"{invite.title}: {invite.invite_link}" for invite in invites)
+    links = "\n".join(
+        f"{escape(invite.title)}: {escape(invite.invite_link)}" for invite in invites
+    )
     await bot.send_message(
         chat_id=tg_id,
         text=i18n.gettext("access.links.text", lang_code, links=links),
@@ -84,6 +89,10 @@ def _invite_link(invite: SupportsInviteLink | dict[str, object]) -> str:
     if isinstance(invite, dict):
         return str(invite["invite_link"])
     return str(invite.invite_link)
+
+
+def _invite_name(title: str) -> str:
+    return title[:INVITE_LINK_NAME_LIMIT]
 
 
 def _support_url(settings: Settings) -> str:

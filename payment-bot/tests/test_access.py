@@ -63,6 +63,26 @@ async def test_create_invite_links_preserves_multiple_chat_order() -> None:
     assert [call["chat_id"] for call in bot.invite_calls] == [-1001, -1002]
 
 
+async def test_create_invite_links_truncates_long_invite_names() -> None:
+    bot = FakeBot()
+    settings = Settings(
+        access={
+            "protected_chats": [
+                {
+                    "chat_id": -1001,
+                    "title": "A very long protected chat title beyond telegram limit",
+                }
+            ],
+        },
+    )
+    now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
+
+    await create_protected_chat_invite_links(bot, settings, now=now)
+
+    assert len(bot.invite_calls[0]["name"]) <= 32
+    assert bot.invite_calls[0]["name"] == "A very long protected chat title"[:32]
+
+
 async def test_send_access_links_sends_localized_links() -> None:
     bot = FakeBot()
     settings = make_settings()
@@ -82,6 +102,30 @@ async def test_send_access_links_sends_localized_links() -> None:
     assert message["chat_id"] == 1001
     assert "Signals: https://t.me/+-1001" in message["text"]
     assert "Research: https://t.me/+-1002" in message["text"]
+
+
+async def test_send_access_links_escapes_html_sensitive_titles() -> None:
+    bot = FakeBot()
+    settings = Settings(
+        access={
+            "protected_chats": [
+                {"chat_id": -1001, "title": "Signals <VIP> & Research"},
+            ],
+        },
+    )
+    now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
+
+    await send_access_links(
+        bot,
+        settings,
+        JsonI18n(fallback_language="en"),
+        tg_id=1001,
+        lang_code="en",
+        now=now,
+    )
+
+    assert "Signals &lt;VIP&gt; &amp; Research: https://t.me/+-1001" in bot.messages[0]["text"]
+    assert "Signals <VIP> & Research: https://t.me/+-1001" not in bot.messages[0]["text"]
 
 
 async def test_send_access_links_handles_empty_config() -> None:

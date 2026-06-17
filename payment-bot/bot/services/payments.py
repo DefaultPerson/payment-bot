@@ -4,8 +4,8 @@ import logging
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from decimal import Decimal
-from typing import Protocol
+from decimal import Decimal, InvalidOperation
+from typing import Any, Protocol
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -61,6 +61,16 @@ class PaidInvoiceResult:
     processed: bool
     invoice: Invoice
     subscription: Subscription | None
+    invoice_id: int | None = None
+    provider_invoice_id: str | None = None
+    user_tg_id: int | None = None
+    lang_code: str | None = None
+    tariff_code: str | None = None
+    gross: Decimal | None = None
+    fee: Decimal | None = None
+    net: Decimal | None = None
+    currency: str | None = None
+    subscription_expires_at: datetime | None = None
 
 
 async def create_cryptobot_invoice_for_user(
@@ -118,8 +128,17 @@ async def process_paid_cryptobot_invoice(
         raise LookupError(msg)
 
     if invoice.status is InvoiceStatus.paid:
-        return PaidInvoiceResult(processed=False, invoice=invoice, subscription=None)
+        return _paid_result(
+            processed=False,
+            invoice=invoice,
+            subscription=None,
+            user=None,
+            tariff=None,
+        )
 
+    if provider_invoice.status != "paid":
+        msg = "provider invoice is not paid"
+        raise ValueError(msg)
     if provider_invoice.payload != invoice.payload:
         msg = "provider invoice payload mismatch"
         raise ValueError(msg)
@@ -141,13 +160,23 @@ async def process_paid_cryptobot_invoice(
         last_invoice_id=invoice.id,
         now=now,
     )
+    paid_amounts = _paid_amounts_from_payload(provider_invoice.raw)
     await mark_invoice_paid(
         session,
         invoice,
         paid_at=now,
         raw_payload=provider_invoice.raw,
+        gross=paid_amounts.gross,
+        fee=paid_amounts.fee,
+        net=paid_amounts.net,
     )
-    return PaidInvoiceResult(processed=True, invoice=invoice, subscription=subscription)
+    return _paid_result(
+        processed=True,
+        invoice=invoice,
+        subscription=subscription,
+        user=user,
+        tariff=tariff,
+    )
 
 
 async def _prepare_local_invoice(
@@ -222,6 +251,54 @@ async def _load_paid_invoice_tariff(session: AsyncSession, tariff_id: int) -> Ta
         msg = f"tariff with id {tariff_id} was not found"
         raise LookupError(msg)
     return tariff
+
+
+@dataclass(frozen=True, slots=True)
+class PaidAmounts:
+    gross: Decimal | None = None
+    fee: Decimal | None = None
+    net: Decimal | None = None
+
+
+def _paid_amounts_from_payload(raw_payload: dict[str, Any]) -> PaidAmounts:
+    gross = _decimal_or_none(raw_payload.get("paid_amount"))
+    fee = _decimal_or_none(raw_payload.get("fee_amount"))
+    net = gross - fee if gross is not None and fee is not None else None
+    return PaidAmounts(gross=gross, fee=fee, net=net)
+
+
+def _decimal_or_none(value: object) -> Decimal | None:
+    if value is None:
+        return None
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return None
+
+
+def _paid_result(
+    *,
+    processed: bool,
+    invoice: Invoice,
+    subscription: Subscription | None,
+    user: User | None,
+    tariff: Tariff | None,
+) -> PaidInvoiceResult:
+    return PaidInvoiceResult(
+        processed=processed,
+        invoice=invoice,
+        subscription=subscription,
+        invoice_id=invoice.id,
+        provider_invoice_id=invoice.provider_invoice_id,
+        user_tg_id=user.tg_id if user is not None else None,
+        lang_code=user.lang_code if user is not None else None,
+        tariff_code=tariff.code if tariff is not None else None,
+        gross=invoice.gross,
+        fee=invoice.fee,
+        net=invoice.net,
+        currency=invoice.currency,
+        subscription_expires_at=subscription.expires_at if subscription is not None else None,
+    )
 
 
 async def _cancel_unusable_invoice(

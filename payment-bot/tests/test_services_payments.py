@@ -151,15 +151,16 @@ def make_invoice(
 def make_provider_invoice(
     *,
     invoice_id: str = "provider-1",
+    status: str = "paid",
     payload: str | None = "inv:payload",
     raw: dict[str, Any] | None = None,
 ) -> CryptoBotInvoice:
     return CryptoBotInvoice(
         invoice_id=invoice_id,
-        status="paid",
+        status=status,
         payload=payload,
         pay_url=None,
-        raw=raw or {"invoice_id": invoice_id, "status": "paid", "payload": payload},
+        raw=raw or {"invoice_id": invoice_id, "status": status, "payload": payload},
     )
 
 
@@ -182,8 +183,18 @@ async def test_process_paid_invoice_extends_subscription_once() -> None:
     assert result.processed is True
     assert result.invoice is invoice
     assert result.subscription is session.subscriptions[0]
+    assert result.invoice_id == invoice.id
+    assert result.provider_invoice_id == "provider-1"
+    assert result.user_tg_id == 1001
+    assert result.lang_code == "en"
+    assert result.tariff_code == "1m"
+    assert result.gross == Decimal("73.30")
+    assert result.fee == Decimal("2.20")
+    assert result.net == Decimal("71.10")
+    assert result.currency == "USD"
     subscription = result.subscription
     assert subscription.expires_at == now + timedelta(days=30)
+    assert result.subscription_expires_at == subscription.expires_at
     assert subscription.started_at == now
     assert subscription.source is SubscriptionSource.cryptobot
     assert subscription.last_invoice_id == invoice.id
@@ -196,6 +207,57 @@ async def test_process_paid_invoice_extends_subscription_once() -> None:
     assert invoice.fee == Decimal("2.20")
     assert invoice.net == Decimal("71.10")
     assert session.committed == 0
+
+
+async def test_process_paid_invoice_rejects_non_paid_provider_status() -> None:
+    session = FakeAsyncSession()
+    now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
+    invoice = make_invoice()
+    session.users.append(make_user())
+    session.tariffs.append(make_tariff())
+    session.invoices.append(invoice)
+
+    with pytest.raises(ValueError, match="provider invoice is not paid"):
+        await process_paid_cryptobot_invoice(
+            session,
+            provider_invoice=make_provider_invoice(status="active"),
+            now=now,
+        )
+
+    assert invoice.status is InvoiceStatus.active
+    assert session.subscriptions == []
+    assert session.flushed == 0
+
+
+async def test_process_paid_invoice_uses_provider_paid_amounts_when_available() -> None:
+    session = FakeAsyncSession()
+    now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
+    invoice = make_invoice()
+    session.users.append(make_user())
+    session.tariffs.append(make_tariff())
+    session.invoices.append(invoice)
+
+    result = await process_paid_cryptobot_invoice(
+        session,
+        provider_invoice=make_provider_invoice(
+            raw={
+                "invoice_id": "provider-1",
+                "status": "paid",
+                "payload": "inv:payload",
+                "paid_amount": "74.00",
+                "fee_amount": "2.90",
+            },
+        ),
+        now=now,
+    )
+
+    assert invoice.gross == Decimal("74.00")
+    assert invoice.amount_usd == Decimal("74.00")
+    assert invoice.fee == Decimal("2.90")
+    assert invoice.net == Decimal("71.10")
+    assert result.gross == Decimal("74.00")
+    assert result.fee == Decimal("2.90")
+    assert result.net == Decimal("71.10")
 
 
 async def test_process_paid_invoice_is_idempotent_for_already_paid_invoice() -> None:
