@@ -4,8 +4,8 @@ import asyncio
 import logging
 import signal
 from collections.abc import Callable
-from contextlib import suppress
 from pathlib import Path
+from types import FrameType
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
@@ -38,30 +38,47 @@ class BotIdentityCache:
         if now - self._last_checked < self.ttl_seconds:
             return self._last_ok
 
-        await self.bot.get_me()
         self._last_checked = now
+        try:
+            await self.bot.get_me()
+        except Exception:
+            self._last_ok = False
+            return False
+
         self._last_ok = True
         return True
 
 
 async def start_http_server(app: web.Application, *, host: str, port: int) -> web.AppRunner:
     runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, host=host, port=port)
-    await site.start()
+    try:
+        await runner.setup()
+        site = web.TCPSite(runner, host=host, port=port)
+        await site.start()
+    except Exception:
+        await runner.cleanup()
+        raise
     return runner
 
 
 def install_signal_handlers(stop: Callable[[], None]) -> None:
     loop = asyncio.get_running_loop()
+
+    def fallback_handler(_signum: int, _frame: FrameType | None) -> None:
+        stop()
+
     for sig in (signal.SIGINT, signal.SIGTERM):
-        with suppress(NotImplementedError):
+        try:
             loop.add_signal_handler(sig, stop)
+        except (NotImplementedError, RuntimeError):
+            signal.signal(sig, fallback_handler)
 
 
 async def stop_dispatcher(dispatcher: Dispatcher) -> None:
-    with suppress(RuntimeError):
+    try:
         await dispatcher.stop_polling()
+    except RuntimeError:
+        pass
 
 
 async def main() -> None:
@@ -69,48 +86,53 @@ async def main() -> None:
     settings.validate_runtime()
     setup_json_logging(settings)
 
-    engine = create_engine(settings.database_url)
-    session_factory = create_session_factory(engine)
-    redis_client = create_redis_client(settings.redis_url)
-    bot = Bot(
-        token=settings.bot_token.get_secret_value(),
-        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
-    )
-    dispatcher = Dispatcher()
-    i18n = JsonI18n(
-        locales_dir=Path(__file__).resolve().parent / "locales",
-        fallback_language=settings.bot.fallback_language,
-    )
-    dispatcher["settings"] = settings
-    dispatcher["i18n"] = i18n
-    dispatcher["session_factory"] = session_factory
-    dispatcher["service_channel"] = ServiceChannel(bot, settings)
-    dispatcher.include_router(create_router())
-
     health_state = HealthState()
-    bot_identity = BotIdentityCache(bot, ttl_seconds=settings.http.bot_cache_seconds)
-    http_app = create_http_app(
-        HealthDependencies(
-            check_db=lambda: check_database(engine),
-            check_redis=lambda: check_redis(redis_client),
-            check_bot=bot_identity.check,
-        ),
-        health_state,
-        registry=create_metrics_registry(),
-    )
-    http_runner = await start_http_server(
-        http_app,
-        host=settings.http.host,
-        port=settings.http.port,
-    )
     task_runner = TaskRunner()
-    stop_event = asyncio.Event()
-    install_signal_handlers(stop_event.set)
-
-    polling_task = asyncio.create_task(dispatcher.start_polling(bot), name="aiogram-polling")
-    stop_task = asyncio.create_task(stop_event.wait(), name="shutdown-wait")
+    engine = None
+    redis_client = None
+    bot = None
+    dispatcher = None
+    http_runner = None
 
     try:
+        engine = create_engine(settings.database_url)
+        session_factory = create_session_factory(engine)
+        redis_client = create_redis_client(settings.redis_url)
+        bot = Bot(
+            token=settings.bot_token.get_secret_value(),
+            default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+        )
+        dispatcher = Dispatcher()
+        i18n = JsonI18n(
+            locales_dir=Path(__file__).resolve().parent / "locales",
+            fallback_language=settings.bot.fallback_language,
+        )
+        dispatcher["settings"] = settings
+        dispatcher["i18n"] = i18n
+        dispatcher["session_factory"] = session_factory
+        dispatcher["service_channel"] = ServiceChannel(bot, settings)
+        dispatcher.include_router(create_router())
+
+        bot_identity = BotIdentityCache(bot, ttl_seconds=settings.http.bot_cache_seconds)
+        http_app = create_http_app(
+            HealthDependencies(
+                check_db=lambda: check_database(engine),
+                check_redis=lambda: check_redis(redis_client),
+                check_bot=bot_identity.check,
+            ),
+            health_state,
+            registry=create_metrics_registry(),
+        )
+        http_runner = await start_http_server(
+            http_app,
+            host=settings.http.host,
+            port=settings.http.port,
+        )
+        stop_event = asyncio.Event()
+        install_signal_handlers(stop_event.set)
+
+        polling_task = asyncio.create_task(dispatcher.start_polling(bot), name="aiogram-polling")
+        stop_task = asyncio.create_task(stop_event.wait(), name="shutdown-wait")
         done, pending = await asyncio.wait(
             {polling_task, stop_task},
             return_when=asyncio.FIRST_COMPLETED,
@@ -127,12 +149,17 @@ async def main() -> None:
             polling_task.result()
     finally:
         health_state.shutting_down = True
-        await stop_dispatcher(dispatcher)
+        if dispatcher is not None:
+            await stop_dispatcher(dispatcher)
         await task_runner.stop()
-        await http_runner.cleanup()
-        await bot.session.close()
-        await redis_client.aclose()
-        await engine.dispose()
+        if http_runner is not None:
+            await http_runner.cleanup()
+        if bot is not None:
+            await bot.session.close()
+        if redis_client is not None:
+            await redis_client.aclose()
+        if engine is not None:
+            await engine.dispose()
         logger.info("shutdown complete")
 
 
