@@ -50,3 +50,13 @@ data/
 
 # Local git worktrees
 .worktrees/
+
+# Payment bot runtime files
+payment-bot/.env
+payment-bot/.env.*
+!payment-bot/.env.example
+payment-bot/config.toml
+payment-bot/logs/
+payment-bot/.ruff_cache/
+payment-bot/.pytest_cache/
+payment-bot/.venv/

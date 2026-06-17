@@ -1,0 +1,1 @@
+"""Hydra Monitors payment bot."""
