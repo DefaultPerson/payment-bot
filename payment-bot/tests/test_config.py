@@ -22,6 +22,15 @@ def test_admin_ids_parse_from_csv() -> None:
     assert settings.admin_ids == [10, 20, 30]
 
 
+def test_admin_ids_parse_from_env_file_csv(tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text("ADMIN_IDS=7,8\n", encoding="utf-8")
+
+    settings = load_settings(config_path=tmp_path / "missing.toml", env_file=env_file)
+
+    assert settings.admin_ids == [7, 8]
+
+
 def test_load_settings_reads_toml(tmp_path: Path) -> None:
     config_path = tmp_path / "config.toml"
     config_path.write_text(

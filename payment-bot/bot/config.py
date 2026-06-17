@@ -3,10 +3,10 @@ from __future__ import annotations
 import os
 import tomllib
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class BotConfig(BaseModel):
@@ -53,7 +53,10 @@ class Settings(BaseSettings):
         validation_alias="DATABASE_URL",
     )
     redis_url: str = Field(default="redis://localhost:6379/0", validation_alias="REDIS_URL")
-    admin_ids: list[int] = Field(default_factory=list, validation_alias="ADMIN_IDS")
+    admin_ids: Annotated[list[int], NoDecode] = Field(
+        default_factory=list,
+        validation_alias="ADMIN_IDS",
+    )
     log_level: str = Field(default="INFO", validation_alias="LOG_LEVEL")
 
     bot: BotConfig = Field(default_factory=BotConfig)
