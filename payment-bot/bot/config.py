@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import os
+from decimal import Decimal
 from pathlib import Path
 from typing import Annotated, Any
 
-from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
+from pydantic import AliasChoices, BaseModel, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import (
     BaseSettings,
     NoDecode,
@@ -44,6 +45,67 @@ class LoggingConfig(BaseModel):
     backup_count: int = Field(default=5, ge=1)
 
 
+class CryptoBotConfig(BaseModel):
+    enabled: bool = True
+    token: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices("token", "CRYPTOBOT_TOKEN"),
+    )
+    api_url: str = "https://pay.crypt.bot"
+    accepted_assets: list[str] = Field(default_factory=lambda: ["USDT", "TON", "BTC"])
+    fee_percent: Decimal = Field(default=Decimal("3"), ge=0, lt=100)
+    invoice_expires_seconds: int = Field(default=3600, ge=1, le=2_678_400)
+    poll_interval_seconds: int = Field(default=30, ge=1)
+    poll_batch_size: int = Field(default=50, ge=1, le=100)
+
+
+class TariffConfig(BaseModel):
+    code: str
+    duration_months: int = Field(ge=1)
+    base_price_usd: Decimal = Field(gt=0)
+    duration_discount_percent: Decimal = Field(default=Decimal("0"), ge=0, lt=100)
+    active: bool = True
+
+
+class TariffsConfig(BaseModel):
+    bronze_discount_percent: Decimal = Field(default=Decimal("10"), ge=0, lt=100)
+    silver_monthly_price_usd: Decimal = Field(default=Decimal("65"), gt=0)
+    gold_monthly_price_usd: Decimal = Field(default=Decimal("50"), gt=0)
+    items: list[TariffConfig] = Field(
+        default_factory=lambda: [
+            TariffConfig(code="1m", duration_months=1, base_price_usd=Decimal("79")),
+            TariffConfig(
+                code="3m",
+                duration_months=3,
+                base_price_usd=Decimal("237"),
+                duration_discount_percent=Decimal("10"),
+            ),
+            TariffConfig(
+                code="6m",
+                duration_months=6,
+                base_price_usd=Decimal("474"),
+                duration_discount_percent=Decimal("15"),
+            ),
+            TariffConfig(
+                code="12m",
+                duration_months=12,
+                base_price_usd=Decimal("948"),
+                duration_discount_percent=Decimal("25"),
+            ),
+        ],
+    )
+
+
+class ProtectedChatConfig(BaseModel):
+    chat_id: int
+    title: str
+
+
+class AccessConfig(BaseModel):
+    protected_chats: list[ProtectedChatConfig] = Field(default_factory=list)
+    invite_link_ttl_seconds: int = Field(default=24 * 60 * 60, ge=60)
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -73,11 +135,19 @@ class Settings(BaseSettings):
         validation_alias="SERVICE_THREAD_ID",
         exclude=True,
     )
+    cryptobot_token: SecretStr | None = Field(
+        default=None,
+        validation_alias="CRYPTOBOT_TOKEN",
+        exclude=True,
+    )
 
     bot: BotConfig = Field(default_factory=BotConfig)
     service_channel: ServiceChannelConfig = Field(default_factory=ServiceChannelConfig)
     http: HttpConfig = Field(default_factory=HttpConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
+    cryptobot: CryptoBotConfig = Field(default_factory=CryptoBotConfig)
+    tariffs: TariffsConfig = Field(default_factory=TariffsConfig)
+    access: AccessConfig = Field(default_factory=AccessConfig)
 
     @classmethod
     def settings_customise_sources(
@@ -116,12 +186,22 @@ class Settings(BaseSettings):
         return normalized
 
     @model_validator(mode="after")
-    def apply_flat_service_channel_aliases(self) -> Settings:
+    def apply_flat_aliases_and_validate_cryptobot_token(self) -> Settings:
         if self.service_channel_id is not None:
             self.service_channel.chat_id = self.service_channel_id
         if self.service_thread_id is not None:
             self.service_channel.thread_id = self.service_thread_id
+        if self.cryptobot_token is not None:
+            self.cryptobot.token = self.cryptobot_token
+        self._validate_cryptobot_token()
         return self
+
+    def _validate_cryptobot_token(self) -> None:
+        if self.cryptobot.token is not None:
+            token = self.cryptobot.token.get_secret_value()
+            if not token.strip():
+                msg = "CRYPTOBOT_TOKEN must not be empty when set"
+                raise ValueError(msg)
 
     def validate_runtime(self) -> None:
         bot_token = self.bot_token.get_secret_value()
@@ -137,6 +217,7 @@ class Settings(BaseSettings):
         if not self.database_url.startswith("postgresql+asyncpg://"):
             msg = "DATABASE_URL must use postgresql+asyncpg://"
             raise ValueError(msg)
+        self._validate_cryptobot_token()
 
 
 def load_settings(

@@ -16,3 +16,49 @@ bot_cache_seconds = 30
 file_path = "logs/payment-bot.log"
 max_bytes = 5242880
 backup_count = 5
+
+[cryptobot]
+enabled = true
+api_url = "https://pay.crypt.bot"
+accepted_assets = ["USDT", "TON", "BTC"]
+fee_percent = 3
+invoice_expires_seconds = 3600
+poll_interval_seconds = 30
+poll_batch_size = 50
+
+[tariffs]
+bronze_discount_percent = 10
+silver_monthly_price_usd = 65
+gold_monthly_price_usd = 50
+
+[[tariffs.items]]
+code = "1m"
+duration_months = 1
+base_price_usd = 79
+duration_discount_percent = 0
+active = true
+
+[[tariffs.items]]
+code = "3m"
+duration_months = 3
+base_price_usd = 237
+duration_discount_percent = 10
+active = true
+
+[[tariffs.items]]
+code = "6m"
+duration_months = 6
+base_price_usd = 474
+duration_discount_percent = 15
+active = true
+
+[[tariffs.items]]
+code = "12m"
+duration_months = 12
+base_price_usd = 948
+duration_discount_percent = 25
+active = true
+
+[access]
+invite_link_ttl_seconds = 86400
+protected_chats = []

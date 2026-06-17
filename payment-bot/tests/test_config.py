@@ -1,3 +1,4 @@
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -14,6 +15,82 @@ def test_default_settings_are_safe_for_tests() -> None:
     assert settings.http.host == "127.0.0.1"
     assert settings.http.port == 8080
     assert settings.admin_ids == []
+
+
+def test_phase2_cryptobot_config_defaults_are_safe_for_tests() -> None:
+    settings = Settings()
+
+    assert settings.cryptobot.enabled is True
+    assert settings.cryptobot.token is None
+    assert settings.cryptobot.api_url == "https://pay.crypt.bot"
+    assert settings.cryptobot.accepted_assets == ["USDT", "TON", "BTC"]
+    assert settings.cryptobot.fee_percent == Decimal("3")
+    assert settings.cryptobot.invoice_expires_seconds == 3600
+    assert settings.cryptobot.poll_interval_seconds == 30
+    assert settings.cryptobot.poll_batch_size == 50
+
+
+def test_phase2_default_tariffs_are_available() -> None:
+    settings = Settings()
+
+    assert [tariff.code for tariff in settings.tariffs.items] == [
+        "1m",
+        "3m",
+        "6m",
+        "12m",
+    ]
+    assert [tariff.duration_months for tariff in settings.tariffs.items] == [1, 3, 6, 12]
+    assert [tariff.duration_discount_percent for tariff in settings.tariffs.items] == [
+        Decimal("0"),
+        Decimal("10"),
+        Decimal("15"),
+        Decimal("25"),
+    ]
+    assert all(tariff.base_price_usd > 0 for tariff in settings.tariffs.items)
+    assert settings.tariffs.bronze_discount_percent == Decimal("10")
+    assert settings.tariffs.silver_monthly_price_usd == Decimal("65")
+    assert settings.tariffs.gold_monthly_price_usd == Decimal("50")
+
+
+def test_phase2_access_defaults_are_empty_and_safe() -> None:
+    settings = Settings()
+
+    assert settings.access.protected_chats == []
+    assert settings.access.invite_link_ttl_seconds == 24 * 60 * 60
+
+
+def test_cryptobot_token_env_alias_is_supported(tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text("CRYPTOBOT_TOKEN=crypto-secret\n", encoding="utf-8")
+
+    settings = load_settings(config_path=tmp_path / "missing.toml", env_file=env_file)
+
+    assert settings.cryptobot.token is not None
+    assert settings.cryptobot.token.get_secret_value() == "crypto-secret"
+
+
+def test_cryptobot_token_env_alias_rejects_empty_value(tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text("CRYPTOBOT_TOKEN=\n", encoding="utf-8")
+
+    with pytest.raises(ValidationError, match="CRYPTOBOT_TOKEN"):
+        load_settings(config_path=tmp_path / "missing.toml", env_file=env_file)
+
+
+def test_cryptobot_token_env_alias_rejects_empty_value_when_disabled(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        """
+        [cryptobot]
+        enabled = false
+        """,
+        encoding="utf-8",
+    )
+    env_file = tmp_path / ".env"
+    env_file.write_text("CRYPTOBOT_TOKEN=\n", encoding="utf-8")
+
+    with pytest.raises(ValidationError, match="CRYPTOBOT_TOKEN"):
+        load_settings(config_path=config_path, env_file=env_file)
 
 
 def test_admin_ids_parse_from_csv() -> None:
