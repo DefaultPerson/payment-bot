@@ -261,10 +261,24 @@ class PaidAmounts:
 
 
 def _paid_amounts_from_payload(raw_payload: dict[str, Any]) -> PaidAmounts:
-    gross = _decimal_or_none(raw_payload.get("paid_amount"))
-    fee = _decimal_or_none(raw_payload.get("fee_amount"))
+    if raw_payload.get("currency_type") != "fiat" or raw_payload.get("fiat") != "USD":
+        return PaidAmounts()
+
+    gross = _decimal_or_none(raw_payload.get("amount"))
+    fee = _paid_fee_usd(raw_payload)
     net = gross - fee if gross is not None and fee is not None else None
     return PaidAmounts(gross=gross, fee=fee, net=net)
+
+
+def _paid_fee_usd(raw_payload: dict[str, Any]) -> Decimal | None:
+    fee = _decimal_or_none(raw_payload.get("fee_amount"))
+    paid_usd_rate = _decimal_or_none(raw_payload.get("paid_usd_rate"))
+    if fee is None or paid_usd_rate is None:
+        return None
+
+    if raw_payload.get("fee_asset") != raw_payload.get("paid_asset"):
+        return None
+    return fee * paid_usd_rate
 
 
 def _decimal_or_none(value: object) -> Decimal | None:

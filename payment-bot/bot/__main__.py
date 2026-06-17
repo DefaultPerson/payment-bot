@@ -12,7 +12,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiohttp import web
 
-from bot.config import load_settings
+from bot.config import Settings, load_settings
 from bot.core.db import check_database, create_engine, create_session_factory
 from bot.core.http import HealthDependencies, HealthState, create_http_app
 from bot.core.i18n import JsonI18n
@@ -20,7 +20,9 @@ from bot.core.logger import ServiceChannel, setup_json_logging
 from bot.core.metrics import create_metrics_registry
 from bot.core.redis import check_redis, create_redis_client
 from bot.handlers import create_router
+from bot.jobs.crypto_poller import crypto_poller_loop
 from bot.jobs.runner import TaskRunner
+from bot.payments.cryptobot import CryptoBotClient
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +83,15 @@ async def stop_dispatcher(dispatcher: Dispatcher) -> None:
         pass
 
 
+def build_cryptobot_client(settings: Settings) -> CryptoBotClient | None:
+    if not settings.cryptobot.enabled or settings.cryptobot.token is None:
+        return None
+    return CryptoBotClient(
+        token=settings.cryptobot.token.get_secret_value(),
+        api_url=settings.cryptobot.api_url,
+    )
+
+
 async def main() -> None:
     settings = load_settings()
     settings.validate_runtime()
@@ -92,6 +103,7 @@ async def main() -> None:
     redis_client = None
     bot = None
     dispatcher = None
+    cryptobot_client = None
     http_runner = None
 
     try:
@@ -107,11 +119,26 @@ async def main() -> None:
             locales_dir=Path(__file__).resolve().parent / "locales",
             fallback_language=settings.bot.fallback_language,
         )
+        service_channel = ServiceChannel(bot, settings)
+        cryptobot_client = build_cryptobot_client(settings)
         dispatcher["settings"] = settings
         dispatcher["i18n"] = i18n
         dispatcher["session_factory"] = session_factory
-        dispatcher["service_channel"] = ServiceChannel(bot, settings)
+        dispatcher["service_channel"] = service_channel
+        dispatcher["cryptobot_client"] = cryptobot_client
         dispatcher.include_router(create_router())
+        if cryptobot_client is not None:
+            task_runner.start(
+                "crypto-poller",
+                crypto_poller_loop(
+                    session_factory=session_factory,
+                    settings=settings,
+                    client=cryptobot_client,
+                    bot=bot,
+                    i18n=i18n,
+                    service_channel=service_channel,
+                ),
+            )
 
         bot_identity = BotIdentityCache(bot, ttl_seconds=settings.http.bot_cache_seconds)
         http_app = create_http_app(
@@ -152,6 +179,8 @@ async def main() -> None:
         if dispatcher is not None:
             await stop_dispatcher(dispatcher)
         await task_runner.stop()
+        if cryptobot_client is not None:
+            await cryptobot_client.close()
         if http_runner is not None:
             await http_runner.cleanup()
         if bot is not None:

@@ -4,6 +4,8 @@ import pytest
 from aiohttp import web
 
 from bot import __main__ as main_module
+from bot.config import Settings
+from bot.payments.cryptobot import CryptoBotClient
 
 
 def test_main_module_imports_without_runtime_side_effects() -> None:
@@ -11,6 +13,24 @@ def test_main_module_imports_without_runtime_side_effects() -> None:
 
     assert hasattr(module, "main")
     assert hasattr(module, "run")
+
+
+def test_build_cryptobot_client_respects_enabled_flag_and_token() -> None:
+    assert main_module.build_cryptobot_client(Settings()) is None
+    assert (
+        main_module.build_cryptobot_client(
+            Settings(cryptobot={"enabled": False, "token": "secret"}),
+        )
+        is None
+    )
+
+    client = main_module.build_cryptobot_client(
+        Settings(cryptobot={"token": "secret", "api_url": "https://testnet-pay.crypt.bot"}),
+    )
+
+    assert isinstance(client, CryptoBotClient)
+    assert client.token == "secret"
+    assert client.api_url == "https://testnet-pay.crypt.bot"
 
 
 async def test_bot_identity_cache_throttles_failed_checks() -> None:

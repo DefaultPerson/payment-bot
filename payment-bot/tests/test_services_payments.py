@@ -229,7 +229,7 @@ async def test_process_paid_invoice_rejects_non_paid_provider_status() -> None:
     assert session.flushed == 0
 
 
-async def test_process_paid_invoice_uses_provider_paid_amounts_when_available() -> None:
+async def test_process_paid_invoice_preserves_usd_quote_for_unconverted_crypto_amounts() -> None:
     session = FakeAsyncSession()
     now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
     invoice = make_invoice()
@@ -244,20 +244,61 @@ async def test_process_paid_invoice_uses_provider_paid_amounts_when_available() 
                 "invoice_id": "provider-1",
                 "status": "paid",
                 "payload": "inv:payload",
-                "paid_amount": "74.00",
-                "fee_amount": "2.90",
+                "currency_type": "fiat",
+                "fiat": "USD",
+                "paid_asset": "BTC",
+                "paid_amount": "0.001128",
+                "fee_asset": "BTC",
+                "fee_amount": "0.000033",
             },
         ),
         now=now,
     )
 
-    assert invoice.gross == Decimal("74.00")
-    assert invoice.amount_usd == Decimal("74.00")
-    assert invoice.fee == Decimal("2.90")
+    assert invoice.gross == Decimal("73.30")
+    assert invoice.amount_usd == Decimal("73.30")
+    assert invoice.fee == Decimal("2.20")
     assert invoice.net == Decimal("71.10")
-    assert result.gross == Decimal("74.00")
-    assert result.fee == Decimal("2.90")
+    assert result.gross == Decimal("73.30")
+    assert result.fee == Decimal("2.20")
     assert result.net == Decimal("71.10")
+
+
+async def test_process_paid_invoice_converts_provider_fee_when_usd_rate_is_available() -> None:
+    session = FakeAsyncSession()
+    now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
+    invoice = make_invoice()
+    session.users.append(make_user())
+    session.tariffs.append(make_tariff())
+    session.invoices.append(invoice)
+
+    result = await process_paid_cryptobot_invoice(
+        session,
+        provider_invoice=make_provider_invoice(
+            raw={
+                "invoice_id": "provider-1",
+                "status": "paid",
+                "payload": "inv:payload",
+                "currency_type": "fiat",
+                "fiat": "USD",
+                "amount": "73.30",
+                "paid_asset": "BTC",
+                "paid_amount": "0.001128",
+                "paid_usd_rate": "65000",
+                "fee_asset": "BTC",
+                "fee_amount": "0.000033",
+            },
+        ),
+        now=now,
+    )
+
+    assert invoice.gross == Decimal("73.30")
+    assert invoice.amount_usd == Decimal("73.30")
+    assert invoice.fee == Decimal("2.145000")
+    assert invoice.net == Decimal("71.155000")
+    assert result.gross == Decimal("73.30")
+    assert result.fee == Decimal("2.145000")
+    assert result.net == Decimal("71.155000")
 
 
 async def test_process_paid_invoice_is_idempotent_for_already_paid_invoice() -> None:
