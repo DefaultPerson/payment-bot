@@ -41,9 +41,11 @@ from bot.repos.promos import (
     release_promo_redemption_for_invoice,
     reserve_promo_redemption,
 )
+from bot.repos.referrals import get_referral_by_referee_id
 from bot.repos.subscriptions import extend_paid_subscription
 from bot.repos.tariffs import ensure_configured_tariff
 from bot.services.pricing import TariffQuote, quote_tariff, tariff_duration_days
+from bot.services.referrals import record_referral_earning
 
 logger = logging.getLogger(__name__)
 
@@ -283,6 +285,13 @@ async def process_paid_cryptobot_invoice(
         fee=paid_amounts.fee,
         net=paid_amounts.net,
     )
+    await _record_paid_referral_earning(
+        session,
+        invoice=invoice,
+        user=user,
+        now=now,
+        settings=settings,
+    )
     return _paid_result(
         processed=True,
         invoice=invoice,
@@ -400,6 +409,13 @@ async def process_paid_stars_invoice(
         telegram_payment_charge_id=successful_payment.telegram_payment_charge_id,
         raw_payload=successful_payment.raw,
     )
+    await _record_paid_referral_earning(
+        session,
+        invoice=invoice,
+        user=user,
+        now=now,
+        settings=settings,
+    )
     return _paid_result(
         processed=True,
         invoice=invoice,
@@ -417,6 +433,13 @@ async def _process_paid_stars_recurring_invoice(
     now: datetime,
     settings: Settings | None,
 ) -> PaidInvoiceResult:
+    charged_invoice = await lock_invoice_by_telegram_payment_charge_id(
+        session,
+        successful_payment.telegram_payment_charge_id,
+    )
+    if charged_invoice is not None:
+        return await _existing_paid_stars_result(session, charged_invoice)
+
     _validate_successful_stars_payment(parent_invoice, successful_payment, now=now)
 
     if parent_invoice.tariff_id is None:
@@ -451,6 +474,13 @@ async def _process_paid_stars_recurring_invoice(
         loyalty=settings.loyalty if settings is not None else None,
     )
     subscription.stars_subscription_active = True
+    await _record_paid_referral_earning(
+        session,
+        invoice=renewal_invoice,
+        user=user,
+        now=now,
+        settings=settings,
+    )
     return _paid_result(
         processed=True,
         invoice=renewal_invoice,
@@ -663,6 +693,39 @@ async def _load_subscription_for_user(
 ) -> Subscription | None:
     return await session.scalar(
         select(Subscription).where(Subscription.user_id == user_id).with_for_update(),
+    )
+
+
+async def _record_paid_referral_earning(
+    session: AsyncSession,
+    *,
+    invoice: Invoice,
+    user: User,
+    now: datetime,
+    settings: Settings | None,
+) -> None:
+    if invoice.id is None or user.id is None:
+        return
+    referral = await get_referral_by_referee_id(session, user.id)
+    if referral is None:
+        return
+
+    percent = (
+        referral.custom_percent
+        if referral.custom_percent is not None
+        else settings.referral.percent_default
+        if settings is not None
+        else Decimal("10")
+    )
+    await record_referral_earning(
+        session,
+        referral_id=referral.id or 0,
+        referrer_id=referral.referrer_id,
+        referee_id=referral.referee_id,
+        invoice_id=invoice.id,
+        invoice_net_usd=invoice.net,
+        percent=percent,
+        created_at=now,
     )
 
 

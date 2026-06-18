@@ -5,12 +5,15 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
+from sqlalchemy.dialects import postgresql
 
 from bot.models import (
     Invoice,
     InvoiceProvider,
     InvoiceStatus,
     PromoKind,
+    Referral,
+    ReferralEarning,
     Subscription,
     SubscriptionSource,
     Tariff,
@@ -32,17 +35,25 @@ class FakeAsyncSession:
         self.users: list[User] = []
         self.tariffs: list[Tariff] = []
         self.subscriptions: list[Subscription] = []
+        self.referrals: list[Referral] = []
+        self.earnings: list[ReferralEarning] = []
         self.flushed = 0
         self.committed = 0
+        self.executed_statements: list[Any] = []
         self.scalar_statements: list[Any] = []
         self._next_invoice_id = 100
         self._next_subscription_id = 1
+        self._next_earning_id = 1
 
     def add(self, instance: Any) -> None:
         if isinstance(instance, Invoice) and instance not in self.invoices:
             self.invoices.append(instance)
         if isinstance(instance, Subscription) and instance not in self.subscriptions:
             self.subscriptions.append(instance)
+        if isinstance(instance, Referral) and instance not in self.referrals:
+            self.referrals.append(instance)
+        if isinstance(instance, ReferralEarning) and instance not in self.earnings:
+            self.earnings.append(instance)
 
     async def flush(self) -> None:
         self.flushed += 1
@@ -54,9 +65,36 @@ class FakeAsyncSession:
             if subscription.id is None:
                 subscription.id = self._next_subscription_id
                 self._next_subscription_id += 1
+        for earning in self.earnings:
+            if earning.id is None:
+                earning.id = self._next_earning_id
+                self._next_earning_id += 1
 
     async def commit(self) -> None:
         self.committed += 1
+
+    async def execute(self, statement: Any) -> None:
+        self.executed_statements.append(statement)
+        if getattr(getattr(statement, "table", None), "name", None) != "referral_earnings":
+            msg = f"unsupported fake execute for {statement}"
+            raise AssertionError(msg)
+
+        params = statement.compile(dialect=postgresql.dialect()).params
+        if any(earning.invoice_id == params["invoice_id"] for earning in self.earnings):
+            return
+        self.earnings.append(
+            ReferralEarning(
+                id=self._next_earning_id,
+                referrer_id=params["referrer_id"],
+                referee_id=params["referee_id"],
+                invoice_id=params["invoice_id"],
+                amount_usd=params["amount_usd"],
+                created_at=params["created_at"],
+                paid_out=params["paid_out"],
+                paid_out_at=params["paid_out_at"],
+            )
+        )
+        self._next_earning_id += 1
 
     async def scalar(self, statement: Any) -> Any:
         self.scalar_statements.append(statement)
@@ -116,6 +154,28 @@ class FakeAsyncSession:
                 None,
             )
 
+        if entity is Referral:
+            referee_id = _param_with_prefix_or_none(params, "referee_id")
+            return next(
+                (
+                    referral
+                    for referral in self.referrals
+                    if referee_id is None or referral.referee_id == referee_id
+                ),
+                None,
+            )
+
+        if entity is ReferralEarning:
+            invoice_id = _param_with_prefix_or_none(params, "invoice_id")
+            return next(
+                (
+                    earning
+                    for earning in self.earnings
+                    if invoice_id is None or earning.invoice_id == invoice_id
+                ),
+                None,
+            )
+
         msg = f"unsupported fake scalar query for {entity}"
         raise AssertionError(msg)
 
@@ -139,8 +199,26 @@ def make_user(*, user_id: int = 10, status: UserStatus = UserStatus.basic) -> Us
         status=status,
         total_active_days=0,
         referrer_id=None,
+        referral_percent=None,
         created_at=timestamp,
         updated_at=timestamp,
+    )
+
+
+def make_referral(
+    *,
+    referral_id: int = 1,
+    referrer_id: int = 99,
+    referee_id: int = 10,
+    custom_percent: Decimal | None = None,
+) -> Referral:
+    timestamp = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
+    return Referral(
+        id=referral_id,
+        referrer_id=referrer_id,
+        referee_id=referee_id,
+        joined_at=timestamp,
+        custom_percent=custom_percent,
     )
 
 
@@ -357,6 +435,55 @@ async def test_process_paid_invoice_extends_subscription_once() -> None:
     assert session.committed == 0
 
 
+async def test_process_paid_invoice_records_referral_earning_from_net_amount() -> None:
+    session = FakeAsyncSession()
+    now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
+    user = make_user()
+    referrer = make_user(user_id=99)
+    tariff = make_tariff(duration_months=1)
+    invoice = make_invoice()
+    session.users.extend([user, referrer])
+    session.tariffs.append(tariff)
+    session.invoices.append(invoice)
+    session.referrals.append(make_referral(referrer_id=99, referee_id=user.id))
+
+    result = await process_paid_cryptobot_invoice(
+        session,
+        provider_invoice=make_provider_invoice(raw={"invoice_id": "provider-1"}),
+        now=now,
+    )
+
+    assert result.processed is True
+    assert len(session.earnings) == 1
+    earning = session.earnings[0]
+    assert earning.referrer_id == 99
+    assert earning.referee_id == user.id
+    assert earning.invoice_id == invoice.id
+    assert earning.amount_usd == Decimal("7.11")
+
+
+async def test_process_paid_invoice_uses_custom_referral_percent() -> None:
+    session = FakeAsyncSession()
+    now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
+    user = make_user()
+    referrer = make_user(user_id=99)
+    invoice = make_invoice()
+    session.users.extend([user, referrer])
+    session.tariffs.append(make_tariff(duration_months=1))
+    session.invoices.append(invoice)
+    session.referrals.append(
+        make_referral(referrer_id=99, referee_id=user.id, custom_percent=Decimal("15")),
+    )
+
+    await process_paid_cryptobot_invoice(
+        session,
+        provider_invoice=make_provider_invoice(raw={"invoice_id": "provider-1"}),
+        now=now,
+    )
+
+    assert session.earnings[0].amount_usd == Decimal("10.67")
+
+
 async def test_validate_stars_pre_checkout_accepts_active_matching_invoice() -> None:
     session = FakeAsyncSession()
     now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
@@ -498,6 +625,94 @@ async def test_process_paid_stars_invoice_processes_recurring_charge_once_per_ch
     assert subscription.expires_at == now + timedelta(days=40)
     assert subscription.last_invoice_id == renewal_invoice.id
     assert user.total_active_days == 30
+
+
+async def test_process_paid_stars_recurring_invoice_rechecks_duplicate_charge_after_parent_lock(
+    monkeypatch,
+) -> None:
+    import bot.services.payments as payments_module
+
+    session = FakeAsyncSession()
+    now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
+    user = make_user()
+    tariff = make_tariff(duration_months=1)
+    parent_invoice = make_stars_invoice(status=InvoiceStatus.paid, charge_id="charge-1")
+    renewal_invoice = make_stars_invoice(
+        status=InvoiceStatus.paid,
+        charge_id="charge-2",
+        payload="stars:renew:existing",
+    )
+    renewal_invoice.id = 200
+    subscription = make_subscription(expires_at=now + timedelta(days=10))
+    session.users.append(user)
+    session.tariffs.append(tariff)
+    session.invoices.extend([parent_invoice, renewal_invoice])
+    session.subscriptions.append(subscription)
+    charge_lookups = 0
+
+    async def fake_lock_by_charge_id(*args: Any, **kwargs: Any) -> Invoice | None:
+        nonlocal charge_lookups
+        charge_lookups += 1
+        return renewal_invoice if charge_lookups == 2 else None
+
+    async def fail_create_recurring_invoice(*args: Any, **kwargs: Any) -> Invoice:
+        raise AssertionError("duplicate recurring charge must not create another invoice")
+
+    monkeypatch.setattr(
+        payments_module,
+        "lock_invoice_by_telegram_payment_charge_id",
+        fake_lock_by_charge_id,
+    )
+    monkeypatch.setattr(
+        payments_module,
+        "create_paid_stars_recurring_invoice",
+        fail_create_recurring_invoice,
+    )
+
+    result = await process_paid_stars_invoice(
+        session,
+        successful_payment=make_stars_payment(
+            charge_id="charge-2",
+            is_recurring=True,
+            is_first_recurring=False,
+        ),
+        now=now,
+    )
+
+    assert charge_lookups == 2
+    assert result.processed is False
+    assert result.invoice is renewal_invoice
+    assert subscription.expires_at == now + timedelta(days=10)
+
+
+async def test_process_paid_stars_recurring_invoice_records_referral_earning() -> None:
+    session = FakeAsyncSession()
+    now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
+    user = make_user()
+    referrer = make_user(user_id=99)
+    tariff = make_tariff(duration_months=1)
+    parent_invoice = make_stars_invoice(status=InvoiceStatus.paid, charge_id="charge-1")
+    subscription = make_subscription(expires_at=now + timedelta(days=10))
+    session.users.extend([user, referrer])
+    session.tariffs.append(tariff)
+    session.invoices.append(parent_invoice)
+    session.subscriptions.append(subscription)
+    session.referrals.append(make_referral(referrer_id=99, referee_id=user.id))
+
+    result = await process_paid_stars_invoice(
+        session,
+        successful_payment=make_stars_payment(
+            charge_id="charge-2",
+            is_recurring=True,
+            is_first_recurring=False,
+        ),
+        now=now,
+    )
+
+    assert result.processed is True
+    assert len(session.earnings) == 1
+    assert session.earnings[0].invoice_id == result.invoice_id
+    assert session.earnings[0].amount_usd == Decimal("7.90")
 
 
 async def test_process_paid_stars_invoice_is_idempotent_by_charge_id() -> None:

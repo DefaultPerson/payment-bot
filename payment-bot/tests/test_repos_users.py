@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -14,7 +15,16 @@ from bot.repos.users import (
     resolve_language,
     update_user_language,
     upsert_user_from_telegram,
+    upsert_user_from_telegram_with_created,
 )
+
+
+@dataclass(slots=True)
+class FakeExecuteResult:
+    inserted_id: int | None
+
+    def scalar_one_or_none(self) -> int | None:
+        return self.inserted_id
 
 
 class FakeAsyncSession:
@@ -35,7 +45,7 @@ class FakeAsyncSession:
                 user.id = self._next_user_id
                 self._next_user_id += 1
 
-    async def execute(self, statement: Any) -> None:
+    async def execute(self, statement: Any) -> FakeExecuteResult:
         self.executed_statements.append(statement)
         if getattr(getattr(statement, "table", None), "name", None) != User.__tablename__:
             msg = f"unsupported fake execute for {statement}"
@@ -43,11 +53,13 @@ class FakeAsyncSession:
 
         params = statement.compile(dialect=postgresql.dialect()).params
         if any(user.tg_id == params["tg_id"] for user in self.users):
-            return
+            return FakeExecuteResult(inserted_id=None)
 
+        inserted_id = self._next_user_id
+        self._next_user_id += 1
         self.add(
             User(
-                id=None,
+                id=inserted_id,
                 tg_id=params["tg_id"],
                 username=params["username"],
                 first_name=params["first_name"],
@@ -55,10 +67,12 @@ class FakeAsyncSession:
                 status=params["status"],
                 total_active_days=params["total_active_days"],
                 referrer_id=None,
+                referral_percent=None,
                 created_at=params["created_at"],
                 updated_at=params["updated_at"],
             )
         )
+        return FakeExecuteResult(inserted_id=inserted_id)
 
     async def scalar(self, statement: Any) -> Any:
         entity = statement.column_descriptions[0]["entity"]
@@ -83,6 +97,7 @@ def make_user(*, tg_id: int = 1001, lang_code: str = "ru") -> User:
         status=UserStatus.basic,
         total_active_days=0,
         referrer_id=None,
+        referral_percent=None,
         created_at=timestamp,
         updated_at=timestamp,
     )
@@ -125,6 +140,49 @@ async def test_upsert_user_from_telegram_creates_user_with_normalized_language()
     assert user.created_at.tzinfo is UTC
     assert user.updated_at.tzinfo is UTC
     assert session.flushed == 1
+
+
+async def test_upsert_user_from_telegram_with_created_reports_inserted_user() -> None:
+    session = FakeAsyncSession()
+    i18n = JsonI18n()
+
+    result = await upsert_user_from_telegram_with_created(
+        session,
+        tg_id=12345,
+        username="hydra_user",
+        first_name="Hydra",
+        language_code="uk",
+        i18n=i18n,
+    )
+
+    assert result.created is True
+    assert result.user.id == 1
+    assert result.user.tg_id == 12345
+    assert result.user.lang_code == "ua"
+
+
+async def test_upsert_user_from_telegram_with_created_reports_existing_user_on_conflict() -> None:
+    session = FakeAsyncSession()
+    i18n = JsonI18n()
+    user = make_user(tg_id=12345, lang_code="en")
+    user.username = "old"
+    session.add(user)
+    await session.flush()
+
+    result = await upsert_user_from_telegram_with_created(
+        session,
+        tg_id=12345,
+        username="new",
+        first_name="New",
+        language_code="uk",
+        i18n=i18n,
+    )
+
+    assert result.created is False
+    assert result.user is user
+    assert result.user.username == "new"
+    assert result.user.first_name == "New"
+    assert result.user.lang_code == "en"
 
 
 @pytest.mark.parametrize("language_code", [None, "de-DE"])

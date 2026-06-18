@@ -1,6 +1,7 @@
 [bot]
 supported_languages = ["ru", "ua", "en"]
 fallback_language = "ru"
+username = "HydraPaymentBot"
 support_username = "HMonitorsBot"
 
 [service_channel]
@@ -41,6 +42,11 @@ enabled = true
 app_store_fee_percent = 30
 star_usd_rate = 0.013
 invoice_expires_seconds = 3600
+
+[referral]
+percent_default = 10
+min_withdraw_usd = 10
+allow_referrer_change = false
 
 [[tariffs.items]]
 code = "1m"

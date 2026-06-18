@@ -77,6 +77,7 @@ def make_user(
         status=status,
         total_active_days=total_active_days,
         referrer_id=None,
+        referral_percent=None,
         created_at=timestamp,
         updated_at=timestamp,
     )

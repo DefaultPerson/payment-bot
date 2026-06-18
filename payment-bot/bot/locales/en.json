@@ -15,7 +15,7 @@
   "profile.button.renew": "Renew access",
   "profile.button.enter_chat": "Enter chat",
   "profile.button.support": "Support",
-  "profile.text": "Profile\n\nTelegram ID: {tg_id}\nStatus: {status}\nActive days: {total_active_days}\nSubscription: {subscription_status}\nExpires: {expires_at}\nNext tier: {days_to_next_tier}\nReferrals: {referral_count}\nReferral earned: ${referral_earned_usd}",
+  "profile.text": "Profile\n\nTelegram ID: {tg_id}\nStatus: {status}\nActive days: {total_active_days}\nSubscription: {subscription_status}\nExpires: {expires_at}\nNext tier: {days_to_next_tier}\nReferrals: {referral_count}\nReferral earned: ${referral_earned_usd}\nReferral balance: ${referral_unpaid_earned_usd}",
   "profile.status.basic": "Basic",
   "profile.status.bronze": "Bronze",
   "profile.status.silver": "Silver",
@@ -44,6 +44,9 @@
   "promo.error.tariff_not_allowed": "Promo code is not available for this tariff.",
   "promo.error.already_used": "You have already used this promo code.",
   "promo.error.generic": "Promo code cannot be applied.",
+  "referral.start.applied": "Referral link applied.",
+  "referral.start.rebind_rejected": "Referral is already set and cannot be changed.",
+  "referral.text": "Referral program\n\nInvite link: {invite_link}\nReferrals: {referral_count}\nLifetime earned: ${referral_earned_usd}\nAvailable for withdrawal: ${referral_unpaid_earned_usd} of ${min_withdraw_usd} minimum\n\nWhen the minimum is reached, contact support for a manual payout.",
   "payment.success.text": "Payment received. Your access has been activated.",
   "access.links.text": "Your access links:\n\n{links}",
   "access.empty.text": "Access chats are not configured yet. Please contact support: {support_url}",
@@ -58,5 +61,9 @@
   "error.generic": "Something went wrong. Please try again later.",
   "grant.usage": "Usage: /grant <telegram_id> <days>",
   "grant.forbidden": "Only admins can grant access.",
-  "grant.success": "Granted access to user {user_id} for {days} days. Expires at {expires_at}."
+  "grant.success": "Granted access to user {user_id} for {days} days. Expires at {expires_at}.",
+  "refset.usage": "Usage: /refset <telegram_id> <percent>",
+  "refset.forbidden": "Only admins can set referral percent.",
+  "refset.success": "Referral percent for user {user_id} set to {percent}%. Updated links: {updated}.",
+  "refset.success.future": "Referral percent for user {user_id} set to {percent}%. Future referrals will use it."
 }

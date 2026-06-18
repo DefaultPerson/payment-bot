@@ -15,7 +15,7 @@
   "profile.button.renew": "Продовжити доступ",
   "profile.button.enter_chat": "Увійти в чат",
   "profile.button.support": "Підтримка",
-  "profile.text": "Профіль\n\nTelegram ID: {tg_id}\nСтатус: {status}\nАктивних днів: {total_active_days}\nПідписка: {subscription_status}\nЗакінчується: {expires_at}\nНаступний рівень: {days_to_next_tier}\nРеферали: {referral_count}\nЗароблено на рефералах: ${referral_earned_usd}",
+  "profile.text": "Профіль\n\nTelegram ID: {tg_id}\nСтатус: {status}\nАктивних днів: {total_active_days}\nПідписка: {subscription_status}\nЗакінчується: {expires_at}\nНаступний рівень: {days_to_next_tier}\nРеферали: {referral_count}\nЗароблено на рефералах: ${referral_earned_usd}\nДоступно до виводу: ${referral_unpaid_earned_usd}",
   "profile.status.basic": "Базовий",
   "profile.status.bronze": "Бронзовий",
   "profile.status.silver": "Срібний",
@@ -44,6 +44,9 @@
   "promo.error.tariff_not_allowed": "Промокод недоступний для цього тарифу.",
   "promo.error.already_used": "Ви вже використовували цей промокод.",
   "promo.error.generic": "Промокод не можна застосувати.",
+  "referral.start.applied": "Реферальне посилання застосовано.",
+  "referral.start.rebind_rejected": "Реферер уже заданий і не може бути змінений.",
+  "referral.text": "Реферальна програма\n\nПосилання для запрошення: {invite_link}\nРеферали: {referral_count}\nЗароблено за весь час: ${referral_earned_usd}\nДоступно до виводу: ${referral_unpaid_earned_usd} з ${min_withdraw_usd} мінімуму\n\nКоли накопичиться мінімум, напишіть у підтримку для ручної виплати.",
   "payment.success.text": "Оплату отримано. Доступ активовано.",
   "access.links.text": "Ваші посилання доступу:\n\n{links}",
   "access.empty.text": "Чати доступу ще не налаштовано. Напишіть у підтримку: {support_url}",
@@ -58,5 +61,9 @@
   "error.generic": "Щось пішло не так. Спробуйте пізніше.",
   "grant.usage": "Використання: /grant <telegram_id> <днів>",
   "grant.forbidden": "Лише адміністратори можуть видавати доступ.",
-  "grant.success": "Доступ надано користувачу {user_id} на {days} днів. Закінчується: {expires_at}."
+  "grant.success": "Доступ надано користувачу {user_id} на {days} днів. Закінчується: {expires_at}.",
+  "refset.usage": "Використання: /refset <telegram_id> <відсоток>",
+  "refset.forbidden": "Лише адміністратори можуть змінювати реферальний відсоток.",
+  "refset.success": "Реферальний відсоток для користувача {user_id} встановлено на {percent}%. Оновлено зв'язків: {updated}.",
+  "refset.success.future": "Реферальний відсоток для користувача {user_id} встановлено на {percent}%. Нові реферали використовуватимуть його."
 }
