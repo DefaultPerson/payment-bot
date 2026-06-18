@@ -11,6 +11,7 @@ from bot.config import Settings
 from bot.core.db import session_scope
 from bot.core.i18n import JsonI18n
 from bot.core.logger import ServiceChannel
+from bot.core.metrics import PaymentBotMetrics
 from bot.repos.broadcasts import (
     BroadcastSegment,
     create_broadcast_log,
@@ -49,6 +50,7 @@ async def broadcast(
     session_factory: async_sessionmaker[AsyncSession],
     bot: SupportsBroadcastBot,
     service_channel: ServiceChannel,
+    metrics: PaymentBotMetrics | None = None,
 ) -> None:
     language = _message_language(message, i18n)
     admin_tg_id = _message_user_id(message)
@@ -94,6 +96,8 @@ async def broadcast(
         result = await run_text_broadcast(bot, targets=targets, text=broadcast_text)
     except Exception:
         logger.exception("failed to send admin broadcast")
+        if metrics is not None:
+            metrics.record_broadcast(result="failed", count=len(targets))
         await _finish_failed_broadcast(
             session_factory,
             log_id=log_id,
@@ -101,6 +105,12 @@ async def broadcast(
         )
         await message.answer(i18n.gettext("error.generic", language))
         return
+
+    if metrics is not None:
+        if result.successful:
+            metrics.record_broadcast(result="success", count=result.successful)
+        if result.failed:
+            metrics.record_broadcast(result="failed", count=result.failed)
 
     try:
         await _finish_successful_broadcast(

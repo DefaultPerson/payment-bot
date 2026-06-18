@@ -15,6 +15,7 @@ from bot.config import Settings
 from bot.core.db import session_scope
 from bot.core.i18n import JsonI18n
 from bot.core.logger import ServiceChannel
+from bot.core.metrics import PaymentBotMetrics
 from bot.repos.invoices import lock_invoice_by_id
 from bot.services.access import send_access_links
 from bot.services.payments import (
@@ -57,6 +58,7 @@ async def successful_payment(
     session_factory: async_sessionmaker[AsyncSession],
     bot: Bot,
     service_channel: ServiceChannel,
+    metrics: PaymentBotMetrics | None = None,
 ) -> None:
     payment = _successful_payment_from_message(message)
     try:
@@ -69,12 +71,22 @@ async def successful_payment(
             )
     except SQLAlchemyError:
         logger.exception("failed to process Stars successful payment")
+        if metrics is not None:
+            metrics.record_payment(provider="stars", status="error")
         await message.answer(i18n.gettext("error.generic", _message_language(message, i18n)))
         return
     except Exception:
         logger.exception("rejected Stars successful payment")
+        if metrics is not None:
+            metrics.record_payment(provider="stars", status="error")
         await message.answer(i18n.gettext("error.generic", _message_language(message, i18n)))
         return
+
+    if metrics is not None:
+        if result.processed:
+            metrics.record_payment(provider="stars", status="paid", amount_usd=result.gross)
+        else:
+            metrics.record_payment(provider="stars", status="duplicate")
 
     if _access_delivered(result):
         return

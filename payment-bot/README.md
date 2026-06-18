@@ -2,10 +2,10 @@
 
 Telegram payment bot for Hydra Monitors subscriptions.
 
-This repository state contains Phase 5: the service scaffold, subscription
-domain models, localized menus, admin-only manual grants, and CryptoBot purchase
-flow with polling-based payment finalization, loyalty pricing, promo codes, and
-Telegram Stars payments, plus referral links and referral earnings.
+This repository state contains Phase 8: the service scaffold, subscription
+domain models, localized menus, admin-only manual grants, CryptoBot and optional
+xRocket purchase flows, Telegram Stars payments, referrals, lifecycle
+notifications, and Prometheus/Grafana observability.
 
 ## Local Requirements
 
@@ -138,3 +138,14 @@ docker compose up --build
 
 Health endpoint inside the container listens on `127.0.0.1:8080`.
 No payment webhook endpoints are exposed.
+
+## Observability
+
+The HTTP server exposes Prometheus metrics at `/metrics`. Import the Grafana
+dashboard from `ops/grafana/payment-bot-dashboard.json`.
+
+Run the local metric load smoke without external services:
+
+```bash
+uv run --python 3.13 python -m bot.tools.load_smoke --iterations 1000
+```

@@ -67,6 +67,20 @@ class FakeServiceChannel:
         return True
 
 
+class FakeMetrics:
+    def __init__(self) -> None:
+        self.payments: list[tuple[str, str, Decimal | None]] = []
+
+    def record_payment(
+        self,
+        *,
+        provider: str,
+        status: str,
+        amount_usd: Decimal | None = None,
+    ) -> None:
+        self.payments.append((provider, status, amount_usd))
+
+
 async def test_pre_checkout_query_answers_ok(monkeypatch) -> None:
     import bot.handlers.stars as stars_module
 
@@ -166,6 +180,7 @@ async def test_successful_payment_processes_invoice_and_sends_access(monkeypatch
     service_channel = FakeServiceChannel()
     message = FakeMessage()
     bot = object()
+    metrics = FakeMetrics()
 
     await stars_module.successful_payment(
         message,
@@ -174,6 +189,7 @@ async def test_successful_payment_processes_invoice_and_sends_access(monkeypatch
         session_factory=FakeSessionFactory(),
         bot=bot,
         service_channel=service_channel,
+        metrics=metrics,
     )
 
     assert access_calls[0]["bot"] is bot
@@ -181,6 +197,7 @@ async def test_successful_payment_processes_invoice_and_sends_access(monkeypatch
     assert access_calls[0]["lang_code"] == "en"
     assert service_channel.messages
     assert message.answers == [{"text": "Payment received. Your access has been activated."}]
+    assert metrics.payments == [("stars", "paid", Decimal("81.44"))]
 
 
 async def test_successful_payment_answers_generic_when_processing_rejects(
@@ -196,6 +213,7 @@ async def test_successful_payment_answers_generic_when_processing_rejects(
     monkeypatch.setattr(stars_module, "process_paid_stars_invoice", fake_process)
 
     message = FakeMessage()
+    metrics = FakeMetrics()
 
     await stars_module.successful_payment(
         message,
@@ -204,9 +222,11 @@ async def test_successful_payment_answers_generic_when_processing_rejects(
         session_factory=FakeSessionFactory(),
         bot=object(),
         service_channel=FakeServiceChannel(),
+        metrics=metrics,
     )
 
     assert message.answers == [{"text": "Something went wrong. Please try again later."}]
+    assert metrics.payments == [("stars", "error", None)]
 
 
 async def test_successful_payment_keeps_access_retryable_when_delivery_fails(
@@ -310,6 +330,7 @@ async def test_successful_payment_retries_access_for_idempotent_undelivered_char
 
     message = FakeMessage()
     bot = object()
+    metrics = FakeMetrics()
 
     await stars_module.successful_payment(
         message,
@@ -318,9 +339,11 @@ async def test_successful_payment_retries_access_for_idempotent_undelivered_char
         session_factory=FakeSessionFactory(),
         bot=bot,
         service_channel=FakeServiceChannel(),
+        metrics=metrics,
     )
 
     assert access_calls[0]["bot"] is bot
     assert access_calls[0]["tg_id"] == 700
     assert mark_calls[0]["invoice_id"] == 55
     assert message.answers == [{"text": "Payment received. Your access has been activated."}]
+    assert metrics.payments == [("stars", "duplicate", None)]

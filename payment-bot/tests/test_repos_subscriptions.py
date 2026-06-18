@@ -5,6 +5,7 @@ from typing import Any
 
 from bot.models import Subscription, SubscriptionSource, User, UserStatus
 from bot.repos.subscriptions import (
+    count_active_subscriptions,
     extend_manual_subscription,
     extend_paid_subscription,
     get_subscription_for_user,
@@ -55,6 +56,9 @@ class FakeAsyncSession:
                 ),
                 None,
             )
+
+        if entity is Subscription and field == "expires_at":
+            return sum(1 for subscription in self.subscriptions if subscription.expires_at > value)
 
         msg = f"unsupported fake query for {entity}.{field}"
         raise AssertionError(msg)
@@ -312,3 +316,19 @@ async def test_extend_paid_subscription_extends_from_future_and_preserves_higher
     assert user.total_active_days == 35
     assert user.status is UserStatus.gold
     assert session.flushed == 1
+
+
+async def test_count_active_subscriptions_counts_future_expirations_only() -> None:
+    session = FakeAsyncSession()
+    now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
+    session.subscriptions.extend(
+        [
+            make_subscription(user_id=1, started_at=now, expires_at=now + timedelta(seconds=1)),
+            make_subscription(user_id=2, started_at=now, expires_at=now),
+            make_subscription(user_id=3, started_at=now, expires_at=now - timedelta(seconds=1)),
+        ],
+    )
+
+    count = await count_active_subscriptions(session, now=now)
+
+    assert count == 1

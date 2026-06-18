@@ -422,3 +422,23 @@ async def mark_expired_provider_invoices(
         invoice.status = InvoiceStatus.expired
     await session.flush()
     return len(invoices)
+
+
+async def mark_expired_active_invoices(
+    session: AsyncSession,
+    *,
+    now: datetime,
+) -> int:
+    result = await session.scalars(
+        select(Invoice)
+        .where(
+            Invoice.status == InvoiceStatus.active,
+            Invoice.expires_at <= now,
+        )
+        .order_by(Invoice.id.asc()),
+    )
+    invoices = list(result.all())
+    for invoice in invoices:
+        invoice.status = InvoiceStatus.expired
+    await session.flush()
+    return len(invoices)

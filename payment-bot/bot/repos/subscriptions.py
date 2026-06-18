@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.models import Subscription, SubscriptionSource, User, UserStatus
@@ -18,6 +18,17 @@ async def get_subscription_for_user(
     user_id: int,
 ) -> Subscription | None:
     return await session.scalar(select(Subscription).where(Subscription.user_id == user_id))
+
+
+async def count_active_subscriptions(
+    session: AsyncSession,
+    *,
+    now: datetime,
+) -> int:
+    count = await session.scalar(
+        select(func.count(Subscription.id)).where(Subscription.expires_at > now),
+    )
+    return int(count or 0)
 
 
 async def get_subscriptions_due_3d_notification(

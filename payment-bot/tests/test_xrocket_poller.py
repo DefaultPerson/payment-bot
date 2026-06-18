@@ -85,6 +85,24 @@ class FakeServiceChannel:
         return True
 
 
+class FakeMetrics:
+    def __init__(self) -> None:
+        self.payments: list[tuple[str, str, Decimal | None]] = []
+        self.provider_polls: list[tuple[str, str]] = []
+
+    def record_payment(
+        self,
+        *,
+        provider: str,
+        status: str,
+        amount_usd: Decimal | None = None,
+    ) -> None:
+        self.payments.append((provider, status, amount_usd))
+
+    def record_provider_poll(self, *, provider: str, result: str) -> None:
+        self.provider_polls.append((provider, result))
+
+
 def make_provider_invoice(
     invoice_id: str,
     *,
@@ -142,6 +160,7 @@ async def test_poll_once_fetches_active_invoices_individually_and_processes_paid
     processed: list[str] = []
     session_factory = FakeSessionFactory()
     bot = FakeBot()
+    metrics = FakeMetrics()
     settings = Settings(
         bot={"support_username": "HydraSupport"},
         xrocket={"poll_batch_size": 1},
@@ -210,6 +229,7 @@ async def test_poll_once_fetches_active_invoices_individually_and_processes_paid
         bot=bot,
         i18n=JsonI18n(fallback_language="en"),
         service_channel=service_channel,
+        metrics=metrics,
         now=now,
     )
 
@@ -223,6 +243,8 @@ async def test_poll_once_fetches_active_invoices_individually_and_processes_paid
         (InvoiceProvider.xrocket, "provider-1"),
         (InvoiceProvider.xrocket, "provider-2"),
     ]
+    assert metrics.provider_polls == [("xrocket", "success"), ("xrocket", "success")]
+    assert metrics.payments == [("xrocket", "paid", Decimal("79.00"))]
     assert "commit" in session_factory.events
     assert session_factory.events.index("commit") < session_factory.events.index(
         "service-channel",
@@ -267,6 +289,7 @@ async def test_poll_once_counts_provider_fetch_errors_and_continues(
     monkeypatch.setattr(xrocket_poller, "get_active_provider_invoices_after_id", fake_get_active)
     monkeypatch.setattr(xrocket_poller, "record_provider_event", fake_record_event)
     monkeypatch.setattr(xrocket_poller, "mark_expired_provider_invoices", fake_mark_expired)
+    metrics = FakeMetrics()
 
     result = await xrocket_poller.poll_xrocket_once(
         session_factory=FakeSessionFactory(),
@@ -280,12 +303,14 @@ async def test_poll_once_counts_provider_fetch_errors_and_continues(
         bot=FakeBot(),
         i18n=JsonI18n(fallback_language="en"),
         service_channel=FakeServiceChannel([]),
+        metrics=metrics,
         now=datetime(2026, 6, 18, 12, 0, tzinfo=UTC),
     )
 
     assert result.polled == 1
     assert result.paid == 0
     assert result.errors == 1
+    assert metrics.provider_polls == [("xrocket", "error"), ("xrocket", "success")]
 
 
 @pytest.mark.asyncio

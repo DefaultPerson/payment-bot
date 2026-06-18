@@ -17,10 +17,11 @@ from bot.core.db import check_database, create_engine, create_session_factory
 from bot.core.http import HealthDependencies, HealthState, create_http_app
 from bot.core.i18n import JsonI18n
 from bot.core.logger import ServiceChannel, setup_json_logging
-from bot.core.metrics import create_metrics_registry
+from bot.core.metrics import PaymentBotMetrics, create_metrics
 from bot.core.redis import check_redis, create_redis_client
 from bot.handlers import create_router
 from bot.jobs.crypto_poller import crypto_poller_loop
+from bot.jobs.maintenance import invoice_cleanup_loop, metrics_snapshot_loop
 from bot.jobs.notifications import notification_loop
 from bot.jobs.runner import TaskRunner
 from bot.jobs.xrocket_poller import xrocket_poller_loop
@@ -139,6 +140,7 @@ def start_background_jobs(
     service_channel: ServiceChannel,
     cryptobot_client: CryptoBotClient | None,
     xrocket_client: XRocketClient | None,
+    metrics: PaymentBotMetrics,
 ) -> None:
     task_runner.start(
         "notifications",
@@ -148,6 +150,21 @@ def start_background_jobs(
             bot=bot,
             i18n=i18n,
             service_channel=service_channel,
+        ),
+    )
+    task_runner.start(
+        "invoice-cleanup",
+        invoice_cleanup_loop(
+            session_factory=session_factory,
+            settings=settings,
+        ),
+    )
+    task_runner.start(
+        "metrics-snapshot",
+        metrics_snapshot_loop(
+            session_factory=session_factory,
+            settings=settings,
+            metrics=metrics,
         ),
     )
     if cryptobot_client is not None:
@@ -160,6 +177,7 @@ def start_background_jobs(
                 bot=bot,
                 i18n=i18n,
                 service_channel=service_channel,
+                metrics=metrics,
             ),
         )
     if xrocket_client is not None:
@@ -172,6 +190,7 @@ def start_background_jobs(
                 bot=bot,
                 i18n=i18n,
                 service_channel=service_channel,
+                metrics=metrics,
             ),
         )
 
@@ -190,6 +209,7 @@ async def main() -> None:
     cryptobot_client = None
     xrocket_client = None
     http_runner = None
+    metrics = create_metrics()
 
     try:
         engine = create_engine(settings.database_url)
@@ -213,6 +233,7 @@ async def main() -> None:
         dispatcher["service_channel"] = service_channel
         dispatcher["cryptobot_client"] = cryptobot_client
         dispatcher["xrocket_client"] = xrocket_client
+        dispatcher["metrics"] = metrics
         dispatcher.include_router(create_router())
         start_background_jobs(
             task_runner=task_runner,
@@ -223,6 +244,7 @@ async def main() -> None:
             service_channel=service_channel,
             cryptobot_client=cryptobot_client,
             xrocket_client=xrocket_client,
+            metrics=metrics,
         )
 
         bot_identity = BotIdentityCache(bot, ttl_seconds=settings.http.bot_cache_seconds)
@@ -233,7 +255,7 @@ async def main() -> None:
                 check_bot=bot_identity.check,
             ),
             health_state,
-            registry=create_metrics_registry(),
+            registry=metrics.registry,
         )
         http_runner = await start_http_server(
             http_app,

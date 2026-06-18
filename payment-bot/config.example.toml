@@ -64,6 +64,10 @@ reminder_days_before = 3
 reminder_window_seconds = 3600
 post_expired_delay_hours = 24
 
+[observability]
+invoice_cleanup_interval_seconds = 300
+metrics_snapshot_interval_seconds = 60
+
 [[tariffs.items]]
 code = "1m"
 duration_months = 1

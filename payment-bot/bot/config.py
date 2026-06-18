@@ -172,6 +172,11 @@ class NotificationsConfig(BaseModel):
     post_expired_delay_hours: int = Field(default=24, ge=1)
 
 
+class ObservabilityConfig(BaseModel):
+    invoice_cleanup_interval_seconds: int = Field(default=300, ge=1)
+    metrics_snapshot_interval_seconds: int = Field(default=60, ge=1)
+
+
 class ProtectedChatConfig(BaseModel):
     chat_id: int
     title: str
@@ -235,6 +240,7 @@ class Settings(BaseSettings):
     stars: StarsConfig = Field(default_factory=StarsConfig)
     referral: ReferralConfig = Field(default_factory=ReferralConfig)
     notifications: NotificationsConfig = Field(default_factory=NotificationsConfig)
+    observability: ObservabilityConfig = Field(default_factory=ObservabilityConfig)
     access: AccessConfig = Field(default_factory=AccessConfig)
 
     @classmethod
