@@ -65,6 +65,8 @@ def test_start_background_jobs_registers_notifications_and_optional_payment_poll
     monkeypatch,
 ) -> None:
     started: list[tuple[str, object]] = []
+    poller_kwargs: list[dict[str, object]] = []
+    maintenance_kwargs: list[dict[str, object]] = []
 
     def fake_start(self: TaskRunner, name: str, coroutine: object) -> None:
         started.append((name, coroutine))
@@ -75,16 +77,54 @@ def test_start_background_jobs_registers_notifications_and_optional_payment_poll
     async def fake_notification_loop(**kwargs: object) -> None:
         return None
 
-    async def fake_crypto_loop(**kwargs: object) -> None:
-        return None
+    def fake_crypto_loop(**kwargs: object) -> object:
+        poller_kwargs.append({"name": "crypto", **kwargs})
 
-    async def fake_xrocket_loop(**kwargs: object) -> None:
-        return None
+        async def noop() -> None:
+            return None
+
+        return noop()
+
+    def fake_xrocket_loop(**kwargs: object) -> object:
+        poller_kwargs.append({"name": "xrocket", **kwargs})
+
+        async def noop() -> None:
+            return None
+
+        return noop()
+
+    def fake_invoice_cleanup_loop(**kwargs: object) -> object:
+        maintenance_kwargs.append({"name": "invoice-cleanup", **kwargs})
+
+        async def noop() -> None:
+            return None
+
+        return noop()
+
+    def fake_metrics_snapshot_loop(**kwargs: object) -> object:
+        maintenance_kwargs.append({"name": "metrics-snapshot", **kwargs})
+
+        async def noop() -> None:
+            return None
+
+        return noop()
 
     monkeypatch.setattr(TaskRunner, "start", fake_start)
     monkeypatch.setattr(main_module, "notification_loop", fake_notification_loop, raising=False)
     monkeypatch.setattr(main_module, "crypto_poller_loop", fake_crypto_loop)
     monkeypatch.setattr(main_module, "xrocket_poller_loop", fake_xrocket_loop, raising=False)
+    monkeypatch.setattr(
+        main_module,
+        "invoice_cleanup_loop",
+        fake_invoice_cleanup_loop,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        main_module,
+        "metrics_snapshot_loop",
+        fake_metrics_snapshot_loop,
+        raising=False,
+    )
 
     main_module.start_background_jobs(
         task_runner=TaskRunner(),
@@ -95,11 +135,17 @@ def test_start_background_jobs_registers_notifications_and_optional_payment_poll
         service_channel=object(),
         cryptobot_client=None,
         xrocket_client=None,
+        metrics=object(),
     )
 
-    assert [name for name, _coroutine in started] == ["notifications"]
+    assert [name for name, _coroutine in started] == [
+        "notifications",
+        "invoice-cleanup",
+        "metrics-snapshot",
+    ]
 
     started.clear()
+    maintenance_kwargs.clear()
     main_module.start_background_jobs(
         task_runner=TaskRunner(),
         session_factory=object(),
@@ -109,26 +155,53 @@ def test_start_background_jobs_registers_notifications_and_optional_payment_poll
         service_channel=object(),
         cryptobot_client=object(),
         xrocket_client=None,
+        metrics=object(),
     )
 
-    assert [name for name, _coroutine in started] == ["notifications", "crypto-poller"]
+    assert [name for name, _coroutine in started] == [
+        "notifications",
+        "invoice-cleanup",
+        "metrics-snapshot",
+        "crypto-poller",
+    ]
 
     started.clear()
+    maintenance_kwargs.clear()
+    metrics = object()
+    session_factory = object()
+    settings = Settings()
     main_module.start_background_jobs(
         task_runner=TaskRunner(),
-        session_factory=object(),
-        settings=Settings(),
+        session_factory=session_factory,
+        settings=settings,
         bot=object(),
         i18n=object(),
         service_channel=object(),
         cryptobot_client=object(),
         xrocket_client=object(),
+        metrics=metrics,
     )
 
     assert [name for name, _coroutine in started] == [
         "notifications",
+        "invoice-cleanup",
+        "metrics-snapshot",
         "crypto-poller",
         "xrocket-poller",
+    ]
+    assert [kwargs["metrics"] for kwargs in poller_kwargs[-2:]] == [metrics, metrics]
+    assert maintenance_kwargs[-2:] == [
+        {
+            "name": "invoice-cleanup",
+            "session_factory": session_factory,
+            "settings": settings,
+        },
+        {
+            "name": "metrics-snapshot",
+            "session_factory": session_factory,
+            "settings": settings,
+            "metrics": metrics,
+        },
     ]
 
 

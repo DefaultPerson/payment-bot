@@ -106,6 +106,24 @@ class FailingServiceChannel:
         return False
 
 
+class FakeMetrics:
+    def __init__(self) -> None:
+        self.payments: list[tuple[str, str, Decimal | None]] = []
+        self.provider_polls: list[tuple[str, str]] = []
+
+    def record_payment(
+        self,
+        *,
+        provider: str,
+        status: str,
+        amount_usd: Decimal | None = None,
+    ) -> None:
+        self.payments.append((provider, status, amount_usd))
+
+    def record_provider_poll(self, *, provider: str, result: str) -> None:
+        self.provider_polls.append((provider, result))
+
+
 def make_provider_invoice(
     invoice_id: str,
     *,
@@ -154,6 +172,7 @@ async def test_poll_once_fetches_active_invoices_in_batches_and_processes_paid(
     processed: list[str] = []
     session_factory = FakeSessionFactory()
     bot = FakeBot()
+    metrics = FakeMetrics()
     settings = Settings(
         bot={"support_username": "HydraSupport"},
         cryptobot={"poll_batch_size": 1},
@@ -214,6 +233,7 @@ async def test_poll_once_fetches_active_invoices_in_batches_and_processes_paid(
         bot=bot,
         i18n=JsonI18n(fallback_language="en"),
         service_channel=FakeServiceChannel(session_factory.events),
+        metrics=metrics,
         now=now,
     )
 
@@ -223,6 +243,8 @@ async def test_poll_once_fetches_active_invoices_in_batches_and_processes_paid(
     assert result.errors == 0
     assert processed == ["provider-2"]
     assert provider_events == ["provider-1", "provider-2"]
+    assert metrics.provider_polls == [("cryptobot", "success"), ("cryptobot", "success")]
+    assert metrics.payments == [("cryptobot", "paid", Decimal("73.30"))]
     assert "commit" in session_factory.events
     assert session_factory.events.index("commit") < session_factory.events.index(
         "service-channel",
@@ -301,6 +323,7 @@ async def test_poll_once_counts_provider_batch_errors(monkeypatch: pytest.Monkey
 
     monkeypatch.setattr(crypto_poller, "get_active_cryptobot_invoices_after_id", fake_get_active)
     monkeypatch.setattr(crypto_poller, "mark_expired_cryptobot_invoices", fake_mark_expired)
+    metrics = FakeMetrics()
 
     result = await crypto_poller.poll_cryptobot_once(
         session_factory=FakeSessionFactory(),
@@ -309,12 +332,64 @@ async def test_poll_once_counts_provider_batch_errors(monkeypatch: pytest.Monkey
         bot=FakeBot(),
         i18n=JsonI18n(fallback_language="en"),
         service_channel=FakeServiceChannel([]),
+        metrics=metrics,
         now=datetime(2026, 6, 17, 12, 0, tzinfo=UTC),
     )
 
     assert result.polled == 0
     assert result.paid == 0
     assert result.errors == 1
+    assert metrics.provider_polls == [("cryptobot", "error")]
+
+
+@pytest.mark.asyncio
+async def test_poll_once_records_payment_processing_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from bot.jobs import crypto_poller
+
+    async def fake_get_active(
+        session: FakeSession,
+        *,
+        now: datetime,
+        limit: int,
+        after_id: int | None = None,
+    ) -> list[InvoiceRef]:
+        del session, now, limit, after_id
+        return [InvoiceRef(id=1, provider_invoice_id="provider-1")]
+
+    async def fake_record_event(session: FakeSession, **kwargs: Any) -> None:
+        del session, kwargs
+
+    async def fail_process_paid(*args: Any, **kwargs: Any) -> PaidInvoiceResult:
+        raise RuntimeError("database unavailable")
+
+    async def fake_mark_expired(session: FakeSession, *, now: datetime) -> int:
+        del session, now
+        return 0
+
+    monkeypatch.setattr(crypto_poller, "get_active_cryptobot_invoices_after_id", fake_get_active)
+    monkeypatch.setattr(crypto_poller, "record_provider_event", fake_record_event)
+    monkeypatch.setattr(crypto_poller, "process_paid_cryptobot_invoice", fail_process_paid)
+    monkeypatch.setattr(crypto_poller, "mark_expired_cryptobot_invoices", fake_mark_expired)
+    metrics = FakeMetrics()
+
+    result = await crypto_poller.poll_cryptobot_once(
+        session_factory=FakeSessionFactory(),
+        settings=Settings(cryptobot={"poll_batch_size": 10}),
+        client=FakeCryptoBotClient(
+            {"provider-1": make_provider_invoice("provider-1", status="paid")},
+        ),
+        bot=FakeBot(),
+        i18n=JsonI18n(fallback_language="en"),
+        service_channel=FakeServiceChannel([]),
+        metrics=metrics,
+        now=datetime(2026, 6, 17, 12, 0, tzinfo=UTC),
+    )
+
+    assert result.paid == 0
+    assert result.errors == 1
+    assert metrics.payments == [("cryptobot", "error", None)]
 
 
 @pytest.mark.asyncio

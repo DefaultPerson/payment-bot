@@ -15,6 +15,7 @@ from bot.config import Settings
 from bot.core.db import session_scope
 from bot.core.i18n import JsonI18n
 from bot.core.logger import ServiceChannel
+from bot.core.metrics import PaymentBotMetrics
 from bot.models import Invoice, InvoiceProvider
 from bot.payments.xrocket import XRocketInvoice
 from bot.repos.invoices import (
@@ -81,6 +82,7 @@ async def poll_xrocket_once(
     bot: SupportsAccessDelivery,
     i18n: JsonI18n,
     service_channel: ServiceChannel,
+    metrics: PaymentBotMetrics | None = None,
     now: datetime | None = None,
     retry_access: Sequence[PaidInvoiceResult] = (),
 ) -> XRocketPollResult:
@@ -103,6 +105,11 @@ async def poll_xrocket_once(
     errors = retry_errors
     for invoice_ref in active_refs:
         provider_result = await _fetch_provider_invoice(client, invoice_ref)
+        if metrics is not None:
+            metrics.record_provider_poll(
+                provider="xrocket",
+                result="error" if provider_result.errors else "success",
+            )
         errors += provider_result.errors
         provider_invoice = provider_result.invoice
         if provider_invoice is None:
@@ -116,6 +123,8 @@ async def poll_xrocket_once(
         )
         if not event_recorded:
             errors += 1
+            if metrics is not None and provider_invoice.status == "paid":
+                metrics.record_payment(provider="xrocket", status="error")
             continue
 
         if provider_invoice.status != "paid":
@@ -129,11 +138,21 @@ async def poll_xrocket_once(
         )
         if paid_result is None:
             errors += 1
+            if metrics is not None:
+                metrics.record_payment(provider="xrocket", status="error")
             continue
         if not paid_result.processed:
+            if metrics is not None:
+                metrics.record_payment(provider="xrocket", status="duplicate")
             continue
 
         paid += 1
+        if metrics is not None:
+            metrics.record_payment(
+                provider="xrocket",
+                status="paid",
+                amount_usd=paid_result.gross,
+            )
         side_effects = await _deliver_paid_side_effects(
             paid_result,
             bot=bot,
@@ -164,6 +183,7 @@ async def xrocket_poller_loop(
     bot: SupportsAccessDelivery,
     i18n: JsonI18n,
     service_channel: ServiceChannel,
+    metrics: PaymentBotMetrics | None = None,
     sleep: Callable[[int], Awaitable[None]] = asyncio.sleep,
     max_iterations: int | None = None,
 ) -> None:
@@ -178,6 +198,7 @@ async def xrocket_poller_loop(
                 bot=bot,
                 i18n=i18n,
                 service_channel=service_channel,
+                metrics=metrics,
                 retry_access=retry_access,
             )
             retry_access = result.undelivered_access

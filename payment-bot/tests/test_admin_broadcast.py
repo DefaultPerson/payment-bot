@@ -48,6 +48,14 @@ class FakeServiceChannel:
         return True
 
 
+class FakeMetrics:
+    def __init__(self) -> None:
+        self.broadcasts: list[tuple[str, int]] = []
+
+    def record_broadcast(self, *, result: str, count: int = 1) -> None:
+        self.broadcasts.append((result, count))
+
+
 class FakeScalarResult:
     def __init__(self, items: list[Any]) -> None:
         self.items = items
@@ -249,6 +257,7 @@ async def test_broadcast_sends_segment_logs_and_notifies_service_channel(monkeyp
         from_user=FakeTelegramUser(id=500, language_code="en"),
     )
     service_channel = FakeServiceChannel()
+    metrics = FakeMetrics()
 
     await broadcast_module.broadcast(
         message,
@@ -257,6 +266,7 @@ async def test_broadcast_sends_segment_logs_and_notifies_service_channel(monkeyp
         session_factory=FakeSessionFactory(session),
         bot=FakeBot(),
         service_channel=service_channel,
+        metrics=metrics,
     )
 
     assert message.answers == [
@@ -273,6 +283,41 @@ async def test_broadcast_sends_segment_logs_and_notifies_service_channel(monkeyp
     assert "broadcast finished" in service_channel.messages[0]
     assert session.commits == 2
     assert session.events == ["commit", "send", "commit"]
+    assert metrics.broadcasts == [("success", 1), ("failed", 1)]
+
+
+async def test_broadcast_records_failed_metric_when_sender_fails(monkeypatch) -> None:
+    import bot.handlers.admin.broadcast as broadcast_module
+
+    async def fake_ensure_minimal_user(*args: Any, **kwargs: Any) -> FakeAdminRecord:
+        return FakeAdminRecord(id=50, tg_id=500)
+
+    async def fail_run_text_broadcast(*args: Any, **kwargs: Any) -> BroadcastResult:
+        raise RuntimeError("telegram unavailable")
+
+    monkeypatch.setattr(broadcast_module, "ensure_minimal_user", fake_ensure_minimal_user)
+    monkeypatch.setattr(broadcast_module, "run_text_broadcast", fail_run_text_broadcast)
+
+    session = FakeSession()
+    session.users.extend([make_user(user_id=1, tg_id=1001), make_user(user_id=2, tg_id=1002)])
+    message = FakeMessage(
+        text="/broadcast all Plain text",
+        from_user=FakeTelegramUser(id=500, language_code="en"),
+    )
+    metrics = FakeMetrics()
+
+    await broadcast_module.broadcast(
+        message,
+        settings=Settings(admin_ids=[500]),
+        i18n=JsonI18n(),
+        session_factory=FakeSessionFactory(session),
+        bot=FakeBot(),
+        service_channel=FakeServiceChannel(),
+        metrics=metrics,
+    )
+
+    assert message.answers == [{"text": "Something went wrong. Please try again later."}]
+    assert metrics.broadcasts == [("failed", 2)]
 
 
 async def test_broadcast_commits_started_log_before_sending(monkeypatch) -> None:

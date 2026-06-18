@@ -103,6 +103,20 @@ def test_phase7_xrocket_config_defaults_are_disabled_and_safe() -> None:
     assert settings.xrocket.poll_batch_size == 50
 
 
+def test_phase8_observability_config_defaults_are_safe_for_tests() -> None:
+    settings = Settings()
+
+    assert settings.observability.invoice_cleanup_interval_seconds == 300
+    assert settings.observability.metrics_snapshot_interval_seconds == 60
+
+
+def test_phase8_observability_config_rejects_invalid_periods() -> None:
+    with pytest.raises(ValidationError):
+        Settings(observability={"invoice_cleanup_interval_seconds": 0})
+    with pytest.raises(ValidationError):
+        Settings(observability={"metrics_snapshot_interval_seconds": 0})
+
+
 def test_phase7_xrocket_config_rejects_invalid_periods_and_fee() -> None:
     with pytest.raises(ValidationError):
         Settings(xrocket={"fee_percent": Decimal("100")})

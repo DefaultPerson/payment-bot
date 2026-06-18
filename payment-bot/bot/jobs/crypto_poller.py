@@ -15,6 +15,7 @@ from bot.config import Settings
 from bot.core.db import session_scope
 from bot.core.i18n import JsonI18n
 from bot.core.logger import ServiceChannel
+from bot.core.metrics import PaymentBotMetrics
 from bot.models import Invoice, InvoiceProvider
 from bot.payments.cryptobot import CryptoBotInvoice
 from bot.repos.invoices import (
@@ -85,6 +86,7 @@ async def poll_cryptobot_once(
     bot: SupportsAccessDelivery,
     i18n: JsonI18n,
     service_channel: ServiceChannel,
+    metrics: PaymentBotMetrics | None = None,
     now: datetime | None = None,
     retry_access: Sequence[PaidInvoiceResult] = (),
 ) -> CryptoPollResult:
@@ -108,6 +110,11 @@ async def poll_cryptobot_once(
     errors = retry_errors
     for batch in _chunks(active_refs, batch_size):
         provider_batch = await _fetch_provider_batch(client, batch)
+        if metrics is not None:
+            metrics.record_provider_poll(
+                provider="cryptobot",
+                result="error" if provider_batch.errors else "success",
+            )
         errors += provider_batch.errors
         provider_invoices = provider_batch.invoices
         polled += len(provider_invoices)
@@ -119,6 +126,8 @@ async def poll_cryptobot_once(
             )
             if not event_recorded:
                 errors += 1
+                if metrics is not None and provider_invoice.status == "paid":
+                    metrics.record_payment(provider="cryptobot", status="error")
                 continue
 
             if provider_invoice.status != "paid":
@@ -132,11 +141,21 @@ async def poll_cryptobot_once(
             )
             if paid_result is None:
                 errors += 1
+                if metrics is not None:
+                    metrics.record_payment(provider="cryptobot", status="error")
                 continue
             if not paid_result.processed:
+                if metrics is not None:
+                    metrics.record_payment(provider="cryptobot", status="duplicate")
                 continue
 
             paid += 1
+            if metrics is not None:
+                metrics.record_payment(
+                    provider="cryptobot",
+                    status="paid",
+                    amount_usd=paid_result.gross,
+                )
             side_effects = await _deliver_paid_side_effects(
                 paid_result,
                 bot=bot,
@@ -167,6 +186,7 @@ async def crypto_poller_loop(
     bot: SupportsAccessDelivery,
     i18n: JsonI18n,
     service_channel: ServiceChannel,
+    metrics: PaymentBotMetrics | None = None,
     sleep: Callable[[int], Awaitable[None]] = asyncio.sleep,
     max_iterations: int | None = None,
 ) -> None:
@@ -181,6 +201,7 @@ async def crypto_poller_loop(
                 bot=bot,
                 i18n=i18n,
                 service_channel=service_channel,
+                metrics=metrics,
                 retry_access=retry_access,
             )
             retry_access = result.undelivered_access

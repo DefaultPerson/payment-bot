@@ -25,6 +25,7 @@ from bot.repos.invoices import (
     lock_invoice_by_payload,
     lock_invoice_by_provider_id,
     lock_invoice_by_telegram_payment_charge_id,
+    mark_expired_active_invoices,
     mark_expired_cryptobot_invoices,
     mark_invoice_paid,
     mark_invoice_provider_created,
@@ -199,12 +200,12 @@ class FakeAsyncSession:
 
         provider = next(
             (value for key, value in params.items() if key.startswith("provider")),
-            InvoiceProvider.cryptobot,
+            None,
         )
         invoices = [
             invoice
             for invoice in self.invoices
-            if _same_provider(invoice.provider, provider)
+            if (provider is None or _same_provider(invoice.provider, provider))
             and invoice.status is InvoiceStatus.active
             and invoice.expires_at <= now
         ]
@@ -818,6 +819,59 @@ async def test_mark_expired_provider_invoices_marks_only_xrocket_provider() -> N
     assert xrocket_expired.status is InvoiceStatus.expired
     assert cryptobot_expired.status is InvoiceStatus.active
     assert xrocket_future.status is InvoiceStatus.active
+    assert session.flushed == 1
+
+
+async def test_mark_expired_active_invoices_marks_all_active_expired_providers() -> None:
+    session = FakeAsyncSession()
+    now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
+    cryptobot_expired = make_invoice(
+        invoice_id=1,
+        provider=InvoiceProvider.cryptobot,
+        provider_invoice_id="crypto-1",
+        expires_at=now - timedelta(seconds=1),
+    )
+    xrocket_expired = make_invoice(
+        invoice_id=2,
+        provider=InvoiceProvider.xrocket,
+        provider_invoice_id="xrocket-1",
+        expires_at=now,
+    )
+    stars_without_provider_id = make_invoice(
+        invoice_id=3,
+        provider=InvoiceProvider.stars,
+        provider_invoice_id=None,
+        expires_at=now - timedelta(seconds=1),
+    )
+    future = make_invoice(
+        invoice_id=4,
+        provider=InvoiceProvider.xrocket,
+        provider_invoice_id="xrocket-2",
+        expires_at=now + timedelta(seconds=1),
+    )
+    already_paid = make_invoice(
+        invoice_id=5,
+        status=InvoiceStatus.paid,
+        expires_at=now - timedelta(seconds=1),
+    )
+    session.invoices.extend(
+        [
+            cryptobot_expired,
+            xrocket_expired,
+            stars_without_provider_id,
+            future,
+            already_paid,
+        ],
+    )
+
+    count = await mark_expired_active_invoices(session, now=now)
+
+    assert count == 3
+    assert cryptobot_expired.status is InvoiceStatus.expired
+    assert xrocket_expired.status is InvoiceStatus.expired
+    assert stars_without_provider_id.status is InvoiceStatus.expired
+    assert future.status is InvoiceStatus.active
+    assert already_paid.status is InvoiceStatus.paid
     assert session.flushed == 1
 
 
