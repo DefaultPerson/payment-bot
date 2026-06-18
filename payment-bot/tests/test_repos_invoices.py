@@ -11,6 +11,7 @@ from bot.models import (
     Invoice,
     InvoiceProvider,
     InvoiceStatus,
+    PromoKind,
     ProviderEvent,
     User,
     UserStatus,
@@ -33,6 +34,12 @@ class Quote:
     gross_usd: Decimal = Decimal("73.30")
     fee_usd: Decimal = Decimal("2.20")
     net_usd: Decimal = Decimal("71.10")
+    promo_id: int | None = None
+    promo_code: str | None = None
+    promo_kind: PromoKind | None = None
+    promo_value: Decimal | None = None
+    promo_discount_usd: Decimal = Decimal("0.00")
+    promo_extra_days: int = 0
 
 
 class FakeScalarResult:
@@ -230,6 +237,35 @@ async def test_create_pending_invoice_sets_active_status_payload_and_amounts() -
     assert invoice in session.invoices
     assert session.flushed == 1
     assert session.committed == 0
+
+
+async def test_create_pending_invoice_persists_promo_snapshot_from_quote() -> None:
+    session = FakeAsyncSession()
+    user = make_user(user_id=44)
+    expires_at = datetime(2026, 6, 17, 13, 0, tzinfo=UTC)
+    quote = Quote(
+        promo_id=5,
+        promo_code="SAVE20",
+        promo_kind=PromoKind.percent,
+        promo_value=Decimal("20"),
+        promo_discount_usd=Decimal("14.22"),
+    )
+
+    invoice = await create_pending_cryptobot_invoice(
+        session,
+        user=user,
+        tariff_id=55,
+        quote=quote,
+        expires_at=expires_at,
+        payload="inv:abc",
+    )
+
+    assert invoice.promo_id == 5
+    assert invoice.promo_code == "SAVE20"
+    assert invoice.promo_kind is PromoKind.percent
+    assert invoice.promo_value == Decimal("20")
+    assert invoice.promo_discount_usd == Decimal("14.22")
+    assert invoice.promo_extra_days == 0
 
 
 async def test_mark_invoice_provider_created_persists_provider_id_and_payload() -> None:

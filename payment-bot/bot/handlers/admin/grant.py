@@ -66,6 +66,7 @@ async def grant(
                 user=user,
                 days=days,
                 now=now,
+                loyalty=settings.loyalty,
             )
             expires_at = subscription.expires_at
     except SQLAlchemyError:

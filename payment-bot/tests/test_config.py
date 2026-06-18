@@ -47,9 +47,27 @@ def test_phase2_default_tariffs_are_available() -> None:
         Decimal("25"),
     ]
     assert all(tariff.base_price_usd > 0 for tariff in settings.tariffs.items)
-    assert settings.tariffs.bronze_discount_percent == Decimal("10")
-    assert settings.tariffs.silver_monthly_price_usd == Decimal("65")
-    assert settings.tariffs.gold_monthly_price_usd == Decimal("50")
+    assert settings.loyalty.bronze_discount_percent == Decimal("10")
+    assert settings.loyalty.silver_active_days == 90
+    assert settings.loyalty.silver_monthly_price_usd == Decimal("65")
+    assert settings.loyalty.gold_active_days == 180
+    assert settings.loyalty.gold_monthly_price_usd == Decimal("50")
+
+
+def test_phase3_promo_config_defaults_are_safe_for_tests() -> None:
+    settings = Settings()
+
+    assert settings.promos.max_discount_percent == Decimal("50")
+
+
+def test_phase3_loyalty_thresholds_must_be_ordered() -> None:
+    with pytest.raises(ValidationError, match="gold_active_days must be greater"):
+        Settings(loyalty={"silver_active_days": 180, "gold_active_days": 90})
+
+
+def test_phase3_promo_discount_cap_rejects_invalid_percent() -> None:
+    with pytest.raises(ValidationError):
+        Settings(promos={"max_discount_percent": Decimal("101")})
 
 
 def test_phase2_tariff_codes_must_be_unique() -> None:

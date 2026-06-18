@@ -2,9 +2,9 @@
 
 Telegram payment bot for Hydra Monitors subscriptions.
 
-This repository state contains Phase 2: the service scaffold, subscription
+This repository state contains Phase 3: the service scaffold, subscription
 domain models, localized menus, admin-only manual grants, and CryptoBot purchase
-flow with polling-based payment finalization.
+flow with polling-based payment finalization, loyalty pricing, and promo codes.
 
 ## Local Requirements
 
@@ -59,6 +59,7 @@ Telegram commands currently implemented:
 /profile
 /language
 /support
+/promo <code>
 /grant <user_id> <days>   # admins only
 ```
 
@@ -76,6 +77,18 @@ payment testing.
 Tariffs are configured in `[[tariffs.items]]`. The bot syncs the selected
 configured tariff into the database before creating an invoice, so changing
 durations or prices is a config change plus restart.
+
+Loyalty rules are configured in `[loyalty]`. Bronze applies a percent discount,
+while Silver and Gold use fixed monthly prices plus the tariff duration
+discount. `silver_active_days` and `gold_active_days` control cumulative paid or
+manual access days needed for each tier.
+
+Promos are stored in the database and selected by users with `/promo <code>`.
+The selected promo is applied to the next invoice, snapshotted on that invoice,
+and then cleared from the user. `percent` and `fixed_usd` promos discount the
+invoice before provider fees; `extra_days` promos add access days after a paid
+invoice without increasing loyalty active-day credit. `[promos]` controls the
+maximum percent of a quote that a discount promo may remove.
 
 Protected chats are configured in `[access]`:
 

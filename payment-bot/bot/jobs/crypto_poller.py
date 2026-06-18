@@ -126,6 +126,7 @@ async def poll_cryptobot_once(
 
             paid_result = await _process_provider_paid_invoice(
                 session_factory,
+                settings=settings,
                 provider_invoice=provider_invoice,
                 now=now,
             )
@@ -286,6 +287,7 @@ async def _record_provider_invoice_event(
 async def _process_provider_paid_invoice(
     session_factory: async_sessionmaker[AsyncSession],
     *,
+    settings: Settings,
     provider_invoice: CryptoBotInvoice,
     now: datetime,
 ) -> PaidInvoiceResult | None:
@@ -295,6 +297,7 @@ async def _process_provider_paid_invoice(
                 session,
                 provider_invoice=provider_invoice,
                 now=now,
+                settings=settings,
             )
     except Exception:
         logger.exception(

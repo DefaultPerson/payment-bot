@@ -14,6 +14,12 @@ class SupportsInvoiceQuote(Protocol):
     gross_usd: Decimal
     fee_usd: Decimal
     net_usd: Decimal
+    promo_id: int | None
+    promo_code: str | None
+    promo_kind: object | None
+    promo_value: Decimal | None
+    promo_discount_usd: Decimal
+    promo_extra_days: int
 
 
 async def create_pending_cryptobot_invoice(
@@ -31,6 +37,12 @@ async def create_pending_cryptobot_invoice(
         provider_invoice_id=None,
         telegram_payment_charge_id=None,
         tariff_id=tariff_id,
+        promo_id=quote.promo_id,
+        promo_code=quote.promo_code,
+        promo_kind=quote.promo_kind,
+        promo_value=quote.promo_value,
+        promo_discount_usd=quote.promo_discount_usd,
+        promo_extra_days=quote.promo_extra_days,
         amount_usd=quote.gross_usd,
         gross=quote.gross_usd,
         fee=quote.fee_usd,

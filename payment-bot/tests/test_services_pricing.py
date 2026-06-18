@@ -5,8 +5,8 @@ from decimal import Decimal
 import pytest
 
 from bot.config import Settings
-from bot.models import UserStatus
-from bot.services.pricing import TariffQuote, quote_tariff, tariff_duration_days
+from bot.models import PromoKind, UserStatus
+from bot.services.pricing import PromoSnapshot, TariffQuote, quote_tariff, tariff_duration_days
 
 
 def test_tariff_duration_days_uses_30_day_months() -> None:
@@ -81,3 +81,53 @@ def test_quote_rejects_inactive_tariff() -> None:
 
     with pytest.raises(LookupError, match="tariff inactive was not found"):
         quote_tariff(settings, "inactive", UserStatus.basic)
+
+
+def test_quote_applies_percent_promo_after_loyalty_discounts() -> None:
+    settings = Settings()
+    promo = PromoSnapshot(
+        promo_id=1,
+        code="SAVE20",
+        kind=PromoKind.percent,
+        value=Decimal("20"),
+    )
+
+    quote = quote_tariff(settings, "3m", UserStatus.bronze, promo=promo)
+
+    assert quote.net_usd == Decimal("153.58")
+    assert quote.promo_discount_usd == Decimal("38.39")
+    assert quote.promo_extra_days == 0
+    assert quote.gross_usd == Decimal("158.33")
+
+
+def test_quote_caps_fixed_usd_promo_discount() -> None:
+    settings = Settings(promos={"max_discount_percent": Decimal("50")})
+    promo = PromoSnapshot(
+        promo_id=2,
+        code="HALF",
+        kind=PromoKind.fixed_usd,
+        value=Decimal("500"),
+    )
+
+    quote = quote_tariff(settings, "1m", UserStatus.basic, promo=promo)
+
+    assert quote.net_usd == Decimal("39.50")
+    assert quote.promo_discount_usd == Decimal("39.50")
+    assert quote.gross_usd == Decimal("40.72")
+
+
+def test_quote_extra_days_promo_preserves_price_and_returns_bonus_days() -> None:
+    settings = Settings()
+    promo = PromoSnapshot(
+        promo_id=3,
+        code="BONUS7",
+        kind=PromoKind.extra_days,
+        value=Decimal("7"),
+    )
+
+    quote = quote_tariff(settings, "1m", UserStatus.basic, promo=promo)
+
+    assert quote.net_usd == Decimal("79.00")
+    assert quote.promo_discount_usd == Decimal("0.00")
+    assert quote.promo_extra_days == 7
+    assert quote.gross_usd == Decimal("81.44")

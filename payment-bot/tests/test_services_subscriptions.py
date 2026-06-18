@@ -76,3 +76,24 @@ def test_status_after_total_active_days_promotes_without_downgrading(
     expected: UserStatus,
 ) -> None:
     assert status_after_total_active_days(current, total_active_days) is expected
+
+
+def test_status_after_total_active_days_uses_configurable_thresholds() -> None:
+    assert (
+        status_after_total_active_days(
+            UserStatus.basic,
+            60,
+            silver_active_days=60,
+            gold_active_days=120,
+        )
+        is UserStatus.silver
+    )
+    assert (
+        status_after_total_active_days(
+            UserStatus.bronze,
+            120,
+            silver_active_days=60,
+            gold_active_days=120,
+        )
+        is UserStatus.gold
+    )

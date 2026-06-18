@@ -26,10 +26,15 @@ invoice_expires_seconds = 3600
 poll_interval_seconds = 30
 poll_batch_size = 50
 
-[tariffs]
+[loyalty]
 bronze_discount_percent = 10
+silver_active_days = 90
 silver_monthly_price_usd = 65
+gold_active_days = 180
 gold_monthly_price_usd = 50
+
+[promos]
+max_discount_percent = 50
 
 [[tariffs.items]]
 code = "1m"

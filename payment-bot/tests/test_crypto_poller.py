@@ -187,8 +187,9 @@ async def test_poll_once_fetches_active_invoices_in_batches_and_processes_paid(
         *,
         provider_invoice: CryptoBotInvoice,
         now: datetime,
+        settings: Settings,
     ) -> PaidInvoiceResult:
-        del session, now
+        del session, now, settings
         processed.append(provider_invoice.invoice_id)
         return paid_result(provider_invoice.invoice_id)
 
@@ -342,8 +343,9 @@ async def test_poll_once_counts_service_channel_delivery_failure(
         *,
         provider_invoice: CryptoBotInvoice,
         now: datetime,
+        settings: Settings,
     ) -> PaidInvoiceResult:
-        del session, now
+        del session, now, settings
         return paid_result(provider_invoice.invoice_id)
 
     async def fake_mark_expired(session: FakeSession, *, now: datetime) -> int:
@@ -398,8 +400,9 @@ async def test_poll_once_returns_access_delivery_retry_on_user_message_failure(
         *,
         provider_invoice: CryptoBotInvoice,
         now: datetime,
+        settings: Settings,
     ) -> PaidInvoiceResult:
-        del session, now
+        del session, now, settings
         return paid_result(provider_invoice.invoice_id)
 
     async def fake_mark_expired(session: FakeSession, *, now: datetime) -> int:

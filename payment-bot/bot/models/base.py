@@ -102,6 +102,10 @@ class User(Base):
         ForeignKey("users.id", ondelete="SET NULL"),
         index=True,
     )
+    pending_promo_id: Mapped[int | None] = mapped_column(
+        ForeignKey("promos.id", ondelete="SET NULL"),
+        index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -173,6 +177,16 @@ class Invoice(Base):
     provider_invoice_id: Mapped[str | None] = mapped_column(String(128))
     telegram_payment_charge_id: Mapped[str | None] = mapped_column(String(128))
     tariff_id: Mapped[int | None] = mapped_column(ForeignKey("tariffs.id", ondelete="SET NULL"))
+    promo_id: Mapped[int | None] = mapped_column(ForeignKey("promos.id", ondelete="SET NULL"))
+    promo_code: Mapped[str | None] = mapped_column(String(64))
+    promo_kind: Mapped[PromoKind | None] = mapped_column(enum_column(PromoKind, "promo_kind"))
+    promo_value: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    promo_discount_usd: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2),
+        nullable=False,
+        server_default="0",
+    )
+    promo_extra_days: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     amount_usd: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     gross: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     fee: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, server_default="0")
@@ -247,7 +261,6 @@ class Subscription(Base):
 
 class Promo(Base):
     __tablename__ = "promos"
-    __table_args__ = (UniqueConstraint("code", name="uq_promos_code"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     code: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -269,6 +282,10 @@ class Promo(Base):
         nullable=False,
         server_default=func.now(),
         onupdate=func.now(),
+    )
+    __table_args__ = (
+        UniqueConstraint("code", name="uq_promos_code"),
+        Index("ix_promos_code_upper", func.upper(code), unique=True),
     )
 
 

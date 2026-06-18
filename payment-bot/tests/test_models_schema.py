@@ -30,6 +30,11 @@ def unique_constraint_columns(table_name: str, constraint_name: str) -> tuple[st
     raise AssertionError(msg)
 
 
+def index_names(table_name: str) -> set[str]:
+    table = Base.metadata.tables[table_name]
+    return {index.name for index in table.indexes}
+
+
 def test_phase1_models_are_registered_in_metadata() -> None:
     assert Base is not None
     assert SchemaVersionMarker is not None
@@ -72,3 +77,20 @@ def test_named_unique_constraints_match_phase1_migration() -> None:
     assert unique_constraint_columns("tariffs", "uq_tariffs_code") == ("code",)
     assert unique_constraint_columns("invoices", "uq_invoices_payload") == ("payload",)
     assert unique_constraint_columns("promos", "uq_promos_code") == ("code",)
+
+
+def test_phase3_models_include_pending_promo_and_invoice_snapshot_columns() -> None:
+    users = Base.metadata.tables["users"]
+    invoices = Base.metadata.tables["invoices"]
+
+    assert "pending_promo_id" in users.c
+    assert "promo_id" in invoices.c
+    assert "promo_code" in invoices.c
+    assert "promo_kind" in invoices.c
+    assert "promo_value" in invoices.c
+    assert "promo_discount_usd" in invoices.c
+    assert "promo_extra_days" in invoices.c
+
+
+def test_phase3_promos_have_case_insensitive_code_index() -> None:
+    assert "ix_promos_code_upper" in index_names("promos")

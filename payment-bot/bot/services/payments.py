@@ -21,6 +21,12 @@ from bot.repos.invoices import (
     mark_invoice_paid,
     mark_invoice_provider_created,
 )
+from bot.repos.promos import (
+    get_pending_promo_for_user,
+    promo_snapshot_from_row,
+    release_promo_redemption_for_invoice,
+    reserve_promo_redemption,
+)
 from bot.repos.subscriptions import extend_paid_subscription
 from bot.repos.tariffs import ensure_configured_tariff
 from bot.services.pricing import TariffQuote, quote_tariff, tariff_duration_days
@@ -121,6 +127,7 @@ async def process_paid_cryptobot_invoice(
     *,
     provider_invoice: CryptoBotInvoice,
     now: datetime,
+    settings: Settings | None = None,
 ) -> PaidInvoiceResult:
     invoice = await lock_invoice_by_provider_id(session, provider_invoice.invoice_id)
     if invoice is None:
@@ -159,6 +166,8 @@ async def process_paid_cryptobot_invoice(
         source=SubscriptionSource.cryptobot,
         last_invoice_id=invoice.id,
         now=now,
+        bonus_days=invoice.promo_extra_days or 0,
+        loyalty=settings.loyalty if settings is not None else None,
     )
     paid_amounts = _paid_amounts_from_payload(provider_invoice.raw)
     await mark_invoice_paid(
@@ -187,12 +196,24 @@ async def _prepare_local_invoice(
     tariff_code: str,
     now: datetime,
 ) -> PreparedInvoice:
-    quote = quote_tariff(settings, tariff_code, user.status)
+    locked_user, promo = await get_pending_promo_for_user(
+        session,
+        user=user,
+        tariff_code=tariff_code,
+        now=now,
+        lock_user=True,
+    )
+    quote = quote_tariff(
+        settings,
+        tariff_code,
+        locked_user.status,
+        promo=promo_snapshot_from_row(promo) if promo is not None else None,
+    )
     tariff = await ensure_configured_tariff(session, settings, tariff_code)
     payload = f"inv:{uuid.uuid4()}"
     invoice = await create_pending_cryptobot_invoice(
         session,
-        user=user,
+        user=locked_user,
         tariff_id=tariff.id,
         quote=quote,
         expires_at=now + timedelta(seconds=settings.cryptobot.invoice_expires_seconds),
@@ -201,6 +222,14 @@ async def _prepare_local_invoice(
     if invoice.id is None:
         msg = "invoice must have an id after flush"
         raise ValueError(msg)
+    if promo is not None:
+        await reserve_promo_redemption(
+            session,
+            promo=promo,
+            user=locked_user,
+            invoice=invoice,
+            now=now,
+        )
     return PreparedInvoice(
         invoice_id=invoice.id,
         quote=quote,
@@ -327,6 +356,7 @@ async def _cancel_unusable_invoice(
                 and invoice.status is InvoiceStatus.active
                 and invoice.provider_invoice_id is None
             ):
+                await release_promo_redemption_for_invoice(session, invoice)
                 invoice.status = InvoiceStatus.cancelled
     except Exception:
         logger.exception(

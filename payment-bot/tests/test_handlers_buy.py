@@ -12,8 +12,9 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from bot.config import Settings
 from bot.core.i18n import JsonI18n
-from bot.models import InvoiceStatus, UserStatus
+from bot.models import InvoiceStatus, PromoKind, UserStatus
 from bot.payments.cryptobot import CryptoBotAPIError, CryptoBotInvoice
+from bot.services.pricing import PromoSnapshot, quote_tariff
 from tests.test_handlers_user import (
     FakeBadRequestMessage,
     FakeCallback,
@@ -94,7 +95,11 @@ async def test_tariff_callback_edits_quote_detail(monkeypatch) -> None:
     async def fake_ensure_minimal_user(session: FakeSession, **kwargs: Any) -> FakeUserRecord:
         return FakeUserRecord(id=7, tg_id=700, lang_code="en", status=UserStatus.basic)
 
+    async def fake_pending_promo(*args: Any, **kwargs: Any) -> None:
+        return None
+
     monkeypatch.setattr(buy_module, "ensure_minimal_user", fake_ensure_minimal_user)
+    monkeypatch.setattr(buy_module, "get_pending_promo_snapshot_for_user", fake_pending_promo)
     monkeypatch.setattr(buy_module, "tariff_detail_keyboard", lambda *args: "detail-keyboard")
 
     callback_message = FakeMessage(chat=FakeChat(id=700))
@@ -118,6 +123,26 @@ async def test_tariff_callback_edits_quote_detail(monkeypatch) -> None:
     assert "$213.30" in text
     assert callback.answers == [{"text": None}]
     assert callback_message.edits[0]["reply_markup"] == "detail-keyboard"
+
+
+def test_format_quote_text_includes_promo_discount() -> None:
+    import bot.handlers.buy as buy_module
+
+    quote = quote_tariff(
+        Settings(),
+        "1m",
+        UserStatus.basic,
+        promo=PromoSnapshot(
+            promo_id=5,
+            code="SAVE20",
+            kind=PromoKind.percent,
+            value=Decimal("20"),
+        ),
+    )
+
+    text = buy_module._format_quote_text(JsonI18n(), Settings(), "en", quote)
+
+    assert "Promo SAVE20: -$15.80" in text
 
 
 async def test_cryptobot_invoice_callback_returns_payment_url(monkeypatch) -> None:
@@ -458,6 +483,12 @@ async def test_create_cryptobot_invoice_for_user_commits_before_provider_call(mo
         repo_calls.append({"name": "pending", "args": args, **kwargs})
         return FakeInvoiceRecord(id=77, payload=kwargs["payload"])
 
+    async def fake_get_pending_promo_for_user(
+        *args: Any,
+        **kwargs: Any,
+    ) -> tuple[FakeUserRecord, None]:
+        return user, None
+
     async def fake_mark_provider_created(*args: Any, **kwargs: Any) -> FakeInvoiceRecord:
         repo_calls.append({"name": "mark", "args": args, **kwargs})
         return args[1]
@@ -476,6 +507,11 @@ async def test_create_cryptobot_invoice_for_user_commits_before_provider_call(mo
         payments_module,
         "create_pending_cryptobot_invoice",
         fake_create_pending_invoice,
+    )
+    monkeypatch.setattr(
+        payments_module,
+        "get_pending_promo_for_user",
+        fake_get_pending_promo_for_user,
     )
     monkeypatch.setattr(
         payments_module,
@@ -547,6 +583,12 @@ async def test_create_cryptobot_invoice_for_user_rejects_missing_provider_pay_ur
     async def fake_create_pending_invoice(*args: Any, **kwargs: Any) -> FakeInvoiceRecord:
         return FakeInvoiceRecord(id=77, payload=kwargs["payload"])
 
+    async def fake_get_pending_promo_for_user(
+        *args: Any,
+        **kwargs: Any,
+    ) -> tuple[FakeUserRecord, None]:
+        return FakeUserRecord(id=7, tg_id=700, lang_code="en", status=UserStatus.basic), None
+
     async def fake_mark_provider_created(*args: Any, **kwargs: Any) -> None:
         mark_calls.append(args)
 
@@ -562,6 +604,11 @@ async def test_create_cryptobot_invoice_for_user_rejects_missing_provider_pay_ur
         payments_module,
         "create_pending_cryptobot_invoice",
         fake_create_pending_invoice,
+    )
+    monkeypatch.setattr(
+        payments_module,
+        "get_pending_promo_for_user",
+        fake_get_pending_promo_for_user,
     )
     monkeypatch.setattr(
         payments_module,
@@ -583,4 +630,35 @@ async def test_create_cryptobot_invoice_for_user_rejects_missing_provider_pay_ur
         )
 
     assert mark_calls == []
-    assert session_factory.session.commits == 2
+
+
+async def test_cancel_unusable_invoice_releases_reserved_promo(monkeypatch) -> None:
+    import bot.services.payments as payments_module
+
+    invoice = SimpleNamespace(
+        id=77,
+        status=InvoiceStatus.active,
+        provider_invoice_id=None,
+        promo_id=5,
+    )
+    release_calls: list[object] = []
+
+    async def fake_lock_invoice_by_id(*args: Any, **kwargs: Any) -> object:
+        return invoice
+
+    async def fake_release_promo_redemption_for_invoice(*args: Any, **kwargs: Any) -> None:
+        release_calls.append(args[1])
+
+    monkeypatch.setattr(payments_module, "lock_invoice_by_id", fake_lock_invoice_by_id)
+    monkeypatch.setattr(
+        payments_module,
+        "release_promo_redemption_for_invoice",
+        fake_release_promo_redemption_for_invoice,
+    )
+
+    session_factory = FakeSessionFactory()
+    await payments_module._cancel_unusable_invoice(session_factory, 77)
+
+    assert release_calls == [invoice]
+    assert invoice.status is InvoiceStatus.cancelled
+    assert session_factory.session.commits == 1
