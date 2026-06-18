@@ -5,6 +5,7 @@
   "commands.language": "Змінити мову інтерфейсу",
   "commands.support": "Зв'язатися з підтримкою",
   "commands.grant": "Надати платний доступ",
+  "commands.broadcast": "Надіслати розсилку",
   "menu.button.buy": "Купити доступ",
   "menu.button.profile": "Профіль",
   "menu.button.referral": "Реферали",
@@ -50,6 +51,9 @@
   "payment.success.text": "Оплату отримано. Доступ активовано.",
   "access.links.text": "Ваші посилання доступу:\n\n{links}",
   "access.empty.text": "Чати доступу ще не налаштовано. Напишіть у підтримку: {support_url}",
+  "notification.3d.text": "Ваша підписка скоро закінчується: {expires_at}.\n\nПродовжіть доступ у боті або напишіть у підтримку: {support_url}",
+  "notification.0d.text": "Ваша підписка закінчилася: {expires_at}.\n\nДоступ скоро буде відкликано, якщо ви не продовжите підписку. Підтримка: {support_url}",
+  "notification.post.text": "Доступ відкликано після завершення підписки: {expires_at}.\n\nВи можете повернутися і продовжити доступ будь-коли. Підтримка: {support_url}",
   "language.name.ru": "Русский",
   "language.name.ua": "Українська",
   "language.name.en": "English",
@@ -65,5 +69,8 @@
   "refset.usage": "Використання: /refset <telegram_id> <відсоток>",
   "refset.forbidden": "Лише адміністратори можуть змінювати реферальний відсоток.",
   "refset.success": "Реферальний відсоток для користувача {user_id} встановлено на {percent}%. Оновлено зв'язків: {updated}.",
-  "refset.success.future": "Реферальний відсоток для користувача {user_id} встановлено на {percent}%. Нові реферали використовуватимуть його."
+  "refset.success.future": "Реферальний відсоток для користувача {user_id} встановлено на {percent}%. Нові реферали використовуватимуть його.",
+  "broadcast.usage": "Використання: /broadcast <all|active|inactive> <текст>",
+  "broadcast.forbidden": "Лише адміністратори можуть робити розсилку.",
+  "broadcast.success": "Розсилку завершено для {segment}: надіслано {successful}/{total}, помилок: {failed}."
 }

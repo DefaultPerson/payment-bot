@@ -5,6 +5,7 @@ from aiohttp import web
 
 from bot import __main__ as main_module
 from bot.config import Settings
+from bot.jobs.runner import TaskRunner
 from bot.payments.cryptobot import CryptoBotClient
 
 
@@ -31,6 +32,51 @@ def test_build_cryptobot_client_respects_enabled_flag_and_token() -> None:
     assert isinstance(client, CryptoBotClient)
     assert client.token == "secret"
     assert client.api_url == "https://testnet-pay.crypt.bot"
+
+
+def test_start_background_jobs_registers_notifications_and_optional_crypto(monkeypatch) -> None:
+    started: list[tuple[str, object]] = []
+
+    def fake_start(self: TaskRunner, name: str, coroutine: object) -> None:
+        started.append((name, coroutine))
+        close = getattr(coroutine, "close", None)
+        if callable(close):
+            close()
+
+    async def fake_notification_loop(**kwargs: object) -> None:
+        return None
+
+    async def fake_crypto_loop(**kwargs: object) -> None:
+        return None
+
+    monkeypatch.setattr(TaskRunner, "start", fake_start)
+    monkeypatch.setattr(main_module, "notification_loop", fake_notification_loop, raising=False)
+    monkeypatch.setattr(main_module, "crypto_poller_loop", fake_crypto_loop)
+
+    main_module.start_background_jobs(
+        task_runner=TaskRunner(),
+        session_factory=object(),
+        settings=Settings(),
+        bot=object(),
+        i18n=object(),
+        service_channel=object(),
+        cryptobot_client=None,
+    )
+
+    assert [name for name, _coroutine in started] == ["notifications"]
+
+    started.clear()
+    main_module.start_background_jobs(
+        task_runner=TaskRunner(),
+        session_factory=object(),
+        settings=Settings(),
+        bot=object(),
+        i18n=object(),
+        service_channel=object(),
+        cryptobot_client=object(),
+    )
+
+    assert [name for name, _coroutine in started] == ["notifications", "crypto-poller"]
 
 
 async def test_bot_identity_cache_throttles_failed_checks() -> None:

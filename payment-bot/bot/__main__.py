@@ -21,6 +21,7 @@ from bot.core.metrics import create_metrics_registry
 from bot.core.redis import check_redis, create_redis_client
 from bot.handlers import create_router
 from bot.jobs.crypto_poller import crypto_poller_loop
+from bot.jobs.notifications import notification_loop
 from bot.jobs.runner import TaskRunner
 from bot.payments.cryptobot import CryptoBotClient
 
@@ -92,6 +93,40 @@ def build_cryptobot_client(settings: Settings) -> CryptoBotClient | None:
     )
 
 
+def start_background_jobs(
+    *,
+    task_runner: TaskRunner,
+    session_factory,
+    settings: Settings,
+    bot: Bot,
+    i18n: JsonI18n,
+    service_channel: ServiceChannel,
+    cryptobot_client: CryptoBotClient | None,
+) -> None:
+    task_runner.start(
+        "notifications",
+        notification_loop(
+            session_factory=session_factory,
+            settings=settings,
+            bot=bot,
+            i18n=i18n,
+            service_channel=service_channel,
+        ),
+    )
+    if cryptobot_client is not None:
+        task_runner.start(
+            "crypto-poller",
+            crypto_poller_loop(
+                session_factory=session_factory,
+                settings=settings,
+                client=cryptobot_client,
+                bot=bot,
+                i18n=i18n,
+                service_channel=service_channel,
+            ),
+        )
+
+
 async def main() -> None:
     settings = load_settings()
     settings.validate_runtime()
@@ -127,18 +162,15 @@ async def main() -> None:
         dispatcher["service_channel"] = service_channel
         dispatcher["cryptobot_client"] = cryptobot_client
         dispatcher.include_router(create_router())
-        if cryptobot_client is not None:
-            task_runner.start(
-                "crypto-poller",
-                crypto_poller_loop(
-                    session_factory=session_factory,
-                    settings=settings,
-                    client=cryptobot_client,
-                    bot=bot,
-                    i18n=i18n,
-                    service_channel=service_channel,
-                ),
-            )
+        start_background_jobs(
+            task_runner=task_runner,
+            session_factory=session_factory,
+            settings=settings,
+            bot=bot,
+            i18n=i18n,
+            service_channel=service_channel,
+            cryptobot_client=cryptobot_client,
+        )
 
         bot_identity = BotIdentityCache(bot, ttl_seconds=settings.http.bot_cache_seconds)
         http_app = create_http_app(

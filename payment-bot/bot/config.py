@@ -144,6 +144,14 @@ class ReferralConfig(BaseModel):
     allow_referrer_change: bool = False
 
 
+class NotificationsConfig(BaseModel):
+    loop_interval_seconds: int = Field(default=3600, ge=1)
+    batch_size: int = Field(default=100, ge=1, le=1000)
+    reminder_days_before: int = Field(default=3, ge=1)
+    reminder_window_seconds: int = Field(default=3600, ge=1)
+    post_expired_delay_hours: int = Field(default=24, ge=1)
+
+
 class ProtectedChatConfig(BaseModel):
     chat_id: int
     title: str
@@ -152,6 +160,7 @@ class ProtectedChatConfig(BaseModel):
 class AccessConfig(BaseModel):
     protected_chats: list[ProtectedChatConfig] = Field(default_factory=list)
     invite_link_ttl_seconds: int = Field(default=24 * 60 * 60, ge=60)
+    revoke_ban_seconds: int = Field(default=60, ge=1)
 
 
 class Settings(BaseSettings):
@@ -199,6 +208,7 @@ class Settings(BaseSettings):
     promos: PromosConfig = Field(default_factory=PromosConfig)
     stars: StarsConfig = Field(default_factory=StarsConfig)
     referral: ReferralConfig = Field(default_factory=ReferralConfig)
+    notifications: NotificationsConfig = Field(default_factory=NotificationsConfig)
     access: AccessConfig = Field(default_factory=AccessConfig)
 
     @classmethod

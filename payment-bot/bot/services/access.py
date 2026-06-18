@@ -24,6 +24,23 @@ class SupportsAccessBot(Protocol):
 
     async def send_message(self, *, chat_id: int, text: str) -> object: ...
 
+    async def ban_chat_member(
+        self,
+        *,
+        chat_id: int,
+        user_id: int,
+        until_date: datetime,
+        revoke_messages: bool,
+    ) -> object: ...
+
+    async def unban_chat_member(
+        self,
+        *,
+        chat_id: int,
+        user_id: int,
+        only_if_banned: bool,
+    ) -> object: ...
+
 
 class SupportsInviteLink(Protocol):
     invite_link: str
@@ -83,6 +100,28 @@ async def send_access_links(
         chat_id=tg_id,
         text=i18n.gettext("access.links.text", lang_code, links=links),
     )
+
+
+async def revoke_protected_chat_access(
+    bot: SupportsAccessBot,
+    settings: Settings,
+    *,
+    tg_id: int,
+    now: datetime,
+) -> None:
+    until_date = now + timedelta(seconds=settings.access.revoke_ban_seconds)
+    for chat in settings.access.protected_chats:
+        await bot.ban_chat_member(
+            chat_id=chat.chat_id,
+            user_id=tg_id,
+            until_date=until_date,
+            revoke_messages=False,
+        )
+        await bot.unban_chat_member(
+            chat_id=chat.chat_id,
+            user_id=tg_id,
+            only_if_banned=True,
+        )
 
 
 def _invite_link(invite: SupportsInviteLink | dict[str, object]) -> str:

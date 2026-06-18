@@ -64,6 +64,7 @@ Telegram commands currently implemented:
 /referral
 /grant <user_id> <days>   # admins only
 /refset <user_id> <percent>   # admins only
+/broadcast <all|active|inactive> <text>   # admins only
 ```
 
 ## CryptoBot

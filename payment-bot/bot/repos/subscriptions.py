@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +18,127 @@ async def get_subscription_for_user(
     user_id: int,
 ) -> Subscription | None:
     return await session.scalar(select(Subscription).where(Subscription.user_id == user_id))
+
+
+async def get_subscriptions_due_3d_notification(
+    session: AsyncSession,
+    *,
+    now: datetime,
+    days_before: int,
+    window_seconds: int,
+    limit: int,
+) -> list[Subscription]:
+    target = now + timedelta(days=days_before)
+    window = timedelta(seconds=window_seconds)
+    result = await session.scalars(
+        select(Subscription)
+        .where(
+            Subscription.notified_3d_at.is_(None),
+            Subscription.expires_at >= target - window,
+            Subscription.expires_at <= target + window,
+        )
+        .order_by(Subscription.expires_at.asc())
+        .limit(limit),
+    )
+    return list(result.all())
+
+
+async def get_subscriptions_due_0d_notification(
+    session: AsyncSession,
+    *,
+    now: datetime,
+    limit: int,
+) -> list[Subscription]:
+    result = await session.scalars(
+        select(Subscription)
+        .where(
+            Subscription.notified_0d_at.is_(None),
+            Subscription.expires_at <= now,
+        )
+        .order_by(Subscription.expires_at.asc())
+        .limit(limit),
+    )
+    return list(result.all())
+
+
+async def get_subscriptions_due_post_notification(
+    session: AsyncSession,
+    *,
+    now: datetime,
+    delay_hours: int,
+    limit: int,
+) -> list[Subscription]:
+    deadline = now - timedelta(hours=delay_hours)
+    result = await session.scalars(
+        select(Subscription)
+        .where(
+            Subscription.notified_post_at.is_(None),
+            Subscription.expires_at <= deadline,
+        )
+        .order_by(Subscription.expires_at.asc())
+        .limit(limit),
+    )
+    return list(result.all())
+
+
+async def get_subscriptions_due_access_revoke(
+    session: AsyncSession,
+    *,
+    now: datetime,
+    delay_hours: int,
+    limit: int,
+) -> list[Subscription]:
+    deadline = now - timedelta(hours=delay_hours)
+    result = await session.scalars(
+        select(Subscription)
+        .where(
+            Subscription.access_revoked_at.is_(None),
+            Subscription.expires_at <= deadline,
+        )
+        .order_by(Subscription.expires_at.asc())
+        .limit(limit),
+    )
+    return list(result.all())
+
+
+async def mark_subscription_3d_notified(
+    session: AsyncSession,
+    subscription: Subscription,
+    *,
+    notified_at: datetime,
+) -> None:
+    subscription.notified_3d_at = notified_at
+    await session.flush()
+
+
+async def mark_subscription_0d_notified(
+    session: AsyncSession,
+    subscription: Subscription,
+    *,
+    notified_at: datetime,
+) -> None:
+    subscription.notified_0d_at = notified_at
+    await session.flush()
+
+
+async def mark_subscription_post_notified(
+    session: AsyncSession,
+    subscription: Subscription,
+    *,
+    notified_at: datetime,
+) -> None:
+    subscription.notified_post_at = notified_at
+    await session.flush()
+
+
+async def mark_subscription_access_revoked(
+    session: AsyncSession,
+    subscription: Subscription,
+    *,
+    revoked_at: datetime,
+) -> None:
+    subscription.access_revoked_at = revoked_at
+    await session.flush()
 
 
 async def extend_manual_subscription(
@@ -104,6 +225,7 @@ async def _extend_subscription(
         session.add(subscription)
     else:
         subscription.expires_at = new_expires_at
+        _reset_notification_markers(subscription)
         subscription.updated_at = now
         if update_paid_fields:
             subscription.source = source
@@ -119,6 +241,13 @@ async def _extend_subscription(
 
     await session.flush()
     return subscription
+
+
+def _reset_notification_markers(subscription: Subscription) -> None:
+    subscription.notified_3d_at = None
+    subscription.notified_0d_at = None
+    subscription.notified_post_at = None
+    subscription.access_revoked_at = None
 
 
 async def _lock_user_for_update(session: AsyncSession, user: User) -> User:

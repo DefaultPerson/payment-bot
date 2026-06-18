@@ -29,6 +29,19 @@ wheels = [
 ]
 
 [[package]]
+name = "aiogram-broadcast"
+version = "0.1.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "aiogram" },
+    { name = "redis" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/d9/80/df85f183fd5d8cfa76064174cf4290b103f4bc7ef74d597c3185dac4d3df/aiogram_broadcast-0.1.1.tar.gz", hash = "sha256:f20e3d8718b8d9ba73d804b4621ef4cf468bf7df7dab18ad3a52999795675576", size = 32251, upload-time = "2026-03-11T12:50:14.841Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d8/d8/9c3f8884344574f2552a61aca2a8e94a33dd1dcf45e88dfc0d629470d925/aiogram_broadcast-0.1.1-py3-none-any.whl", hash = "sha256:0966cfab8c5737dcfe0bb3316cb3c12a9177c37296ed57a6aae81f6c81584e9a", size = 32777, upload-time = "2026-03-11T12:50:13.167Z" },
+]
+
+[[package]]
 name = "aiohappyeyeballs"
 version = "2.6.2"
 source = { registry = "https://pypi.org/simple" }
@@ -218,6 +231,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "aiogram" },
+    { name = "aiogram-broadcast" },
     { name = "aiohttp" },
     { name = "alembic" },
     { name = "asyncpg" },
@@ -239,6 +253,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "aiogram", specifier = ">=3.28,<4.0" },
+    { name = "aiogram-broadcast", specifier = ">=0.1.1,<0.2" },
     { name = "aiohttp", specifier = ">=3.14,<4.0" },
     { name = "alembic", specifier = ">=1.18,<2.0" },
     { name = "asyncpg", specifier = ">=0.31,<1.0" },

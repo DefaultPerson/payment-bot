@@ -5,6 +5,7 @@
   "commands.language": "Change interface language",
   "commands.support": "Contact support",
   "commands.grant": "Grant paid access",
+  "commands.broadcast": "Broadcast a message",
   "menu.button.buy": "Buy access",
   "menu.button.profile": "Profile",
   "menu.button.referral": "Referral",
@@ -50,6 +51,9 @@
   "payment.success.text": "Payment received. Your access has been activated.",
   "access.links.text": "Your access links:\n\n{links}",
   "access.empty.text": "Access chats are not configured yet. Please contact support: {support_url}",
+  "notification.3d.text": "Your subscription expires soon: {expires_at}.\n\nRenew access in the bot or contact support: {support_url}",
+  "notification.0d.text": "Your subscription has expired: {expires_at}.\n\nAccess will be revoked soon unless you renew. Support: {support_url}",
+  "notification.post.text": "Access has been revoked after subscription expiration: {expires_at}.\n\nYou can renew any time in the bot. Support: {support_url}",
   "language.name.ru": "Русский",
   "language.name.ua": "Українська",
   "language.name.en": "English",
@@ -65,5 +69,8 @@
   "refset.usage": "Usage: /refset <telegram_id> <percent>",
   "refset.forbidden": "Only admins can set referral percent.",
   "refset.success": "Referral percent for user {user_id} set to {percent}%. Updated links: {updated}.",
-  "refset.success.future": "Referral percent for user {user_id} set to {percent}%. Future referrals will use it."
+  "refset.success.future": "Referral percent for user {user_id} set to {percent}%. Future referrals will use it.",
+  "broadcast.usage": "Usage: /broadcast <all|active|inactive> <text>",
+  "broadcast.forbidden": "Only admins can broadcast.",
+  "broadcast.success": "Broadcast finished for {segment}: {successful}/{total} sent, {failed} failed."
 }
