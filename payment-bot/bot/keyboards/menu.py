@@ -17,6 +17,7 @@ CB_ADMIN = "admin"
 LANG_PREFIX = "lang:"
 CB_TARIFF_PREFIX = "tariff:"
 CB_CRYPTOBOT_PREFIX = "pay:cryptobot:"
+CB_STARS_PREFIX = "pay:stars:"
 
 LANGUAGE_CODES = ("ru", "ua", "en")
 
@@ -164,16 +165,27 @@ def tariff_detail_keyboard(
     i18n: JsonI18n,
     tariff_code: str,
     lang_code: str,
+    settings: Settings,
 ) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
+    rows = [
+        [
+            InlineKeyboardButton(
+                text=i18n.gettext("buy.pay.cryptobot", lang_code),
+                callback_data=f"{CB_CRYPTOBOT_PREFIX}{tariff_code}",
+            )
+        ]
+    ]
+    if settings.stars.enabled:
+        rows.append(
             [
                 InlineKeyboardButton(
-                    text=i18n.gettext("buy.pay.cryptobot", lang_code),
-                    callback_data=f"{CB_CRYPTOBOT_PREFIX}{tariff_code}",
+                    text=i18n.gettext("buy.pay.stars", lang_code),
+                    callback_data=f"{CB_STARS_PREFIX}{tariff_code}",
                 )
             ]
-        ]
+        )
+    return InlineKeyboardMarkup(
+        inline_keyboard=rows,
     )
 
 

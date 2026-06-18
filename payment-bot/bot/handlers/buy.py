@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 
 from aiogram import F, Router
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.types import CallbackQuery
+from aiogram.types import CallbackQuery, LabeledPrice
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -16,6 +16,7 @@ from bot.handlers.start import callback_context
 from bot.keyboards import (
     CB_BUY,
     CB_CRYPTOBOT_PREFIX,
+    CB_STARS_PREFIX,
     CB_TARIFF_PREFIX,
     payment_keyboard,
     tariff_detail_keyboard,
@@ -24,7 +25,11 @@ from bot.keyboards import (
 from bot.payments.cryptobot import CryptoBotAPIError, CryptoBotClient
 from bot.repos.promos import PromoUnavailable, get_pending_promo_snapshot_for_user
 from bot.repos.users import ensure_minimal_user
-from bot.services.payments import create_cryptobot_invoice_for_user
+from bot.services.payments import (
+    cancel_unusable_invoice,
+    create_cryptobot_invoice_for_user,
+    create_stars_invoice_for_user,
+)
 from bot.services.pricing import TariffQuote, quote_tariff
 
 logger = logging.getLogger(__name__)
@@ -105,7 +110,7 @@ async def tariff_callback(
     await _edit_text_or_answer(
         callback,
         _format_quote_text(i18n, settings, lang_code, quote),
-        reply_markup=tariff_detail_keyboard(i18n, tariff_code, lang_code),
+        reply_markup=tariff_detail_keyboard(i18n, tariff_code, lang_code, settings),
     )
 
 
@@ -189,6 +194,88 @@ async def cryptobot_invoice_callback(
         _invoice_created_text(i18n, lang_code, created.pay_url),
         reply_markup=payment_keyboard(i18n, settings, lang_code, created.pay_url),
     )
+
+
+async def stars_invoice_callback(
+    callback: CallbackQuery,
+    settings: Settings,
+    i18n: JsonI18n,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    context = callback_context(callback, settings)
+    tariff_code = _parse_prefixed_callback(getattr(callback, "data", None), CB_STARS_PREFIX)
+    if tariff_code is None or context.tg_id is None:
+        await callback.answer(
+            i18n.gettext("error.generic", context.language_code),
+            show_alert=True,
+        )
+        return
+    if not settings.stars.enabled:
+        await callback.answer(
+            i18n.gettext("buy.invoice.failed", context.language_code),
+            show_alert=True,
+        )
+        return
+
+    try:
+        async with session_scope(session_factory) as session:
+            user = await ensure_minimal_user(
+                session,
+                tg_id=context.tg_id,
+                i18n=i18n,
+                language_code=context.language_code,
+            )
+            lang_code = user.lang_code
+    except SQLAlchemyError:
+        logger.exception("failed to resolve Stars invoice user")
+        await callback.answer(i18n.gettext("error.generic", context.language_code), show_alert=True)
+        return
+
+    try:
+        created = await create_stars_invoice_for_user(
+            session_factory,
+            settings,
+            user,
+            tariff_code,
+            datetime.now(UTC),
+        )
+        invoice_kwargs = {
+            "title": created.title,
+            "description": created.description,
+            "payload": created.payload,
+            "currency": created.stars.currency,
+            "prices": [
+                LabeledPrice(
+                    label=created.title,
+                    amount=created.stars.amount,
+                )
+            ],
+            "provider_token": "",
+        }
+        if created.stars.subscription_period is not None:
+            invoice_kwargs["subscription_period"] = created.stars.subscription_period
+        try:
+            await callback.message.answer_invoice(**invoice_kwargs)
+        except Exception:
+            await cancel_unusable_invoice(session_factory, created.invoice.id)
+            raise
+    except SQLAlchemyError:
+        logger.exception("failed to persist Stars invoice")
+        await callback.answer(i18n.gettext("error.generic", lang_code), show_alert=True)
+        return
+    except LookupError:
+        logger.info("invalid Stars invoice callback data: %r", getattr(callback, "data", None))
+        await callback.answer(i18n.gettext("error.generic", lang_code), show_alert=True)
+        return
+    except PromoUnavailable as exc:
+        await callback.answer(_promo_error_text(i18n, lang_code, exc.reason), show_alert=True)
+        return
+    except Exception:
+        logger.exception("unexpected Stars invoice creation failure")
+        await callback.answer(i18n.gettext("buy.invoice.failed", lang_code), show_alert=True)
+        return
+
+    await callback.answer()
 
 
 async def _resolve_user_language(
@@ -307,4 +394,5 @@ def create_buy_router() -> Router:
     router.callback_query(F.data == CB_BUY)(buy_callback)
     router.callback_query(F.data.startswith(CB_TARIFF_PREFIX))(tariff_callback)
     router.callback_query(F.data.startswith(CB_CRYPTOBOT_PREFIX))(cryptobot_invoice_callback)
+    router.callback_query(F.data.startswith(CB_STARS_PREFIX))(stars_invoice_callback)
     return router

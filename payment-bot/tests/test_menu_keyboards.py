@@ -233,10 +233,24 @@ def test_tariff_keyboard_contains_active_tariffs_and_support_url() -> None:
 def test_tariff_detail_keyboard_contains_cryptobot_payment_action() -> None:
     keyboards = keyboard_module()
 
-    keyboard = keyboards.tariff_detail_keyboard(JsonI18n(), "3m", "en")
+    keyboard = keyboards.tariff_detail_keyboard(JsonI18n(), "3m", "en", Settings())
 
     assert f"{keyboards.CB_CRYPTOBOT_PREFIX}3m" in keyboard_callback_data(keyboard)
     assert "Pay with CryptoBot" in keyboard_texts(keyboard)
+
+
+def test_tariff_detail_keyboard_contains_stars_payment_action_when_enabled() -> None:
+    keyboards = keyboard_module()
+
+    keyboard = keyboards.tariff_detail_keyboard(
+        JsonI18n(),
+        "1m",
+        "en",
+        Settings(stars={"enabled": True}),
+    )
+
+    assert f"{keyboards.CB_STARS_PREFIX}1m" in keyboard_callback_data(keyboard)
+    assert "Pay with Telegram Stars" in keyboard_texts(keyboard)
 
 
 def test_payment_keyboard_points_to_provider_url_and_support() -> None:

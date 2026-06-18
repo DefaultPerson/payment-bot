@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any, Protocol
@@ -12,14 +12,28 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from bot.config import Settings
 from bot.core.db import session_scope
-from bot.models import Invoice, InvoiceStatus, Subscription, SubscriptionSource, Tariff, User
+from bot.models import (
+    Invoice,
+    InvoiceProvider,
+    InvoiceStatus,
+    Subscription,
+    SubscriptionSource,
+    Tariff,
+    User,
+)
 from bot.payments.cryptobot import CryptoBotAPIError, CryptoBotInvoice
+from bot.payments.stars import STARS_CURRENCY, StarsInvoiceQuote, quote_stars_invoice
 from bot.repos.invoices import (
+    create_paid_stars_recurring_invoice,
     create_pending_cryptobot_invoice,
+    create_pending_stars_invoice,
     lock_invoice_by_id,
+    lock_invoice_by_payload,
     lock_invoice_by_provider_id,
+    lock_invoice_by_telegram_payment_charge_id,
     mark_invoice_paid,
     mark_invoice_provider_created,
+    mark_stars_invoice_paid,
 )
 from bot.repos.promos import (
     get_pending_promo_for_user,
@@ -55,6 +69,16 @@ class CreatedInvoice:
 
 
 @dataclass(frozen=True, slots=True)
+class CreatedStarsInvoice:
+    invoice: Invoice
+    quote: TariffQuote
+    stars: StarsInvoiceQuote
+    payload: str
+    title: str
+    description: str
+
+
+@dataclass(frozen=True, slots=True)
 class PreparedInvoice:
     invoice_id: int
     quote: TariffQuote
@@ -77,6 +101,25 @@ class PaidInvoiceResult:
     net: Decimal | None = None
     currency: str | None = None
     subscription_expires_at: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class StarsSuccessfulPayment:
+    invoice_payload: str
+    currency: str
+    total_amount: int
+    telegram_payment_charge_id: str
+    raw: dict[str, Any]
+    is_recurring: bool | None = None
+    is_first_recurring: bool | None = None
+    subscription_expiration_date: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class StarsPreCheckoutResult:
+    ok: bool
+    invoice: Invoice | None = None
+    error_message: str | None = None
 
 
 async def create_cryptobot_invoice_for_user(
@@ -105,7 +148,7 @@ async def create_cryptobot_invoice_for_user(
             paid_btn_url=paid_btn_url,
         )
     except CryptoBotAPIError:
-        await _cancel_unusable_invoice(session_factory, prepared.invoice_id)
+        await cancel_unusable_invoice(session_factory, prepared.invoice_id)
         raise
 
     async with session_scope(session_factory) as session:
@@ -120,6 +163,67 @@ async def create_cryptobot_invoice_for_user(
             raw_payload=provider_invoice.raw,
         )
     return CreatedInvoice(invoice=invoice, quote=prepared.quote, pay_url=provider_invoice.pay_url)
+
+
+async def create_stars_invoice_for_user(
+    session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+    user: User,
+    tariff_code: str,
+    now: datetime,
+) -> CreatedStarsInvoice:
+    async with session_scope(session_factory) as session:
+        locked_user, promo = await get_pending_promo_for_user(
+            session,
+            user=user,
+            tariff_code=tariff_code,
+            now=now,
+            lock_user=True,
+        )
+        quote = quote_tariff(
+            settings,
+            tariff_code,
+            locked_user.status,
+            promo=promo_snapshot_from_row(promo) if promo is not None else None,
+        )
+        stars = quote_stars_invoice(settings, quote)
+        stars_accounting_quote = replace(
+            quote,
+            gross_usd=stars.gross_usd,
+            fee_usd=stars.fee_usd,
+            net_usd=stars.net_usd,
+        )
+        tariff = await ensure_configured_tariff(session, settings, tariff_code)
+        payload = f"stars:{uuid.uuid4()}"
+        invoice = await create_pending_stars_invoice(
+            session,
+            user=locked_user,
+            tariff_id=tariff.id,
+            quote=stars_accounting_quote,
+            stars_amount=stars.amount,
+            subscription_period=stars.subscription_period,
+            expires_at=now + timedelta(seconds=settings.stars.invoice_expires_seconds),
+            payload=payload,
+        )
+        if invoice.id is None:
+            msg = "invoice must have an id after flush"
+            raise ValueError(msg)
+        if promo is not None:
+            await reserve_promo_redemption(
+                session,
+                promo=promo,
+                user=locked_user,
+                invoice=invoice,
+                now=now,
+            )
+        return CreatedStarsInvoice(
+            invoice=invoice,
+            quote=quote,
+            stars=stars,
+            payload=payload,
+            title="Hydra Monitors",
+            description=_invoice_description(quote),
+        )
 
 
 async def process_paid_cryptobot_invoice(
@@ -182,6 +286,174 @@ async def process_paid_cryptobot_invoice(
     return _paid_result(
         processed=True,
         invoice=invoice,
+        subscription=subscription,
+        user=user,
+        tariff=tariff,
+    )
+
+
+async def validate_stars_pre_checkout(
+    session: AsyncSession,
+    *,
+    payload: str,
+    currency: str,
+    total_amount: int,
+    now: datetime,
+) -> StarsPreCheckoutResult:
+    invoice = await lock_invoice_by_payload(
+        session,
+        provider=InvoiceProvider.stars,
+        payload=payload,
+    )
+    if invoice is None:
+        return StarsPreCheckoutResult(ok=False, error_message="invoice not found")
+    if invoice.status is not InvoiceStatus.active:
+        return StarsPreCheckoutResult(
+            ok=False,
+            invoice=invoice,
+            error_message="invoice is not active",
+        )
+    if invoice.expires_at <= now:
+        return StarsPreCheckoutResult(ok=False, invoice=invoice, error_message="invoice expired")
+    if currency != STARS_CURRENCY:
+        return StarsPreCheckoutResult(
+            ok=False,
+            invoice=invoice,
+            error_message="unsupported currency",
+        )
+
+    expected_amount = _stars_amount_from_invoice(invoice)
+    if expected_amount != total_amount:
+        return StarsPreCheckoutResult(
+            ok=False,
+            invoice=invoice,
+            error_message="invoice amount mismatch",
+        )
+    return StarsPreCheckoutResult(ok=True, invoice=invoice)
+
+
+async def process_paid_stars_invoice(
+    session: AsyncSession,
+    *,
+    successful_payment: StarsSuccessfulPayment,
+    now: datetime,
+    settings: Settings | None = None,
+) -> PaidInvoiceResult:
+    charged_invoice = await lock_invoice_by_telegram_payment_charge_id(
+        session,
+        successful_payment.telegram_payment_charge_id,
+    )
+    if charged_invoice is not None:
+        return await _existing_paid_stars_result(session, charged_invoice)
+
+    invoice = await lock_invoice_by_payload(
+        session,
+        provider=InvoiceProvider.stars,
+        payload=successful_payment.invoice_payload,
+    )
+    if invoice is None:
+        msg = f"Stars invoice for payload {successful_payment.invoice_payload} was not found"
+        raise LookupError(msg)
+
+    if invoice.status is InvoiceStatus.paid:
+        if _stars_subscription_period_from_invoice(invoice) is None:
+            msg = "Stars invoice is already paid"
+            raise ValueError(msg)
+        return await _process_paid_stars_recurring_invoice(
+            session,
+            parent_invoice=invoice,
+            successful_payment=successful_payment,
+            now=now,
+            settings=settings,
+        )
+
+    if invoice.status is not InvoiceStatus.active:
+        msg = "invoice is not active"
+        raise ValueError(msg)
+    _validate_successful_stars_payment(invoice, successful_payment, now=now)
+
+    if invoice.tariff_id is None:
+        msg = "invoice tariff_id is missing"
+        raise ValueError(msg)
+    if invoice.id is None:
+        msg = "invoice must have an id before payment processing"
+        raise ValueError(msg)
+
+    user = await _load_paid_invoice_user(session, invoice.user_id)
+    tariff = await _load_paid_invoice_tariff(session, invoice.tariff_id)
+    subscription = await extend_paid_subscription(
+        session,
+        user=user,
+        days=tariff_duration_days(tariff.duration_months),
+        source=SubscriptionSource.stars,
+        last_invoice_id=invoice.id,
+        now=now,
+        bonus_days=invoice.promo_extra_days or 0,
+        loyalty=settings.loyalty if settings is not None else None,
+    )
+    if _stars_subscription_period_from_invoice(invoice) is not None:
+        subscription.stars_subscription_active = True
+    await mark_stars_invoice_paid(
+        session,
+        invoice,
+        paid_at=now,
+        telegram_payment_charge_id=successful_payment.telegram_payment_charge_id,
+        raw_payload=successful_payment.raw,
+    )
+    return _paid_result(
+        processed=True,
+        invoice=invoice,
+        subscription=subscription,
+        user=user,
+        tariff=tariff,
+    )
+
+
+async def _process_paid_stars_recurring_invoice(
+    session: AsyncSession,
+    *,
+    parent_invoice: Invoice,
+    successful_payment: StarsSuccessfulPayment,
+    now: datetime,
+    settings: Settings | None,
+) -> PaidInvoiceResult:
+    _validate_successful_stars_payment(parent_invoice, successful_payment, now=now)
+
+    if parent_invoice.tariff_id is None:
+        msg = "invoice tariff_id is missing"
+        raise ValueError(msg)
+    if parent_invoice.id is None:
+        msg = "invoice must have an id before recurring payment processing"
+        raise ValueError(msg)
+
+    renewal_invoice = await create_paid_stars_recurring_invoice(
+        session,
+        parent_invoice=parent_invoice,
+        payload=_stars_recurring_payload(successful_payment),
+        paid_at=now,
+        telegram_payment_charge_id=successful_payment.telegram_payment_charge_id,
+        raw_payload=successful_payment.raw,
+    )
+    if renewal_invoice.id is None:
+        msg = "recurring invoice must have an id after flush"
+        raise ValueError(msg)
+
+    user = await _load_paid_invoice_user(session, parent_invoice.user_id)
+    tariff = await _load_paid_invoice_tariff(session, parent_invoice.tariff_id)
+    subscription = await extend_paid_subscription(
+        session,
+        user=user,
+        days=tariff_duration_days(tariff.duration_months),
+        source=SubscriptionSource.stars,
+        last_invoice_id=renewal_invoice.id,
+        now=now,
+        bonus_days=0,
+        loyalty=settings.loyalty if settings is not None else None,
+    )
+    subscription.stars_subscription_active = True
+    return _paid_result(
+        processed=True,
+        invoice=renewal_invoice,
         subscription=subscription,
         user=user,
         tariff=tariff,
@@ -319,6 +591,81 @@ def _decimal_or_none(value: object) -> Decimal | None:
         return None
 
 
+def _validate_successful_stars_payment(
+    invoice: Invoice,
+    payment: StarsSuccessfulPayment,
+    *,
+    now: datetime,
+) -> None:
+    del now
+    if payment.currency != STARS_CURRENCY:
+        msg = "unsupported currency"
+        raise ValueError(msg)
+    if payment.total_amount != _stars_amount_from_invoice(invoice):
+        msg = "invoice amount mismatch"
+        raise ValueError(msg)
+
+
+def _stars_amount_from_invoice(invoice: Invoice) -> int:
+    provider_payload = invoice.provider_payload or {}
+    if "stars_amount" in provider_payload:
+        try:
+            return int(provider_payload["stars_amount"])
+        except (TypeError, ValueError) as exc:
+            msg = "invoice stars amount is invalid"
+            raise ValueError(msg) from exc
+    successful_payment = provider_payload.get("successful_payment")
+    if isinstance(successful_payment, dict) and "total_amount" in successful_payment:
+        try:
+            return int(successful_payment["total_amount"])
+        except (TypeError, ValueError) as exc:
+            msg = "invoice stars amount is invalid"
+            raise ValueError(msg) from exc
+    try:
+        return int(provider_payload["total_amount"])
+    except (KeyError, TypeError, ValueError) as exc:
+        msg = "invoice stars amount is missing"
+        raise ValueError(msg) from exc
+
+
+def _stars_subscription_period_from_invoice(invoice: Invoice) -> int | None:
+    provider_payload = invoice.provider_payload or {}
+    value = provider_payload.get("subscription_period")
+    return int(value) if value is not None else None
+
+
+def _stars_recurring_payload(payment: StarsSuccessfulPayment) -> str:
+    key = f"{payment.invoice_payload}:{payment.telegram_payment_charge_id}"
+    return f"stars:renew:{uuid.uuid5(uuid.NAMESPACE_URL, key)}"
+
+
+async def _existing_paid_stars_result(
+    session: AsyncSession,
+    invoice: Invoice,
+) -> PaidInvoiceResult:
+    user = await _load_paid_invoice_user(session, invoice.user_id)
+    tariff = None
+    if invoice.tariff_id is not None:
+        tariff = await _load_paid_invoice_tariff(session, invoice.tariff_id)
+    subscription = await _load_subscription_for_user(session, invoice.user_id)
+    return _paid_result(
+        processed=False,
+        invoice=invoice,
+        subscription=subscription,
+        user=user,
+        tariff=tariff,
+    )
+
+
+async def _load_subscription_for_user(
+    session: AsyncSession,
+    user_id: int,
+) -> Subscription | None:
+    return await session.scalar(
+        select(Subscription).where(Subscription.user_id == user_id).with_for_update(),
+    )
+
+
 def _paid_result(
     *,
     processed: bool,
@@ -344,7 +691,7 @@ def _paid_result(
     )
 
 
-async def _cancel_unusable_invoice(
+async def cancel_unusable_invoice(
     session_factory: async_sessionmaker[AsyncSession],
     invoice_id: int,
 ) -> None:
@@ -360,9 +707,12 @@ async def _cancel_unusable_invoice(
                 invoice.status = InvoiceStatus.cancelled
     except Exception:
         logger.exception(
-            "failed to cancel unusable CryptoBot invoice",
+            "failed to cancel unusable invoice",
             extra={"invoice_id": invoice_id},
         )
+
+
+_cancel_unusable_invoice = cancel_unusable_invoice
 
 
 def _invoice_description(quote: TariffQuote) -> str:
