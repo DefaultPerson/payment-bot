@@ -49,12 +49,14 @@ def quote_tariff(
     status: UserStatus,
     *,
     promo: PromoSnapshot | None = None,
+    fee_percent: Decimal | None = None,
 ) -> TariffQuote:
     tariff = get_tariff(settings, code)
 
     base_net = money(_net_amount(settings, tariff, status))
     net, promo_discount_usd, promo_extra_days = _apply_promo(settings, base_net, promo)
-    fee_multiplier = Decimal("1") - (settings.cryptobot.fee_percent / Decimal("100"))
+    provider_fee_percent = settings.cryptobot.fee_percent if fee_percent is None else fee_percent
+    fee_multiplier = Decimal("1") - (provider_fee_percent / Decimal("100"))
     gross = money(net / fee_multiplier)
 
     return TariffQuote(

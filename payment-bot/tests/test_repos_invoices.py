@@ -141,11 +141,15 @@ class FakeAsyncSession:
                 ),
                 None,
             )
+            provider = next(
+                (value for key, value in params.items() if key.startswith("provider")),
+                InvoiceProvider.cryptobot,
+            )
             return next(
                 (
                     invoice
                     for invoice in self.invoices
-                    if invoice.provider is InvoiceProvider.cryptobot
+                    if _same_provider(invoice.provider, provider)
                     and invoice.provider_invoice_id == provider_invoice_id
                 ),
                 None,
@@ -174,10 +178,14 @@ class FakeAsyncSession:
                 ),
                 None,
             )
+            provider = next(
+                (value for key, value in params.items() if key.startswith("provider")),
+                InvoiceProvider.cryptobot,
+            )
             invoices = [
                 invoice
                 for invoice in self.invoices
-                if invoice.provider is InvoiceProvider.cryptobot
+                if _same_provider(invoice.provider, provider)
                 and invoice.status is InvoiceStatus.active
                 and invoice.provider_invoice_id is not None
                 and invoice.expires_at > now
@@ -189,10 +197,14 @@ class FakeAsyncSession:
                 ],
             )
 
+        provider = next(
+            (value for key, value in params.items() if key.startswith("provider")),
+            InvoiceProvider.cryptobot,
+        )
         invoices = [
             invoice
             for invoice in self.invoices
-            if invoice.provider is InvoiceProvider.cryptobot
+            if _same_provider(invoice.provider, provider)
             and invoice.status is InvoiceStatus.active
             and invoice.expires_at <= now
         ]
@@ -214,6 +226,10 @@ def make_user(*, user_id: int = 10) -> User:
         created_at=timestamp,
         updated_at=timestamp,
     )
+
+
+def _same_provider(left: InvoiceProvider, right: object) -> bool:
+    return left == right or left.value == right
 
 
 def make_invoice(
@@ -306,6 +322,39 @@ async def test_create_pending_invoice_persists_promo_snapshot_from_quote() -> No
     assert invoice.promo_value == Decimal("20")
     assert invoice.promo_discount_usd == Decimal("14.22")
     assert invoice.promo_extra_days == 0
+
+
+async def test_create_pending_provider_invoice_sets_xrocket_provider_and_currency() -> None:
+    from bot.repos.invoices import create_pending_provider_invoice
+
+    session = FakeAsyncSession()
+    user = make_user(user_id=44)
+    expires_at = datetime(2026, 6, 17, 13, 0, tzinfo=UTC)
+
+    invoice = await create_pending_provider_invoice(
+        session,
+        provider=InvoiceProvider.xrocket,
+        user=user,
+        tariff_id=55,
+        quote=Quote(gross_usd=Decimal("73.30"), fee_usd=Decimal("0.00")),
+        currency="USDT",
+        expires_at=expires_at,
+        payload="inv:xrocket",
+    )
+
+    assert invoice.id == 1
+    assert invoice.provider is InvoiceProvider.xrocket
+    assert invoice.provider_invoice_id is None
+    assert invoice.status is InvoiceStatus.active
+    assert invoice.currency == "USDT"
+    assert invoice.amount_usd == Decimal("73.30")
+    assert invoice.gross == Decimal("73.30")
+    assert invoice.fee == Decimal("0.00")
+    assert invoice.net == Decimal("71.10")
+    assert invoice.payload == "inv:xrocket"
+    assert invoice.expires_at == expires_at
+    assert invoice in session.invoices
+    assert session.flushed == 1
 
 
 async def test_create_pending_stars_invoice_sets_xtr_provider_payload_and_usd_accounting() -> None:
@@ -493,6 +542,51 @@ async def test_get_active_cryptobot_invoices_after_id_returns_ordered_batch_afte
     assert [invoice.id for invoice in batch] == [3, 4]
 
 
+async def test_get_active_provider_invoices_after_id_filters_xrocket_provider() -> None:
+    from bot.repos.invoices import get_active_provider_invoices_after_id
+
+    session = FakeAsyncSession()
+    now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
+    session.invoices.extend(
+        [
+            make_invoice(
+                invoice_id=1,
+                provider=InvoiceProvider.cryptobot,
+                provider_invoice_id="1",
+                expires_at=now + timedelta(1),
+            ),
+            make_invoice(
+                invoice_id=2,
+                provider=InvoiceProvider.xrocket,
+                provider_invoice_id="2",
+                expires_at=now + timedelta(1),
+            ),
+            make_invoice(
+                invoice_id=3,
+                provider=InvoiceProvider.xrocket,
+                provider_invoice_id="3",
+                expires_at=now + timedelta(1),
+            ),
+            make_invoice(
+                invoice_id=4,
+                provider=InvoiceProvider.xrocket,
+                provider_invoice_id=None,
+                expires_at=now + timedelta(1),
+            ),
+        ],
+    )
+
+    batch = await get_active_provider_invoices_after_id(
+        session,
+        provider=InvoiceProvider.xrocket,
+        now=now,
+        limit=10,
+        after_id=2,
+    )
+
+    assert [invoice.id for invoice in batch] == [3]
+
+
 async def test_lock_invoice_by_provider_id_uses_row_lock_and_returns_none_when_missing() -> None:
     session = FakeAsyncSession()
     invoice = make_invoice(
@@ -509,6 +603,34 @@ async def test_lock_invoice_by_provider_id_uses_row_lock_and_returns_none_when_m
     assert missing is None
     assert session.scalar_statements[0]._for_update_arg is not None
     assert session.scalar_statements[1]._for_update_arg is not None
+
+
+async def test_lock_invoice_by_provider_id_can_filter_xrocket_provider() -> None:
+    from bot.repos.invoices import lock_provider_invoice_by_provider_id
+
+    session = FakeAsyncSession()
+    crypto = make_invoice(
+        invoice_id=7,
+        provider=InvoiceProvider.cryptobot,
+        provider_invoice_id="same",
+        expires_at=datetime(2026, 6, 17, 13, 0, tzinfo=UTC),
+    )
+    xrocket = make_invoice(
+        invoice_id=8,
+        provider=InvoiceProvider.xrocket,
+        provider_invoice_id="same",
+        expires_at=datetime(2026, 6, 17, 13, 0, tzinfo=UTC),
+    )
+    session.invoices.extend([crypto, xrocket])
+
+    locked = await lock_provider_invoice_by_provider_id(
+        session,
+        provider=InvoiceProvider.xrocket,
+        provider_invoice_id="same",
+    )
+
+    assert locked is xrocket
+    assert session.scalar_statements[0]._for_update_arg is not None
 
 
 async def test_lock_invoice_by_payload_filters_provider_and_uses_row_lock() -> None:
@@ -665,6 +787,37 @@ async def test_mark_expired_cryptobot_invoices_marks_only_expired_active_invoice
     assert future.status is InvoiceStatus.active
     assert already_paid.status is InvoiceStatus.paid
     assert other_provider.status is InvoiceStatus.active
+    assert session.flushed == 1
+
+
+async def test_mark_expired_provider_invoices_marks_only_xrocket_provider() -> None:
+    from bot.repos.invoices import mark_expired_provider_invoices
+
+    session = FakeAsyncSession()
+    now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
+    xrocket_expired = make_invoice(
+        invoice_id=1,
+        provider=InvoiceProvider.xrocket,
+        expires_at=now - timedelta(seconds=1),
+    )
+    cryptobot_expired = make_invoice(invoice_id=2, expires_at=now - timedelta(seconds=1))
+    xrocket_future = make_invoice(
+        invoice_id=3,
+        provider=InvoiceProvider.xrocket,
+        expires_at=now + timedelta(seconds=1),
+    )
+    session.invoices.extend([xrocket_expired, cryptobot_expired, xrocket_future])
+
+    count = await mark_expired_provider_invoices(
+        session,
+        provider=InvoiceProvider.xrocket,
+        now=now,
+    )
+
+    assert count == 1
+    assert xrocket_expired.status is InvoiceStatus.expired
+    assert cryptobot_expired.status is InvoiceStatus.active
+    assert xrocket_future.status is InvoiceStatus.active
     assert session.flushed == 1
 
 

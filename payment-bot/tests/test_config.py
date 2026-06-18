@@ -89,6 +89,33 @@ def test_phase6_notifications_config_defaults_are_safe_for_tests() -> None:
     assert settings.access.revoke_ban_seconds == 60
 
 
+def test_phase7_xrocket_config_defaults_are_disabled_and_safe() -> None:
+    settings = Settings()
+
+    assert settings.xrocket.enabled is False
+    assert settings.xrocket.token is None
+    assert settings.xrocket.testnet is False
+    assert settings.xrocket.base_url is None
+    assert settings.xrocket.currency == "USDT"
+    assert settings.xrocket.fee_percent == Decimal("0")
+    assert settings.xrocket.invoice_expires_seconds == 3600
+    assert settings.xrocket.poll_interval_seconds == 30
+    assert settings.xrocket.poll_batch_size == 50
+
+
+def test_phase7_xrocket_config_rejects_invalid_periods_and_fee() -> None:
+    with pytest.raises(ValidationError):
+        Settings(xrocket={"fee_percent": Decimal("100")})
+    with pytest.raises(ValidationError):
+        Settings(xrocket={"invoice_expires_seconds": 0})
+    with pytest.raises(ValidationError):
+        Settings(xrocket={"invoice_expires_seconds": 86_401})
+    with pytest.raises(ValidationError):
+        Settings(xrocket={"poll_interval_seconds": 0})
+    with pytest.raises(ValidationError):
+        Settings(xrocket={"poll_batch_size": 0})
+
+
 def test_phase6_notifications_config_rejects_invalid_periods() -> None:
     with pytest.raises(ValidationError):
         Settings(notifications={"loop_interval_seconds": 0})
@@ -188,6 +215,25 @@ def test_cryptobot_token_env_alias_allows_empty_value_when_disabled(tmp_path: Pa
 
     assert settings.cryptobot.enabled is False
     assert settings.cryptobot.token is None
+
+
+def test_xrocket_token_env_alias_is_supported(tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text("XROCKET_TOKEN=xrocket-secret\n", encoding="utf-8")
+
+    settings = load_settings(config_path=tmp_path / "missing.toml", env_file=env_file)
+
+    assert settings.xrocket.token is not None
+    assert settings.xrocket.token.get_secret_value() == "xrocket-secret"
+
+
+def test_xrocket_token_env_alias_normalizes_empty_value(tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text("XROCKET_TOKEN=\n", encoding="utf-8")
+
+    settings = load_settings(config_path=tmp_path / "missing.toml", env_file=env_file)
+
+    assert settings.xrocket.token is None
 
 
 def test_admin_ids_parse_from_csv() -> None:

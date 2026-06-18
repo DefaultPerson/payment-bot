@@ -3,10 +3,12 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
+from uuid import UUID
 
 import pytest
 from sqlalchemy.dialects import postgresql
 
+from bot.config import Settings
 from bot.models import (
     Invoice,
     InvoiceProvider,
@@ -21,6 +23,7 @@ from bot.models import (
     UserStatus,
 )
 from bot.payments.cryptobot import CryptoBotInvoice
+from bot.payments.xrocket import XRocketAPIError, XRocketInvoice
 from bot.services.payments import (
     StarsSuccessfulPayment,
     process_paid_cryptobot_invoice,
@@ -72,6 +75,15 @@ class FakeAsyncSession:
 
     async def commit(self) -> None:
         self.committed += 1
+
+    async def rollback(self) -> None:
+        pass
+
+    async def __aenter__(self) -> FakeAsyncSession:
+        return self
+
+    async def __aexit__(self, exc_type: object, exc: object, traceback: object) -> None:
+        return None
 
     async def execute(self, statement: Any) -> None:
         self.executed_statements.append(statement)
@@ -125,11 +137,12 @@ class FakeAsyncSession:
                     None,
                 )
             provider_invoice_id = _param_with_prefix(params, "provider_invoice_id")
+            provider = _param_with_prefix_or_none(params, "provider")
             return next(
                 (
                     invoice
                     for invoice in self.invoices
-                    if invoice.provider is InvoiceProvider.cryptobot
+                    if (provider is None or invoice.provider == provider)
                     and invoice.provider_invoice_id == provider_invoice_id
                 ),
                 None,
@@ -264,24 +277,27 @@ def make_invoice(
     *,
     invoice_id: int = 30,
     user_id: int = 10,
+    provider: InvoiceProvider = InvoiceProvider.cryptobot,
+    provider_invoice_id: str = "provider-1",
     tariff_id: int | None = 20,
     status: InvoiceStatus = InvoiceStatus.active,
     payload: str = "inv:payload",
     promo_extra_days: int = 0,
+    currency: str = "USD",
 ) -> Invoice:
     timestamp = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
     return Invoice(
         id=invoice_id,
         user_id=user_id,
-        provider=InvoiceProvider.cryptobot,
-        provider_invoice_id="provider-1",
+        provider=provider,
+        provider_invoice_id=provider_invoice_id,
         telegram_payment_charge_id=None,
         tariff_id=tariff_id,
         amount_usd=Decimal("73.30"),
         gross=Decimal("73.30"),
         fee=Decimal("2.20"),
         net=Decimal("71.10"),
-        currency="USD",
+        currency=currency,
         status=status,
         payload=payload,
         provider_payload={"created": True},
@@ -390,6 +406,310 @@ def make_provider_invoice(
     )
 
 
+def make_xrocket_invoice(
+    *,
+    invoice_id: str = "provider-1",
+    status: str = "paid",
+    payload: str | None = "inv:payload",
+    pay_url: str | None = "https://t.me/xrocket?start=pay",
+    paid_at: datetime | None = None,
+    raw: dict[str, Any] | None = None,
+) -> XRocketInvoice:
+    return XRocketInvoice(
+        invoice_id=invoice_id,
+        status=status,
+        amount=Decimal("73.30"),
+        currency="USDT",
+        payload=payload,
+        pay_url=pay_url,
+        created_at=datetime(2026, 6, 17, 12, 0, tzinfo=UTC),
+        paid_at=paid_at,
+        raw=raw or {"id": invoice_id, "status": status, "payload": payload},
+    )
+
+
+async def test_create_xrocket_invoice_for_user_commits_before_provider_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import bot.services.payments as payments_module
+
+    settings = Settings(xrocket={"enabled": True, "fee_percent": Decimal("5")})
+    user = make_user(user_id=7)
+    session = FakeAsyncSession()
+    session.users.append(user)
+    provider_invoice = make_xrocket_invoice(
+        invoice_id="123",
+        status="active",
+        payload="inv:00000000-0000-0000-0000-000000000001",
+        raw={"id": 123, "link": "https://t.me/xrocket?start=pay"},
+    )
+    client_calls: list[dict[str, Any]] = []
+    repo_calls: list[dict[str, Any]] = []
+
+    class FakeSessionFactory:
+        def __call__(self) -> FakeAsyncSession:
+            return session
+
+    class FakeClient:
+        async def create_invoice(self, **kwargs: Any) -> XRocketInvoice:
+            client_calls.append({"commits_before_provider": session.committed})
+            client_calls.append(kwargs)
+            return provider_invoice
+
+    async def fake_get_pending_promo_for_user(
+        *args: Any,
+        **kwargs: Any,
+    ) -> tuple[User, None]:
+        return user, None
+
+    async def fake_ensure_configured_tariff(*args: Any, **kwargs: Any) -> Tariff:
+        repo_calls.append({"name": "tariff", "args": args, **kwargs})
+        return make_tariff(tariff_id=55, duration_months=1)
+
+    async def fake_create_pending_provider_invoice(*args: Any, **kwargs: Any) -> Invoice:
+        repo_calls.append({"name": "pending", "args": args, **kwargs})
+        invoice = make_invoice(
+            invoice_id=77,
+            user_id=user.id,
+            provider=InvoiceProvider.xrocket,
+            provider_invoice_id=None,
+            payload=kwargs["payload"],
+            currency=kwargs["currency"],
+        )
+        session.invoices.append(invoice)
+        return invoice
+
+    async def fake_lock_invoice_by_id(*args: Any, **kwargs: Any) -> Invoice | None:
+        repo_calls.append({"name": "lock", "args": args, **kwargs})
+        return session.invoices[0]
+
+    async def fake_mark_provider_created(*args: Any, **kwargs: Any) -> Invoice:
+        repo_calls.append({"name": "mark", "args": args, **kwargs})
+        invoice = args[1]
+        invoice.provider_invoice_id = kwargs["provider_invoice_id"]
+        invoice.provider_payload = kwargs["raw_payload"]
+        return invoice
+
+    monkeypatch.setattr(payments_module.uuid, "uuid4", lambda: UUID(int=1))
+    monkeypatch.setattr(
+        payments_module,
+        "get_pending_promo_for_user",
+        fake_get_pending_promo_for_user,
+    )
+    monkeypatch.setattr(
+        payments_module,
+        "ensure_configured_tariff",
+        fake_ensure_configured_tariff,
+    )
+    monkeypatch.setattr(
+        payments_module,
+        "create_pending_provider_invoice",
+        fake_create_pending_provider_invoice,
+    )
+    monkeypatch.setattr(payments_module, "lock_invoice_by_id", fake_lock_invoice_by_id)
+    monkeypatch.setattr(
+        payments_module,
+        "mark_invoice_provider_created",
+        fake_mark_provider_created,
+    )
+
+    created = await payments_module.create_xrocket_invoice_for_user(
+        FakeSessionFactory(),
+        settings,
+        FakeClient(),
+        user,
+        "1m",
+        datetime(2026, 6, 17, 12, 0, tzinfo=UTC),
+    )
+
+    assert repo_calls[0]["name"] == "tariff"
+    assert repo_calls[1]["name"] == "pending"
+    assert repo_calls[1]["provider"] is InvoiceProvider.xrocket
+    assert repo_calls[1]["currency"] == "USDT"
+    assert repo_calls[1]["expires_at"] == datetime(2026, 6, 17, 13, 0, tzinfo=UTC)
+    assert client_calls == [
+        {"commits_before_provider": 1},
+        {
+            "amount": Decimal("83.16"),
+            "payload": "inv:00000000-0000-0000-0000-000000000001",
+            "description": "Hydra Monitors access: 1 month",
+            "currency": "USDT",
+            "expires_in": 3600,
+        },
+    ]
+    assert repo_calls[2]["name"] == "lock"
+    assert repo_calls[2]["args"] == (session, 77)
+    assert repo_calls[3]["name"] == "mark"
+    assert repo_calls[3]["provider_invoice_id"] == "123"
+    assert repo_calls[3]["raw_payload"] == provider_invoice.raw
+    assert created.invoice.provider_invoice_id == "123"
+    assert created.pay_url == "https://t.me/xrocket?start=pay"
+    assert created.quote.gross_usd == Decimal("83.16")
+    assert session.committed == 2
+
+
+async def test_create_xrocket_invoice_for_user_cancels_local_invoice_on_provider_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import bot.services.payments as payments_module
+
+    user = make_user(user_id=7)
+    session = FakeAsyncSession()
+    cancelled: list[int] = []
+
+    class FakeSessionFactory:
+        def __call__(self) -> FakeAsyncSession:
+            return session
+
+    class FakeClient:
+        async def create_invoice(self, **kwargs: Any) -> XRocketInvoice:
+            del kwargs
+            raise XRocketAPIError("TOKEN_INVALID")
+
+    async def fake_get_pending_promo_for_user(
+        *args: Any,
+        **kwargs: Any,
+    ) -> tuple[User, None]:
+        return user, None
+
+    async def fake_ensure_configured_tariff(*args: Any, **kwargs: Any) -> Tariff:
+        return make_tariff(tariff_id=55)
+
+    async def fake_create_pending_provider_invoice(*args: Any, **kwargs: Any) -> Invoice:
+        del args, kwargs
+        invoice = make_invoice(
+            invoice_id=77,
+            user_id=user.id,
+            provider=InvoiceProvider.xrocket,
+            provider_invoice_id=None,
+            currency="USDT",
+        )
+        return invoice
+
+    async def fake_cancel_unusable_invoice(*args: Any, **kwargs: Any) -> None:
+        cancelled.append(args[1])
+
+    monkeypatch.setattr(
+        payments_module,
+        "get_pending_promo_for_user",
+        fake_get_pending_promo_for_user,
+    )
+    monkeypatch.setattr(
+        payments_module,
+        "ensure_configured_tariff",
+        fake_ensure_configured_tariff,
+    )
+    monkeypatch.setattr(
+        payments_module,
+        "create_pending_provider_invoice",
+        fake_create_pending_provider_invoice,
+    )
+    monkeypatch.setattr(payments_module, "cancel_unusable_invoice", fake_cancel_unusable_invoice)
+
+    with pytest.raises(XRocketAPIError, match="TOKEN_INVALID"):
+        await payments_module.create_xrocket_invoice_for_user(
+            FakeSessionFactory(),
+            Settings(xrocket={"enabled": True}),
+            FakeClient(),
+            user,
+            "1m",
+            datetime(2026, 6, 17, 12, 0, tzinfo=UTC),
+        )
+
+    assert cancelled == [77]
+
+
+async def test_create_xrocket_invoice_for_user_rejects_missing_provider_pay_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import bot.services.payments as payments_module
+
+    user = make_user(user_id=7)
+    session = FakeAsyncSession()
+    mark_calls: list[object] = []
+
+    class FakeSessionFactory:
+        def __call__(self) -> FakeAsyncSession:
+            return session
+
+    class FakeClient:
+        async def create_invoice(self, **kwargs: Any) -> XRocketInvoice:
+            del kwargs
+            return make_xrocket_invoice(
+                invoice_id="123",
+                status="active",
+                pay_url="   ",
+                raw={"id": 123},
+            )
+
+    async def fake_get_pending_promo_for_user(
+        *args: Any,
+        **kwargs: Any,
+    ) -> tuple[User, None]:
+        return user, None
+
+    async def fake_ensure_configured_tariff(*args: Any, **kwargs: Any) -> Tariff:
+        return make_tariff(tariff_id=55)
+
+    async def fake_create_pending_provider_invoice(*args: Any, **kwargs: Any) -> Invoice:
+        del args, kwargs
+        return make_invoice(
+            invoice_id=77,
+            user_id=user.id,
+            provider=InvoiceProvider.xrocket,
+            provider_invoice_id=None,
+            currency="USDT",
+        )
+
+    async def fake_mark_provider_created(*args: Any, **kwargs: Any) -> None:
+        del kwargs
+        mark_calls.append(args)
+
+    async def fake_lock_invoice_by_id(*args: Any, **kwargs: Any) -> Invoice:
+        del args, kwargs
+        return make_invoice(
+            invoice_id=77,
+            user_id=user.id,
+            provider=InvoiceProvider.xrocket,
+            provider_invoice_id=None,
+            currency="USDT",
+        )
+
+    monkeypatch.setattr(
+        payments_module,
+        "get_pending_promo_for_user",
+        fake_get_pending_promo_for_user,
+    )
+    monkeypatch.setattr(
+        payments_module,
+        "ensure_configured_tariff",
+        fake_ensure_configured_tariff,
+    )
+    monkeypatch.setattr(
+        payments_module,
+        "create_pending_provider_invoice",
+        fake_create_pending_provider_invoice,
+    )
+    monkeypatch.setattr(
+        payments_module,
+        "mark_invoice_provider_created",
+        fake_mark_provider_created,
+    )
+    monkeypatch.setattr(payments_module, "lock_invoice_by_id", fake_lock_invoice_by_id)
+
+    with pytest.raises(XRocketAPIError, match="missing pay URL"):
+        await payments_module.create_xrocket_invoice_for_user(
+            FakeSessionFactory(),
+            Settings(xrocket={"enabled": True}),
+            FakeClient(),
+            user,
+            "1m",
+            datetime(2026, 6, 17, 12, 0, tzinfo=UTC),
+        )
+
+    assert mark_calls == []
+
+
 async def test_process_paid_invoice_extends_subscription_once() -> None:
     session = FakeAsyncSession()
     now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
@@ -433,6 +753,41 @@ async def test_process_paid_invoice_extends_subscription_once() -> None:
     assert invoice.fee == Decimal("2.20")
     assert invoice.net == Decimal("71.10")
     assert session.committed == 0
+
+
+async def test_process_paid_xrocket_invoice_extends_subscription_once() -> None:
+    from bot.services.payments import process_paid_xrocket_invoice
+
+    session = FakeAsyncSession()
+    now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
+    user = make_user()
+    tariff = make_tariff(duration_months=1)
+    invoice = make_invoice(provider=InvoiceProvider.xrocket, currency="USDT")
+    session.users.append(user)
+    session.tariffs.append(tariff)
+    session.invoices.append(invoice)
+
+    result = await process_paid_xrocket_invoice(
+        session,
+        provider_invoice=make_xrocket_invoice(raw={"id": "provider-1"}),
+        now=now,
+    )
+
+    assert result.processed is True
+    assert result.invoice is invoice
+    assert result.subscription is session.subscriptions[0]
+    assert result.provider_invoice_id == "provider-1"
+    assert result.currency == "USDT"
+    assert result.gross == Decimal("73.30")
+    assert result.fee == Decimal("2.20")
+    assert result.net == Decimal("71.10")
+    subscription = result.subscription
+    assert subscription.expires_at == now + timedelta(days=30)
+    assert subscription.source is SubscriptionSource.xrocket
+    assert subscription.last_invoice_id == invoice.id
+    assert invoice.status is InvoiceStatus.paid
+    assert invoice.paid_at == now
+    assert invoice.provider_payload == {"id": "provider-1"}
 
 
 async def test_process_paid_invoice_records_referral_earning_from_net_amount() -> None:
@@ -884,6 +1239,39 @@ async def test_process_paid_invoice_is_idempotent_for_already_paid_invoice() -> 
     assert session.flushed == first_flushes
 
 
+async def test_process_paid_xrocket_invoice_is_idempotent_for_already_paid_invoice() -> None:
+    from bot.services.payments import process_paid_xrocket_invoice
+
+    session = FakeAsyncSession()
+    now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
+    user = make_user()
+    session.users.append(user)
+    session.tariffs.append(make_tariff())
+    session.invoices.append(make_invoice(provider=InvoiceProvider.xrocket, currency="USDT"))
+
+    first = await process_paid_xrocket_invoice(
+        session,
+        provider_invoice=make_xrocket_invoice(),
+        now=now,
+    )
+    first_expiry = first.subscription.expires_at
+    first_active_days = user.total_active_days
+    first_flushes = session.flushed
+
+    second = await process_paid_xrocket_invoice(
+        session,
+        provider_invoice=make_xrocket_invoice(),
+        now=now + timedelta(minutes=1),
+    )
+
+    assert second.processed is False
+    assert second.invoice is first.invoice
+    assert second.subscription is None
+    assert first.subscription.expires_at == first_expiry
+    assert user.total_active_days == first_active_days
+    assert session.flushed == first_flushes
+
+
 async def test_process_paid_invoice_rejects_payload_mismatch_before_mutation() -> None:
     session = FakeAsyncSession()
     now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
@@ -896,6 +1284,32 @@ async def test_process_paid_invoice_rejects_payload_mismatch_before_mutation() -
         await process_paid_cryptobot_invoice(
             session,
             provider_invoice=make_provider_invoice(payload="inv:provider"),
+            now=now,
+        )
+
+    assert invoice.status is InvoiceStatus.active
+    assert session.subscriptions == []
+    assert session.flushed == 0
+
+
+async def test_process_paid_xrocket_invoice_rejects_payload_mismatch_before_mutation() -> None:
+    from bot.services.payments import process_paid_xrocket_invoice
+
+    session = FakeAsyncSession()
+    now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
+    invoice = make_invoice(
+        provider=InvoiceProvider.xrocket,
+        payload="inv:local",
+        currency="USDT",
+    )
+    session.users.append(make_user())
+    session.tariffs.append(make_tariff())
+    session.invoices.append(invoice)
+
+    with pytest.raises(ValueError, match="payload mismatch"):
+        await process_paid_xrocket_invoice(
+            session,
+            provider_invoice=make_xrocket_invoice(payload="inv:provider"),
             now=now,
         )
 

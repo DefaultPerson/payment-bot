@@ -65,6 +65,26 @@ class CryptoBotConfig(BaseModel):
         return _blank_secret_to_none(value)
 
 
+class XRocketConfig(BaseModel):
+    enabled: bool = False
+    token: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices("token", "XROCKET_TOKEN"),
+    )
+    testnet: bool = False
+    base_url: str | None = None
+    currency: str = Field(default="USDT", min_length=1)
+    fee_percent: Decimal = Field(default=Decimal("0"), ge=0, lt=100)
+    invoice_expires_seconds: int = Field(default=3600, ge=1, le=86_400)
+    poll_interval_seconds: int = Field(default=30, ge=1)
+    poll_batch_size: int = Field(default=50, ge=1, le=100)
+
+    @field_validator("token", mode="before")
+    @classmethod
+    def blank_token_is_none(cls, value: Any) -> Any:
+        return _blank_secret_to_none(value)
+
+
 class TariffConfig(BaseModel):
     code: str
     duration_months: int = Field(ge=1)
@@ -197,12 +217,18 @@ class Settings(BaseSettings):
         validation_alias="CRYPTOBOT_TOKEN",
         exclude=True,
     )
+    xrocket_token: SecretStr | None = Field(
+        default=None,
+        validation_alias="XROCKET_TOKEN",
+        exclude=True,
+    )
 
     bot: BotConfig = Field(default_factory=BotConfig)
     service_channel: ServiceChannelConfig = Field(default_factory=ServiceChannelConfig)
     http: HttpConfig = Field(default_factory=HttpConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     cryptobot: CryptoBotConfig = Field(default_factory=CryptoBotConfig)
+    xrocket: XRocketConfig = Field(default_factory=XRocketConfig)
     tariffs: TariffsConfig = Field(default_factory=TariffsConfig)
     loyalty: LoyaltyConfig = Field(default_factory=LoyaltyConfig)
     promos: PromosConfig = Field(default_factory=PromosConfig)
@@ -252,15 +278,23 @@ class Settings(BaseSettings):
     def blank_cryptobot_token_is_none(cls, value: Any) -> Any:
         return _blank_secret_to_none(value)
 
+    @field_validator("xrocket_token", mode="before")
+    @classmethod
+    def blank_xrocket_token_is_none(cls, value: Any) -> Any:
+        return _blank_secret_to_none(value)
+
     @model_validator(mode="after")
-    def apply_flat_aliases_and_validate_cryptobot_token(self) -> Settings:
+    def apply_flat_aliases_and_validate_provider_tokens(self) -> Settings:
         if self.service_channel_id is not None:
             self.service_channel.chat_id = self.service_channel_id
         if self.service_thread_id is not None:
             self.service_channel.thread_id = self.service_thread_id
         if self.cryptobot_token is not None:
             self.cryptobot.token = self.cryptobot_token
+        if self.xrocket_token is not None:
+            self.xrocket.token = self.xrocket_token
         self._validate_cryptobot_token()
+        self._validate_xrocket_token()
         return self
 
     def _validate_cryptobot_token(self) -> None:
@@ -268,6 +302,13 @@ class Settings(BaseSettings):
             token = self.cryptobot.token.get_secret_value()
             if not token.strip():
                 msg = "CRYPTOBOT_TOKEN must not be empty when set"
+                raise ValueError(msg)
+
+    def _validate_xrocket_token(self) -> None:
+        if self.xrocket.token is not None:
+            token = self.xrocket.token.get_secret_value()
+            if not token.strip():
+                msg = "XROCKET_TOKEN must not be empty when set"
                 raise ValueError(msg)
 
     def validate_runtime(self) -> None:
@@ -285,6 +326,7 @@ class Settings(BaseSettings):
             msg = "DATABASE_URL must use postgresql+asyncpg://"
             raise ValueError(msg)
         self._validate_cryptobot_token()
+        self._validate_xrocket_token()
 
 
 def load_settings(

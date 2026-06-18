@@ -23,7 +23,9 @@ from bot.handlers import create_router
 from bot.jobs.crypto_poller import crypto_poller_loop
 from bot.jobs.notifications import notification_loop
 from bot.jobs.runner import TaskRunner
+from bot.jobs.xrocket_poller import xrocket_poller_loop
 from bot.payments.cryptobot import CryptoBotClient
+from bot.payments.xrocket import XRocketClient
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +95,40 @@ def build_cryptobot_client(settings: Settings) -> CryptoBotClient | None:
     )
 
 
+def build_xrocket_client(settings: Settings) -> XRocketClient | None:
+    if not settings.xrocket.enabled or settings.xrocket.token is None:
+        return None
+    return XRocketClient(
+        api_key=settings.xrocket.token.get_secret_value(),
+        testnet=settings.xrocket.testnet,
+        base_url=settings.xrocket.base_url,
+    )
+
+
+async def close_payment_clients(
+    *,
+    cryptobot_client: CryptoBotClient | None,
+    xrocket_client: XRocketClient | None,
+) -> None:
+    await _close_payment_client("cryptobot", cryptobot_client)
+    await _close_payment_client("xrocket", xrocket_client)
+
+
+async def _close_payment_client(
+    provider: str,
+    client: CryptoBotClient | XRocketClient | None,
+) -> None:
+    if client is None:
+        return
+    try:
+        await client.close()
+    except Exception:
+        logger.exception(
+            "failed to close payment client",
+            extra={"provider": provider},
+        )
+
+
 def start_background_jobs(
     *,
     task_runner: TaskRunner,
@@ -102,6 +138,7 @@ def start_background_jobs(
     i18n: JsonI18n,
     service_channel: ServiceChannel,
     cryptobot_client: CryptoBotClient | None,
+    xrocket_client: XRocketClient | None,
 ) -> None:
     task_runner.start(
         "notifications",
@@ -125,6 +162,18 @@ def start_background_jobs(
                 service_channel=service_channel,
             ),
         )
+    if xrocket_client is not None:
+        task_runner.start(
+            "xrocket-poller",
+            xrocket_poller_loop(
+                session_factory=session_factory,
+                settings=settings,
+                client=xrocket_client,
+                bot=bot,
+                i18n=i18n,
+                service_channel=service_channel,
+            ),
+        )
 
 
 async def main() -> None:
@@ -139,6 +188,7 @@ async def main() -> None:
     bot = None
     dispatcher = None
     cryptobot_client = None
+    xrocket_client = None
     http_runner = None
 
     try:
@@ -156,11 +206,13 @@ async def main() -> None:
         )
         service_channel = ServiceChannel(bot, settings)
         cryptobot_client = build_cryptobot_client(settings)
+        xrocket_client = build_xrocket_client(settings)
         dispatcher["settings"] = settings
         dispatcher["i18n"] = i18n
         dispatcher["session_factory"] = session_factory
         dispatcher["service_channel"] = service_channel
         dispatcher["cryptobot_client"] = cryptobot_client
+        dispatcher["xrocket_client"] = xrocket_client
         dispatcher.include_router(create_router())
         start_background_jobs(
             task_runner=task_runner,
@@ -170,6 +222,7 @@ async def main() -> None:
             i18n=i18n,
             service_channel=service_channel,
             cryptobot_client=cryptobot_client,
+            xrocket_client=xrocket_client,
         )
 
         bot_identity = BotIdentityCache(bot, ttl_seconds=settings.http.bot_cache_seconds)
@@ -211,8 +264,10 @@ async def main() -> None:
         if dispatcher is not None:
             await stop_dispatcher(dispatcher)
         await task_runner.stop()
-        if cryptobot_client is not None:
-            await cryptobot_client.close()
+        await close_payment_clients(
+            cryptobot_client=cryptobot_client,
+            xrocket_client=xrocket_client,
+        )
         if http_runner is not None:
             await http_runner.cleanup()
         if bot is not None:

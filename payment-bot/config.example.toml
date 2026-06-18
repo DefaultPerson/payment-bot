@@ -27,6 +27,15 @@ invoice_expires_seconds = 3600
 poll_interval_seconds = 30
 poll_batch_size = 50
 
+[xrocket]
+enabled = false
+testnet = false
+currency = "USDT"
+fee_percent = 0
+invoice_expires_seconds = 3600
+poll_interval_seconds = 30
+poll_batch_size = 50
+
 [loyalty]
 bronze_discount_percent = 10
 silver_active_days = 90
