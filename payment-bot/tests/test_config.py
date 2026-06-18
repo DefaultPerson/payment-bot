@@ -60,6 +60,20 @@ def test_phase3_promo_config_defaults_are_safe_for_tests() -> None:
     assert settings.promos.max_discount_percent == Decimal("50")
 
 
+def test_phase4_stars_config_defaults_are_safe_for_tests() -> None:
+    settings = Settings()
+
+    assert settings.stars.enabled is True
+    assert settings.stars.app_store_fee_percent == Decimal("30")
+    assert settings.stars.star_usd_rate == Decimal("0.013")
+    assert settings.stars.invoice_expires_seconds == 3600
+
+
+def test_phase4_stars_config_rejects_invalid_rate() -> None:
+    with pytest.raises(ValidationError):
+        Settings(stars={"star_usd_rate": Decimal("0")})
+
+
 def test_phase3_loyalty_thresholds_must_be_ordered() -> None:
     with pytest.raises(ValidationError, match="gold_active_days must be greater"):
         Settings(loyalty={"silver_active_days": 180, "gold_active_days": 90})

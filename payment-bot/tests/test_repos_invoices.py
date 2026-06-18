@@ -18,13 +18,17 @@ from bot.models import (
 )
 from bot.repos.invoices import (
     create_pending_cryptobot_invoice,
+    create_pending_stars_invoice,
     get_active_cryptobot_invoices,
     get_active_cryptobot_invoices_after_id,
     lock_invoice_by_id,
+    lock_invoice_by_payload,
     lock_invoice_by_provider_id,
+    lock_invoice_by_telegram_payment_charge_id,
     mark_expired_cryptobot_invoices,
     mark_invoice_paid,
     mark_invoice_provider_created,
+    mark_stars_invoice_paid,
 )
 from bot.repos.provider_events import record_provider_event
 
@@ -91,6 +95,41 @@ class FakeAsyncSession:
             if invoice_id is not None:
                 return next(
                     (invoice for invoice in self.invoices if invoice.id == invoice_id),
+                    None,
+                )
+            payload = next(
+                (value for key, value in params.items() if key.startswith("payload")),
+                None,
+            )
+            if payload is not None:
+                provider = next(
+                    (value for key, value in params.items() if key.startswith("provider")),
+                    None,
+                )
+                return next(
+                    (
+                        invoice
+                        for invoice in self.invoices
+                        if invoice.payload == payload
+                        and (provider is None or invoice.provider == provider)
+                    ),
+                    None,
+                )
+            charge_id = next(
+                (
+                    value
+                    for key, value in params.items()
+                    if key.startswith("telegram_payment_charge_id")
+                ),
+                None,
+            )
+            if charge_id is not None:
+                return next(
+                    (
+                        invoice
+                        for invoice in self.invoices
+                        if invoice.telegram_payment_charge_id == charge_id
+                    ),
                     None,
                 )
 
@@ -268,6 +307,47 @@ async def test_create_pending_invoice_persists_promo_snapshot_from_quote() -> No
     assert invoice.promo_extra_days == 0
 
 
+async def test_create_pending_stars_invoice_sets_xtr_provider_payload_and_usd_accounting() -> None:
+    session = FakeAsyncSession()
+    user = make_user(user_id=44)
+    expires_at = datetime(2026, 6, 17, 13, 0, tzinfo=UTC)
+
+    invoice = await create_pending_stars_invoice(
+        session,
+        user=user,
+        tariff_id=55,
+        quote=Quote(
+            gross_usd=Decimal("112.87"),
+            fee_usd=Decimal("33.86"),
+            net_usd=Decimal("79.01"),
+        ),
+        stars_amount=8682,
+        subscription_period=2_592_000,
+        expires_at=expires_at,
+        payload="stars:abc",
+    )
+
+    assert invoice.id == 1
+    assert invoice.user_id == 44
+    assert invoice.provider is InvoiceProvider.stars
+    assert invoice.provider_invoice_id is None
+    assert invoice.telegram_payment_charge_id is None
+    assert invoice.currency == "USD"
+    assert invoice.amount_usd == Decimal("112.87")
+    assert invoice.gross == Decimal("112.87")
+    assert invoice.fee == Decimal("33.86")
+    assert invoice.net == Decimal("79.01")
+    assert invoice.provider_payload == {
+        "payment_currency": "XTR",
+        "stars_amount": 8682,
+        "subscription_period": 2_592_000,
+    }
+    assert invoice.payload == "stars:abc"
+    assert invoice.expires_at == expires_at
+    assert invoice in session.invoices
+    assert session.flushed == 1
+
+
 async def test_mark_invoice_provider_created_persists_provider_id_and_payload() -> None:
     session = FakeAsyncSession()
     invoice = make_invoice(
@@ -430,6 +510,50 @@ async def test_lock_invoice_by_provider_id_uses_row_lock_and_returns_none_when_m
     assert session.scalar_statements[1]._for_update_arg is not None
 
 
+async def test_lock_invoice_by_payload_filters_provider_and_uses_row_lock() -> None:
+    session = FakeAsyncSession()
+    stars = make_invoice(
+        invoice_id=7,
+        provider=InvoiceProvider.stars,
+        provider_invoice_id=None,
+        expires_at=datetime(2026, 6, 17, 13, 0, tzinfo=UTC),
+    )
+    stars.payload = "stars:payload"
+    crypto = make_invoice(
+        invoice_id=8,
+        provider=InvoiceProvider.cryptobot,
+        expires_at=datetime(2026, 6, 17, 13, 0, tzinfo=UTC),
+    )
+    crypto.payload = "stars:payload"
+    session.invoices.extend([crypto, stars])
+
+    locked = await lock_invoice_by_payload(
+        session,
+        provider=InvoiceProvider.stars,
+        payload="stars:payload",
+    )
+
+    assert locked is stars
+    assert session.scalar_statements[0]._for_update_arg is not None
+
+
+async def test_lock_invoice_by_telegram_payment_charge_id_uses_row_lock() -> None:
+    session = FakeAsyncSession()
+    invoice = make_invoice(
+        invoice_id=7,
+        provider=InvoiceProvider.stars,
+        provider_invoice_id=None,
+        expires_at=datetime(2026, 6, 17, 13, 0, tzinfo=UTC),
+    )
+    invoice.telegram_payment_charge_id = "charge-1"
+    session.invoices.append(invoice)
+
+    locked = await lock_invoice_by_telegram_payment_charge_id(session, "charge-1")
+
+    assert locked is invoice
+    assert session.scalar_statements[0]._for_update_arg is not None
+
+
 async def test_lock_invoice_by_id_uses_row_lock() -> None:
     session = FakeAsyncSession()
     invoice = make_invoice(
@@ -477,6 +601,41 @@ async def test_mark_invoice_paid_sets_fields_and_preserves_existing_paid_at() ->
     assert invoice.fee == Decimal("2.90")
     assert invoice.net == Decimal("71.10")
     assert session.flushed == 2
+
+
+async def test_mark_stars_invoice_paid_sets_charge_id_payload_and_amounts() -> None:
+    session = FakeAsyncSession()
+    paid_at = datetime(2026, 6, 17, 12, 30, tzinfo=UTC)
+    invoice = make_invoice(
+        invoice_id=8,
+        provider=InvoiceProvider.stars,
+        provider_invoice_id=None,
+        expires_at=datetime(2026, 6, 17, 13, 0, tzinfo=UTC),
+    )
+    invoice.provider_payload = {
+        "payment_currency": "XTR",
+        "stars_amount": 8682,
+        "subscription_period": 2_592_000,
+    }
+
+    await mark_stars_invoice_paid(
+        session,
+        invoice,
+        paid_at=paid_at,
+        telegram_payment_charge_id="charge-1",
+        raw_payload={"currency": "XTR", "total_amount": 8682},
+    )
+
+    assert invoice.status is InvoiceStatus.paid
+    assert invoice.paid_at == paid_at
+    assert invoice.telegram_payment_charge_id == "charge-1"
+    assert invoice.provider_payload == {
+        "payment_currency": "XTR",
+        "stars_amount": 8682,
+        "subscription_period": 2_592_000,
+        "successful_payment": {"currency": "XTR", "total_amount": 8682},
+    }
+    assert session.flushed == 1
 
 
 async def test_mark_expired_cryptobot_invoices_marks_only_expired_active_invoices() -> None:

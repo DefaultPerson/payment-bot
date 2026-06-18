@@ -130,6 +130,13 @@ class PromosConfig(BaseModel):
     max_discount_percent: Decimal = Field(default=Decimal("50"), ge=0, le=100)
 
 
+class StarsConfig(BaseModel):
+    enabled: bool = True
+    app_store_fee_percent: Decimal = Field(default=Decimal("30"), ge=0, lt=100)
+    star_usd_rate: Decimal = Field(default=Decimal("0.013"), gt=0)
+    invoice_expires_seconds: int = Field(default=3600, ge=1)
+
+
 class ProtectedChatConfig(BaseModel):
     chat_id: int
     title: str
@@ -183,6 +190,7 @@ class Settings(BaseSettings):
     tariffs: TariffsConfig = Field(default_factory=TariffsConfig)
     loyalty: LoyaltyConfig = Field(default_factory=LoyaltyConfig)
     promos: PromosConfig = Field(default_factory=PromosConfig)
+    stars: StarsConfig = Field(default_factory=StarsConfig)
     access: AccessConfig = Field(default_factory=AccessConfig)
 
     @classmethod

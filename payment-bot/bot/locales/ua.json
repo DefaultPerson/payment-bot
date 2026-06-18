@@ -30,6 +30,7 @@
   "buy.quote.promo_discount": "Промокод {code}: -${discount_usd}",
   "buy.quote.promo_extra_days": "Промокод {code}: +{days} дн.",
   "buy.pay.cryptobot": "Оплатити через CryptoBot",
+  "buy.pay.stars": "Оплатити Telegram Stars",
   "buy.invoice.created": "Рахунок створено. Використайте кнопку оплати нижче, щоб завершити покупку.",
   "buy.invoice.failed": "Не вдалося створити рахунок. Спробуйте ще раз або напишіть у підтримку.",
   "promo.prompt": "Надішліть /promo <код>, щоб застосувати промокод.",

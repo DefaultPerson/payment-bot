@@ -12,6 +12,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from bot.config import Settings
 from bot.core.i18n import JsonI18n
+from bot.keyboards import CB_STARS_PREFIX
 from bot.models import InvoiceStatus, PromoKind, UserStatus
 from bot.payments.cryptobot import CryptoBotAPIError, CryptoBotInvoice
 from bot.services.pricing import PromoSnapshot, quote_tariff
@@ -45,6 +46,23 @@ class FakeInvoiceRecord:
     payload: str
     status: InvoiceStatus = InvoiceStatus.active
     provider_invoice_id: str | None = None
+
+
+@dataclass(slots=True)
+class FakeStarsQuote:
+    amount: int
+    currency: str = "XTR"
+    subscription_period: int | None = 2_592_000
+
+
+@dataclass(slots=True)
+class FakeCreatedStarsInvoice:
+    invoice: object
+    quote: object
+    stars: FakeStarsQuote
+    payload: str
+    title: str
+    description: str
 
 
 async def test_buy_callback_edits_tariff_list(monkeypatch) -> None:
@@ -123,6 +141,145 @@ async def test_tariff_callback_edits_quote_detail(monkeypatch) -> None:
     assert "$213.30" in text
     assert callback.answers == [{"text": None}]
     assert callback_message.edits[0]["reply_markup"] == "detail-keyboard"
+
+
+async def test_stars_invoice_callback_sends_telegram_stars_invoice(monkeypatch) -> None:
+    import bot.handlers.buy as buy_module
+
+    service_calls: list[dict[str, Any]] = []
+
+    class InvoiceMessage(FakeMessage):
+        def __init__(self, *, chat: FakeChat) -> None:
+            super().__init__(chat=chat)
+            self.invoices: list[dict[str, Any]] = []
+
+        async def answer_invoice(self, **kwargs: Any) -> None:
+            self.invoices.append(kwargs)
+
+    async def fake_ensure_minimal_user(session: FakeSession, **kwargs: Any) -> FakeUserRecord:
+        return FakeUserRecord(id=7, tg_id=700, lang_code="en", status=UserStatus.basic)
+
+    async def fake_create_stars_invoice(
+        session_factory_arg: FakeSessionFactory,
+        settings: Settings,
+        user: FakeUserRecord,
+        tariff_code: str,
+        now: datetime,
+    ) -> FakeCreatedStarsInvoice:
+        service_calls.append(
+            {
+                "session_factory": session_factory_arg,
+                "settings": settings,
+                "user": user,
+                "tariff_code": tariff_code,
+                "now": now,
+            }
+        )
+        return FakeCreatedStarsInvoice(
+            invoice=object(),
+            quote=object(),
+            stars=FakeStarsQuote(amount=8682, subscription_period=2_592_000),
+            payload="stars:payload",
+            title="Hydra Monitors",
+            description="Hydra Monitors access: 1 month",
+        )
+
+    monkeypatch.setattr(buy_module, "ensure_minimal_user", fake_ensure_minimal_user)
+    monkeypatch.setattr(buy_module, "create_stars_invoice_for_user", fake_create_stars_invoice)
+
+    settings = Settings(stars={"enabled": True})
+    session_factory = FakeSessionFactory()
+    callback_message = InvoiceMessage(chat=FakeChat(id=700))
+    callback = FakeCallback(
+        data=f"{CB_STARS_PREFIX}1m",
+        from_user=FakeTelegramUser(id=700, language_code="en"),
+        message=callback_message,
+    )
+
+    await buy_module.stars_invoice_callback(
+        callback,
+        settings=settings,
+        i18n=JsonI18n(),
+        session_factory=session_factory,
+    )
+
+    assert service_calls[0]["session_factory"] is session_factory
+    assert service_calls[0]["tariff_code"] == "1m"
+    invoice_call = callback_message.invoices[0]
+    assert invoice_call["title"] == "Hydra Monitors"
+    assert invoice_call["description"] == "Hydra Monitors access: 1 month"
+    assert invoice_call["payload"] == "stars:payload"
+    assert invoice_call["currency"] == "XTR"
+    assert invoice_call["provider_token"] == ""
+    assert invoice_call["prices"][0].amount == 8682
+    assert invoice_call["subscription_period"] == 2_592_000
+    assert callback.answers == [{"text": None}]
+
+
+async def test_stars_invoice_callback_cancels_local_invoice_when_telegram_send_fails(
+    monkeypatch,
+) -> None:
+    import bot.handlers.buy as buy_module
+
+    cancelled_invoice_ids: list[int] = []
+
+    class FailingInvoiceMessage(FakeMessage):
+        async def answer_invoice(self, **kwargs: Any) -> None:
+            del kwargs
+            msg = "telegram send failed"
+            raise RuntimeError(msg)
+
+    async def fake_ensure_minimal_user(session: FakeSession, **kwargs: Any) -> FakeUserRecord:
+        return FakeUserRecord(id=7, tg_id=700, lang_code="en", status=UserStatus.basic)
+
+    async def fake_create_stars_invoice(
+        session_factory_arg: FakeSessionFactory,
+        settings: Settings,
+        user: FakeUserRecord,
+        tariff_code: str,
+        now: datetime,
+    ) -> FakeCreatedStarsInvoice:
+        del session_factory_arg, settings, user, tariff_code, now
+        return FakeCreatedStarsInvoice(
+            invoice=SimpleNamespace(id=42),
+            quote=object(),
+            stars=FakeStarsQuote(amount=8682, subscription_period=2_592_000),
+            payload="stars:payload",
+            title="Hydra Monitors",
+            description="Hydra Monitors access: 1 month",
+        )
+
+    async def fake_cancel_unusable_invoice(
+        session_factory_arg: FakeSessionFactory,
+        invoice_id: int,
+    ) -> None:
+        del session_factory_arg
+        cancelled_invoice_ids.append(invoice_id)
+
+    monkeypatch.setattr(buy_module, "ensure_minimal_user", fake_ensure_minimal_user)
+    monkeypatch.setattr(buy_module, "create_stars_invoice_for_user", fake_create_stars_invoice)
+    monkeypatch.setattr(buy_module, "cancel_unusable_invoice", fake_cancel_unusable_invoice)
+
+    callback = FakeCallback(
+        data=f"{CB_STARS_PREFIX}1m",
+        from_user=FakeTelegramUser(id=700, language_code="en"),
+        message=FailingInvoiceMessage(chat=FakeChat(id=700)),
+    )
+
+    await buy_module.stars_invoice_callback(
+        callback,
+        settings=Settings(stars={"enabled": True}),
+        i18n=JsonI18n(),
+        session_factory=FakeSessionFactory(),
+    )
+
+    assert cancelled_invoice_ids == [42]
+    assert callback.answers == [
+        {
+            "text": "Could not create invoice. Please try again or contact support.",
+            "show_alert": True,
+        }
+    ]
 
 
 def test_format_quote_text_includes_promo_discount() -> None:

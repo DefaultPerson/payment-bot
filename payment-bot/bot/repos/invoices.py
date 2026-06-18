@@ -59,6 +59,49 @@ async def create_pending_cryptobot_invoice(
     return invoice
 
 
+async def create_pending_stars_invoice(
+    session: AsyncSession,
+    *,
+    user: User,
+    tariff_id: int,
+    quote: SupportsInvoiceQuote,
+    stars_amount: int,
+    subscription_period: int | None,
+    expires_at: datetime,
+    payload: str,
+) -> Invoice:
+    invoice = Invoice(
+        user_id=user.id,
+        provider=InvoiceProvider.stars,
+        provider_invoice_id=None,
+        telegram_payment_charge_id=None,
+        tariff_id=tariff_id,
+        promo_id=quote.promo_id,
+        promo_code=quote.promo_code,
+        promo_kind=quote.promo_kind,
+        promo_value=quote.promo_value,
+        promo_discount_usd=quote.promo_discount_usd,
+        promo_extra_days=quote.promo_extra_days,
+        amount_usd=quote.gross_usd,
+        gross=quote.gross_usd,
+        fee=quote.fee_usd,
+        net=quote.net_usd,
+        currency="USD",
+        status=InvoiceStatus.active,
+        payload=payload,
+        provider_payload={
+            "payment_currency": "XTR",
+            "stars_amount": stars_amount,
+            "subscription_period": subscription_period,
+        },
+        expires_at=expires_at,
+        paid_at=None,
+    )
+    session.add(invoice)
+    await session.flush()
+    return invoice
+
+
 async def mark_invoice_provider_created(
     session: AsyncSession,
     invoice: Invoice,
@@ -138,6 +181,33 @@ async def lock_invoice_by_provider_id(
     )
 
 
+async def lock_invoice_by_payload(
+    session: AsyncSession,
+    *,
+    provider: InvoiceProvider,
+    payload: str,
+) -> Invoice | None:
+    return await session.scalar(
+        select(Invoice)
+        .where(
+            Invoice.provider == provider,
+            Invoice.payload == payload,
+        )
+        .with_for_update(),
+    )
+
+
+async def lock_invoice_by_telegram_payment_charge_id(
+    session: AsyncSession,
+    telegram_payment_charge_id: str,
+) -> Invoice | None:
+    return await session.scalar(
+        select(Invoice)
+        .where(Invoice.telegram_payment_charge_id == telegram_payment_charge_id)
+        .with_for_update(),
+    )
+
+
 async def lock_invoice_by_id(session: AsyncSession, invoice_id: int) -> Invoice | None:
     return await session.scalar(
         select(Invoice).where(Invoice.id == invoice_id).with_for_update(),
@@ -167,6 +237,89 @@ async def mark_invoice_paid(
         invoice.net = net
     await session.flush()
     return invoice
+
+
+async def mark_stars_invoice_paid(
+    session: AsyncSession,
+    invoice: Invoice,
+    *,
+    paid_at: datetime,
+    telegram_payment_charge_id: str,
+    raw_payload: dict[str, Any],
+) -> Invoice:
+    if (
+        invoice.telegram_payment_charge_id is not None
+        and invoice.telegram_payment_charge_id != telegram_payment_charge_id
+    ):
+        msg = "telegram payment charge id already set"
+        raise ValueError(msg)
+
+    invoice.status = InvoiceStatus.paid
+    if invoice.paid_at is None:
+        invoice.paid_at = paid_at
+    invoice.telegram_payment_charge_id = telegram_payment_charge_id
+    invoice.provider_payload = _stars_paid_payload(
+        invoice.provider_payload,
+        raw_payload=raw_payload,
+    )
+    await session.flush()
+    return invoice
+
+
+async def create_paid_stars_recurring_invoice(
+    session: AsyncSession,
+    *,
+    parent_invoice: Invoice,
+    payload: str,
+    paid_at: datetime,
+    telegram_payment_charge_id: str,
+    raw_payload: dict[str, Any],
+) -> Invoice:
+    invoice = Invoice(
+        user_id=parent_invoice.user_id,
+        provider=InvoiceProvider.stars,
+        provider_invoice_id=None,
+        telegram_payment_charge_id=telegram_payment_charge_id,
+        tariff_id=parent_invoice.tariff_id,
+        promo_id=None,
+        promo_code=None,
+        promo_kind=None,
+        promo_value=None,
+        promo_discount_usd=Decimal("0.00"),
+        promo_extra_days=0,
+        amount_usd=parent_invoice.amount_usd,
+        gross=parent_invoice.gross,
+        fee=parent_invoice.fee,
+        net=parent_invoice.net,
+        currency=parent_invoice.currency,
+        status=InvoiceStatus.paid,
+        payload=payload,
+        provider_payload=_stars_paid_payload(
+            parent_invoice.provider_payload,
+            raw_payload=raw_payload,
+            parent_invoice_id=parent_invoice.id,
+        ),
+        expires_at=parent_invoice.expires_at,
+        paid_at=paid_at,
+    )
+    session.add(invoice)
+    await session.flush()
+    return invoice
+
+
+def _stars_paid_payload(
+    provider_payload: dict[str, Any] | None,
+    *,
+    raw_payload: dict[str, Any],
+    parent_invoice_id: int | None = None,
+) -> dict[str, Any]:
+    payload = dict(provider_payload or {})
+    if parent_invoice_id is not None:
+        payload.pop("access_delivered_at", None)
+    payload["successful_payment"] = raw_payload
+    if parent_invoice_id is not None:
+        payload["parent_invoice_id"] = parent_invoice_id
+    return payload
 
 
 async def mark_expired_cryptobot_invoices(

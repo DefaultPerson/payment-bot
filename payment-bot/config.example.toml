@@ -36,6 +36,12 @@ gold_monthly_price_usd = 50
 [promos]
 max_discount_percent = 50
 
+[stars]
+enabled = true
+app_store_fee_percent = 30
+star_usd_rate = 0.013
+invoice_expires_seconds = 3600
+
 [[tariffs.items]]
 code = "1m"
 duration_months = 1

@@ -2,9 +2,10 @@
 
 Telegram payment bot for Hydra Monitors subscriptions.
 
-This repository state contains Phase 3: the service scaffold, subscription
+This repository state contains Phase 4: the service scaffold, subscription
 domain models, localized menus, admin-only manual grants, and CryptoBot purchase
-flow with polling-based payment finalization, loyalty pricing, and promo codes.
+flow with polling-based payment finalization, loyalty pricing, promo codes, and
+Telegram Stars payments.
 
 ## Local Requirements
 
@@ -90,6 +91,14 @@ invoice before provider fees; `extra_days` promos add access days after a paid
 invoice without increasing loyalty active-day credit. `[promos]` controls the
 maximum percent of a quote that a discount promo may remove.
 
+Telegram Stars payments are configured in `[stars]`. The bot sends Stars
+invoices with `currency = "XTR"` and an empty provider token. The 1-month tariff
+uses `subscription_period = 2592000` for a recurring Stars subscription; longer
+tariffs are one-shot invoices. `app_store_fee_percent` and `star_usd_rate`
+control the Star amount used to preserve the configured USD access price. Stars
+invoice accounting is stored in USD gross/fee/net fields, while the XTR charge
+amount and Telegram payment payload stay in provider metadata.
+
 Protected chats are configured in `[access]`:
 
 ```toml
@@ -100,10 +109,13 @@ protected_chats = [
 ]
 ```
 
-Paid CryptoBot invoices extend the subscription in one database transaction.
-After commit, the poller sends a service-channel payment event and one-time
-invite links. Telegram delivery failures do not roll back payment processing;
-access-link delivery is retried by the running poller.
+Paid CryptoBot and Telegram Stars invoices extend the subscription in one
+database transaction. CryptoBot payments are detected by the poller; Stars
+payments are finalized from Telegram `successful_payment` updates after
+pre-checkout validation. Recurring Stars renewals create one paid invoice per
+new Telegram `telegram_payment_charge_id`, while duplicate charge updates are
+idempotent and can retry undelivered access links. After commit, the bot sends a
+service-channel payment event and one-time invite links.
 
 Run the bot:
 
