@@ -268,8 +268,18 @@ async def test_admin_grant_extends_subscription_notifies_service_channel_and_rep
         user: FakeUserRecord,
         days: int,
         now: datetime,
+        loyalty: object,
     ) -> FakeSubscription:
-        calls.append({"name": "extend", "session": session, "user": user, "days": days, "now": now})
+        calls.append(
+            {
+                "name": "extend",
+                "session": session,
+                "user": user,
+                "days": days,
+                "now": now,
+                "loyalty": loyalty,
+            }
+        )
         return subscription
 
     monkeypatch.setattr(grant_module, "ensure_minimal_user", fake_ensure_minimal_user)
@@ -298,6 +308,7 @@ async def test_admin_grant_extends_subscription_notifies_service_channel_and_rep
         "i18n": i18n,
     }
     assert calls[1]["name"] == "extend"
+    assert calls[1]["loyalty"] is not None
     assert calls[1]["session"] is session_factory.session
     assert calls[1]["user"] is user
     assert calls[1]["days"] == 10

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from typing import Protocol
 
 from bot.models import UserStatus
 
@@ -12,6 +13,11 @@ STATUS_RANK = {
     UserStatus.silver: 2,
     UserStatus.gold: 3,
 }
+
+
+class SupportsLoyaltyThresholds(Protocol):
+    silver_active_days: int
+    gold_active_days: int
 
 
 def calculate_extension(
@@ -35,13 +41,31 @@ def minimum_status_after_grant(current: UserStatus) -> UserStatus:
 def status_after_total_active_days(
     current: UserStatus,
     total_active_days: int,
+    *,
+    silver_active_days: int = SILVER_ACTIVE_DAYS,
+    gold_active_days: int = GOLD_ACTIVE_DAYS,
 ) -> UserStatus:
     earned = UserStatus.basic
-    if total_active_days >= GOLD_ACTIVE_DAYS:
+    if total_active_days >= gold_active_days:
         earned = UserStatus.gold
-    elif total_active_days >= SILVER_ACTIVE_DAYS:
+    elif total_active_days >= silver_active_days:
         earned = UserStatus.silver
     elif total_active_days > 0:
         earned = UserStatus.bronze
 
     return max(current, earned, key=STATUS_RANK.__getitem__)
+
+
+def status_after_total_active_days_for_policy(
+    current: UserStatus,
+    total_active_days: int,
+    loyalty: SupportsLoyaltyThresholds | None,
+) -> UserStatus:
+    if loyalty is None:
+        return status_after_total_active_days(current, total_active_days)
+    return status_after_total_active_days(
+        current,
+        total_active_days,
+        silver_active_days=loyalty.silver_active_days,
+        gold_active_days=loyalty.gold_active_days,
+    )

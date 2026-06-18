@@ -73,9 +73,6 @@ class TariffConfig(BaseModel):
 
 
 class TariffsConfig(BaseModel):
-    bronze_discount_percent: Decimal = Field(default=Decimal("10"), ge=0, lt=100)
-    silver_monthly_price_usd: Decimal = Field(default=Decimal("65"), gt=0)
-    gold_monthly_price_usd: Decimal = Field(default=Decimal("50"), gt=0)
     items: list[TariffConfig] = Field(
         default_factory=lambda: [
             TariffConfig(code="1m", duration_months=1, base_price_usd=Decimal("79")),
@@ -112,6 +109,25 @@ class TariffsConfig(BaseModel):
             msg = "tariff codes must be unique"
             raise ValueError(msg)
         return self
+
+
+class LoyaltyConfig(BaseModel):
+    bronze_discount_percent: Decimal = Field(default=Decimal("10"), ge=0, lt=100)
+    silver_active_days: int = Field(default=90, ge=1)
+    silver_monthly_price_usd: Decimal = Field(default=Decimal("65"), gt=0)
+    gold_active_days: int = Field(default=180, ge=1)
+    gold_monthly_price_usd: Decimal = Field(default=Decimal("50"), gt=0)
+
+    @model_validator(mode="after")
+    def validate_threshold_order(self) -> LoyaltyConfig:
+        if self.gold_active_days <= self.silver_active_days:
+            msg = "gold_active_days must be greater than silver_active_days"
+            raise ValueError(msg)
+        return self
+
+
+class PromosConfig(BaseModel):
+    max_discount_percent: Decimal = Field(default=Decimal("50"), ge=0, le=100)
 
 
 class ProtectedChatConfig(BaseModel):
@@ -165,6 +181,8 @@ class Settings(BaseSettings):
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     cryptobot: CryptoBotConfig = Field(default_factory=CryptoBotConfig)
     tariffs: TariffsConfig = Field(default_factory=TariffsConfig)
+    loyalty: LoyaltyConfig = Field(default_factory=LoyaltyConfig)
+    promos: PromosConfig = Field(default_factory=PromosConfig)
     access: AccessConfig = Field(default_factory=AccessConfig)
 
     @classmethod

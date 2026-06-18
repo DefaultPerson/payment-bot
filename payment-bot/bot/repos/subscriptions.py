@@ -6,7 +6,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.models import Subscription, SubscriptionSource, User, UserStatus
-from bot.services.subscriptions import calculate_extension, status_after_total_active_days
+from bot.services.subscriptions import (
+    SupportsLoyaltyThresholds,
+    calculate_extension,
+    status_after_total_active_days_for_policy,
+)
 
 
 async def get_subscription_for_user(
@@ -22,15 +26,18 @@ async def extend_manual_subscription(
     user: User,
     days: int,
     now: datetime,
+    loyalty: SupportsLoyaltyThresholds | None = None,
 ) -> Subscription:
     return await _extend_subscription(
         session,
         user=user,
         days=days,
+        bonus_days=0,
         source=SubscriptionSource.manual,
         last_invoice_id=None,
         now=now,
         update_paid_fields=False,
+        loyalty=loyalty,
     )
 
 
@@ -42,15 +49,19 @@ async def extend_paid_subscription(
     source: SubscriptionSource,
     last_invoice_id: int,
     now: datetime,
+    bonus_days: int = 0,
+    loyalty: SupportsLoyaltyThresholds | None = None,
 ) -> Subscription:
     return await _extend_subscription(
         session,
         user=user,
         days=days,
+        bonus_days=bonus_days,
         source=source,
         last_invoice_id=last_invoice_id,
         now=now,
         update_paid_fields=True,
+        loyalty=loyalty,
     )
 
 
@@ -59,15 +70,25 @@ async def _extend_subscription(
     *,
     user: User,
     days: int,
+    bonus_days: int,
     source: SubscriptionSource,
     last_invoice_id: int | None,
     now: datetime,
     update_paid_fields: bool,
+    loyalty: SupportsLoyaltyThresholds | None,
 ) -> Subscription:
+    if bonus_days < 0:
+        msg = "bonus_days must not be negative"
+        raise ValueError(msg)
+
     locked_user = await _lock_user_for_update(session, user)
     subscription = await _get_subscription_for_user_for_update(session, locked_user.id)
     current_expires_at = subscription.expires_at if subscription is not None else None
-    new_expires_at = calculate_extension(now=now, current_expires_at=current_expires_at, days=days)
+    new_expires_at = calculate_extension(
+        now=now,
+        current_expires_at=current_expires_at,
+        days=days + bonus_days,
+    )
 
     if subscription is None:
         subscription = Subscription(
@@ -89,9 +110,10 @@ async def _extend_subscription(
             subscription.last_invoice_id = last_invoice_id
 
     locked_user.total_active_days = (locked_user.total_active_days or 0) + days
-    locked_user.status = status_after_total_active_days(
+    locked_user.status = status_after_total_active_days_for_policy(
         locked_user.status or UserStatus.basic,
         locked_user.total_active_days,
+        loyalty,
     )
     locked_user.updated_at = now
 

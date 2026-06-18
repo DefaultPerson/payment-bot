@@ -10,6 +10,7 @@ from bot.models import (
     Invoice,
     InvoiceProvider,
     InvoiceStatus,
+    PromoKind,
     Subscription,
     SubscriptionSource,
     Tariff,
@@ -125,6 +126,7 @@ def make_invoice(
     tariff_id: int | None = 20,
     status: InvoiceStatus = InvoiceStatus.active,
     payload: str = "inv:payload",
+    promo_extra_days: int = 0,
 ) -> Invoice:
     timestamp = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
     return Invoice(
@@ -145,6 +147,12 @@ def make_invoice(
         expires_at=timestamp + timedelta(hours=1),
         created_at=timestamp,
         paid_at=None,
+        promo_id=5 if promo_extra_days else None,
+        promo_code="BONUS7" if promo_extra_days else None,
+        promo_kind=PromoKind.extra_days if promo_extra_days else None,
+        promo_value=Decimal(str(promo_extra_days)) if promo_extra_days else None,
+        promo_discount_usd=Decimal("0.00"),
+        promo_extra_days=promo_extra_days,
     )
 
 
@@ -207,6 +215,28 @@ async def test_process_paid_invoice_extends_subscription_once() -> None:
     assert invoice.fee == Decimal("2.20")
     assert invoice.net == Decimal("71.10")
     assert session.committed == 0
+
+
+async def test_process_paid_invoice_applies_extra_days_without_loyalty_credit() -> None:
+    session = FakeAsyncSession()
+    now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
+    user = make_user()
+    tariff = make_tariff(duration_months=1)
+    invoice = make_invoice(promo_extra_days=7)
+    session.users.append(user)
+    session.tariffs.append(tariff)
+    session.invoices.append(invoice)
+
+    result = await process_paid_cryptobot_invoice(
+        session,
+        provider_invoice=make_provider_invoice(raw={"invoice_id": "provider-1"}),
+        now=now,
+    )
+
+    assert result.processed is True
+    assert result.subscription is not None
+    assert result.subscription.expires_at == now + timedelta(days=37)
+    assert user.total_active_days == 30
 
 
 async def test_process_paid_invoice_rejects_non_paid_provider_status() -> None:

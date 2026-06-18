@@ -22,6 +22,7 @@ from bot.keyboards import (
     tariff_keyboard,
 )
 from bot.payments.cryptobot import CryptoBotAPIError, CryptoBotClient
+from bot.repos.promos import PromoUnavailable, get_pending_promo_snapshot_for_user
 from bot.repos.users import ensure_minimal_user
 from bot.services.payments import create_cryptobot_invoice_for_user
 from bot.services.pricing import TariffQuote, quote_tariff
@@ -81,7 +82,13 @@ async def tariff_callback(
                 i18n=i18n,
                 language_code=context.language_code,
             )
-            quote = quote_tariff(settings, tariff_code, user.status)
+            promo = await get_pending_promo_snapshot_for_user(
+                session,
+                user=user,
+                tariff_code=tariff_code,
+                now=datetime.now(UTC),
+            )
+            quote = quote_tariff(settings, tariff_code, user.status, promo=promo)
             lang_code = user.lang_code
     except SQLAlchemyError:
         logger.exception("failed to resolve tariff callback user")
@@ -90,6 +97,9 @@ async def tariff_callback(
     except LookupError:
         logger.info("invalid tariff callback data: %r", getattr(callback, "data", None))
         await callback.answer(i18n.gettext("error.generic", lang_code), show_alert=True)
+        return
+    except PromoUnavailable as exc:
+        await callback.answer(_promo_error_text(i18n, lang_code, exc.reason), show_alert=True)
         return
 
     await _edit_text_or_answer(
@@ -163,6 +173,9 @@ async def cryptobot_invoice_callback(
         logger.info("invalid CryptoBot invoice callback data: %r", getattr(callback, "data", None))
         await callback.answer(i18n.gettext("error.generic", lang_code), show_alert=True)
         return
+    except PromoUnavailable as exc:
+        await callback.answer(_promo_error_text(i18n, lang_code, exc.reason), show_alert=True)
+        return
     except Exception:
         logger.exception("unexpected CryptoBot invoice creation failure")
         await callback.answer(
@@ -203,7 +216,7 @@ def _format_quote_text(
     lang_code: str,
     quote: TariffQuote,
 ) -> str:
-    return i18n.gettext(
+    text = i18n.gettext(
         "buy.quote.text",
         lang_code,
         months=quote.tariff.duration_months,
@@ -212,6 +225,31 @@ def _format_quote_text(
         fee_usd=f"{quote.fee_usd:.2f}",
         accepted_assets=", ".join(settings.cryptobot.accepted_assets),
     )
+    if quote.promo_code is not None and quote.promo_discount_usd > 0:
+        text = "\n".join(
+            [
+                text,
+                i18n.gettext(
+                    "buy.quote.promo_discount",
+                    lang_code,
+                    code=quote.promo_code,
+                    discount_usd=f"{quote.promo_discount_usd:.2f}",
+                ),
+            ]
+        )
+    if quote.promo_code is not None and quote.promo_extra_days > 0:
+        text = "\n".join(
+            [
+                text,
+                i18n.gettext(
+                    "buy.quote.promo_extra_days",
+                    lang_code,
+                    code=quote.promo_code,
+                    days=quote.promo_extra_days,
+                ),
+            ]
+        )
+    return text
 
 
 def _parse_prefixed_callback(data: str | None, prefix: str) -> str | None:
@@ -254,6 +292,14 @@ def _callback_answer_text(text: str) -> str:
 
 def _support_url(settings: Settings) -> str:
     return f"https://t.me/{settings.bot.support_username}"
+
+
+def _promo_error_text(i18n: JsonI18n, lang_code: str, reason: str) -> str:
+    key = f"promo.error.{reason}"
+    text = i18n.gettext(key, lang_code)
+    if text == key:
+        return i18n.gettext("promo.error.generic", lang_code)
+    return text
 
 
 def create_buy_router() -> Router:
