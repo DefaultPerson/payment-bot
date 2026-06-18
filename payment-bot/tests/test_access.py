@@ -13,6 +13,8 @@ class FakeBot:
     def __init__(self) -> None:
         self.invite_calls: list[dict[str, Any]] = []
         self.messages: list[dict[str, Any]] = []
+        self.bans: list[dict[str, Any]] = []
+        self.unbans: list[dict[str, Any]] = []
 
     async def create_chat_invite_link(self, **kwargs: Any) -> SimpleNamespace:
         self.invite_calls.append(kwargs)
@@ -20,6 +22,12 @@ class FakeBot:
 
     async def send_message(self, **kwargs: Any) -> None:
         self.messages.append(kwargs)
+
+    async def ban_chat_member(self, **kwargs: Any) -> None:
+        self.bans.append(kwargs)
+
+    async def unban_chat_member(self, **kwargs: Any) -> None:
+        self.unbans.append(kwargs)
 
 
 def make_settings() -> Settings:
@@ -149,6 +157,32 @@ async def test_send_access_links_handles_empty_config() -> None:
     assert len(bot.messages) == 1
     assert bot.messages[0]["chat_id"] == 1001
     assert "https://t.me/HydraSupport" in bot.messages[0]["text"]
+
+
+async def test_revoke_protected_chat_access_temp_bans_then_unbans() -> None:
+    from bot.services.access import revoke_protected_chat_access
+
+    bot = FakeBot()
+    settings = Settings(
+        access={
+            "revoke_ban_seconds": 60,
+            "protected_chats": [
+                {"chat_id": -1001, "title": "Signals"},
+                {"chat_id": -1002, "title": "Research"},
+            ],
+        },
+    )
+    now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
+
+    await revoke_protected_chat_access(bot, settings, tg_id=1001, now=now)
+
+    assert [call["chat_id"] for call in bot.bans] == [-1001, -1002]
+    assert bot.bans[0]["user_id"] == 1001
+    assert bot.bans[0]["until_date"] == now + timedelta(seconds=60)
+    assert bot.bans[0]["revoke_messages"] is False
+    assert [call["chat_id"] for call in bot.unbans] == [-1001, -1002]
+    assert bot.unbans[0]["user_id"] == 1001
+    assert bot.unbans[0]["only_if_banned"] is True
 
 
 def test_access_and_payment_locale_keys_are_available() -> None:

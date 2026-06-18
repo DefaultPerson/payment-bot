@@ -77,12 +77,14 @@ def test_build_commands_includes_user_commands() -> None:
 
     assert {"/start", "/profile", "/language", "/support"} <= command_names(commands)
     assert "/grant" not in command_names(commands)
+    assert "/broadcast" not in command_names(commands)
 
 
-def test_build_commands_includes_admin_grant_command() -> None:
+def test_build_commands_includes_admin_commands() -> None:
     commands = menu_module().build_commands(JsonI18n(), "en", is_admin=True)
 
     assert "/grant" in command_names(commands)
+    assert "/broadcast" in command_names(commands)
 
 
 async def test_set_user_commands_scopes_commands_to_chat() -> None:

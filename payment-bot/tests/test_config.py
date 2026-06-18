@@ -78,6 +78,30 @@ def test_phase5_referral_config_defaults_are_safe_for_tests() -> None:
     assert settings.referral.allow_referrer_change is False
 
 
+def test_phase6_notifications_config_defaults_are_safe_for_tests() -> None:
+    settings = Settings()
+
+    assert settings.notifications.loop_interval_seconds == 3600
+    assert settings.notifications.batch_size == 100
+    assert settings.notifications.reminder_days_before == 3
+    assert settings.notifications.reminder_window_seconds == 3600
+    assert settings.notifications.post_expired_delay_hours == 24
+    assert settings.access.revoke_ban_seconds == 60
+
+
+def test_phase6_notifications_config_rejects_invalid_periods() -> None:
+    with pytest.raises(ValidationError):
+        Settings(notifications={"loop_interval_seconds": 0})
+    with pytest.raises(ValidationError):
+        Settings(notifications={"batch_size": 0})
+    with pytest.raises(ValidationError):
+        Settings(notifications={"reminder_days_before": 0})
+    with pytest.raises(ValidationError):
+        Settings(notifications={"post_expired_delay_hours": 0})
+    with pytest.raises(ValidationError):
+        Settings(access={"revoke_ban_seconds": 0})
+
+
 def test_phase5_referral_config_rejects_invalid_percent() -> None:
     with pytest.raises(ValidationError):
         Settings(referral={"percent_default": Decimal("100")})
@@ -120,6 +144,7 @@ def test_phase2_access_defaults_are_empty_and_safe() -> None:
 
     assert settings.access.protected_chats == []
     assert settings.access.invite_link_ttl_seconds == 24 * 60 * 60
+    assert settings.access.revoke_ban_seconds == 60
 
 
 def test_example_env_can_load_with_blank_cryptobot_token() -> None:

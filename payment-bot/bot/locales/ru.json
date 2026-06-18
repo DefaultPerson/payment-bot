@@ -5,6 +5,7 @@
   "commands.language": "Изменить язык интерфейса",
   "commands.support": "Связаться с поддержкой",
   "commands.grant": "Выдать платный доступ",
+  "commands.broadcast": "Отправить рассылку",
   "menu.button.buy": "Купить доступ",
   "menu.button.profile": "Профиль",
   "menu.button.referral": "Рефералы",
@@ -50,6 +51,9 @@
   "payment.success.text": "Оплата получена. Доступ активирован.",
   "access.links.text": "Ваши ссылки доступа:\n\n{links}",
   "access.empty.text": "Чаты доступа пока не настроены. Напишите в поддержку: {support_url}",
+  "notification.3d.text": "Ваша подписка скоро истекает: {expires_at}.\n\nПродлите доступ в боте или напишите в поддержку: {support_url}",
+  "notification.0d.text": "Ваша подписка истекла: {expires_at}.\n\nДоступ скоро будет отозван, если вы не продлите подписку. Поддержка: {support_url}",
+  "notification.post.text": "Доступ отозван после истечения подписки: {expires_at}.\n\nВы можете вернуться и продлить доступ в любой момент. Поддержка: {support_url}",
   "language.name.ru": "Русский",
   "language.name.ua": "Українська",
   "language.name.en": "English",
@@ -65,5 +69,8 @@
   "refset.usage": "Использование: /refset <telegram_id> <процент>",
   "refset.forbidden": "Только администраторы могут менять реферальный процент.",
   "refset.success": "Реферальный процент для пользователя {user_id} установлен на {percent}%. Обновлено связей: {updated}.",
-  "refset.success.future": "Реферальный процент для пользователя {user_id} установлен на {percent}%. Новые рефералы будут использовать его."
+  "refset.success.future": "Реферальный процент для пользователя {user_id} установлен на {percent}%. Новые рефералы будут использовать его.",
+  "broadcast.usage": "Использование: /broadcast <all|active|inactive> <текст>",
+  "broadcast.forbidden": "Только администраторы могут делать рассылку.",
+  "broadcast.success": "Рассылка завершена для {segment}: отправлено {successful}/{total}, ошибок: {failed}."
 }

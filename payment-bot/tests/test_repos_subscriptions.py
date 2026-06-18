@@ -89,6 +89,10 @@ def make_subscription(
     user_id: int,
     started_at: datetime,
     expires_at: datetime,
+    notified_3d_at: datetime | None = None,
+    notified_0d_at: datetime | None = None,
+    notified_post_at: datetime | None = None,
+    access_revoked_at: datetime | None = None,
 ) -> Subscription:
     return Subscription(
         id=subscription_id,
@@ -98,10 +102,10 @@ def make_subscription(
         last_invoice_id=None,
         stars_subscription_active=False,
         source=SubscriptionSource.manual,
-        notified_3d_at=None,
-        notified_0d_at=None,
-        notified_post_at=None,
-        access_revoked_at=None,
+        notified_3d_at=notified_3d_at,
+        notified_0d_at=notified_0d_at,
+        notified_post_at=notified_post_at,
+        access_revoked_at=access_revoked_at,
         created_at=started_at,
         updated_at=started_at,
     )
@@ -160,6 +164,28 @@ async def test_extend_manual_subscription_extends_from_future_expiration() -> No
     assert session.flushed == 1
 
 
+async def test_extend_subscription_resets_future_expiry_notification_markers() -> None:
+    session = FakeAsyncSession()
+    user = make_user(user_id=7, status=UserStatus.silver, total_active_days=20)
+    now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
+    subscription = make_subscription(
+        user_id=user.id,
+        started_at=now - timedelta(days=20),
+        expires_at=now + timedelta(days=3),
+        notified_3d_at=now - timedelta(hours=1),
+    )
+    session.add(user)
+    session.add(subscription)
+
+    updated = await extend_manual_subscription(session, user=user, days=7, now=now)
+
+    assert updated is subscription
+    assert updated.notified_3d_at is None
+    assert updated.notified_0d_at is None
+    assert updated.notified_post_at is None
+    assert updated.access_revoked_at is None
+
+
 async def test_extend_manual_subscription_extends_expired_subscription_from_now() -> None:
     session = FakeAsyncSession()
     user = make_user(user_id=8, total_active_days=5)
@@ -181,6 +207,39 @@ async def test_extend_manual_subscription_extends_expired_subscription_from_now(
     assert user.total_active_days == 19
     assert user.status is UserStatus.bronze
     assert session.flushed == 1
+
+
+async def test_extend_subscription_resets_expired_notification_and_revoke_markers() -> None:
+    session = FakeAsyncSession()
+    user = make_user(user_id=8, total_active_days=5)
+    now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
+    subscription = make_subscription(
+        user_id=user.id,
+        started_at=now - timedelta(days=20),
+        expires_at=now - timedelta(days=3),
+        notified_3d_at=now - timedelta(days=7),
+        notified_0d_at=now - timedelta(days=3),
+        notified_post_at=now - timedelta(days=2),
+        access_revoked_at=now - timedelta(days=2),
+    )
+    session.add(user)
+    session.add(subscription)
+
+    updated = await extend_paid_subscription(
+        session,
+        user=user,
+        days=14,
+        source=SubscriptionSource.cryptobot,
+        last_invoice_id=123,
+        now=now,
+    )
+
+    assert updated is subscription
+    assert updated.expires_at == now + timedelta(days=14)
+    assert updated.notified_3d_at is None
+    assert updated.notified_0d_at is None
+    assert updated.notified_post_at is None
+    assert updated.access_revoked_at is None
 
 
 async def test_extend_manual_subscription_recalculates_loyalty_tier() -> None:

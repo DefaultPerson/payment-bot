@@ -48,6 +48,13 @@ percent_default = 10
 min_withdraw_usd = 10
 allow_referrer_change = false
 
+[notifications]
+loop_interval_seconds = 3600
+batch_size = 100
+reminder_days_before = 3
+reminder_window_seconds = 3600
+post_expired_delay_hours = 24
+
 [[tariffs.items]]
 code = "1m"
 duration_months = 1
@@ -78,4 +85,5 @@ active = true
 
 [access]
 invite_link_ttl_seconds = 86400
+revoke_ban_seconds = 60
 protected_chats = []
