@@ -210,6 +210,7 @@ def make_user(*, user_id: int = 10) -> User:
         status=UserStatus.basic,
         total_active_days=0,
         referrer_id=None,
+        referral_percent=None,
         created_at=timestamp,
         updated_at=timestamp,
     )

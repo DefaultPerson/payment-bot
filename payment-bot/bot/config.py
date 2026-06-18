@@ -18,6 +18,7 @@ from pydantic_settings import (
 class BotConfig(BaseModel):
     supported_languages: list[str] = Field(default_factory=lambda: ["ru", "ua", "en"])
     fallback_language: str = "ru"
+    username: str = Field(default="HydraPaymentBot", min_length=1)
     support_username: str = "HMonitorsBot"
 
     @model_validator(mode="after")
@@ -137,6 +138,12 @@ class StarsConfig(BaseModel):
     invoice_expires_seconds: int = Field(default=3600, ge=1)
 
 
+class ReferralConfig(BaseModel):
+    percent_default: Decimal = Field(default=Decimal("10"), ge=0, lt=100)
+    min_withdraw_usd: Decimal = Field(default=Decimal("10"), gt=0)
+    allow_referrer_change: bool = False
+
+
 class ProtectedChatConfig(BaseModel):
     chat_id: int
     title: str
@@ -191,6 +198,7 @@ class Settings(BaseSettings):
     loyalty: LoyaltyConfig = Field(default_factory=LoyaltyConfig)
     promos: PromosConfig = Field(default_factory=PromosConfig)
     stars: StarsConfig = Field(default_factory=StarsConfig)
+    referral: ReferralConfig = Field(default_factory=ReferralConfig)
     access: AccessConfig = Field(default_factory=AccessConfig)
 
     @classmethod

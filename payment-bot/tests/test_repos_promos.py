@@ -66,6 +66,7 @@ def make_user(*, pending_promo_id: int | None = None) -> User:
         status=UserStatus.basic,
         total_active_days=0,
         referrer_id=None,
+        referral_percent=None,
         pending_promo_id=pending_promo_id,
         created_at=timestamp,
         updated_at=timestamp,

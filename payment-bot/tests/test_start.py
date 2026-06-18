@@ -83,6 +83,12 @@ class PersistedUser:
     lang_code: str
 
 
+@dataclass(slots=True)
+class UpsertedUser:
+    user: PersistedUser
+    created: bool
+
+
 def test_build_start_text_uses_english_for_english_user_language() -> None:
     i18n = JsonI18n()
     settings = Settings(bot={"support_username": "HydraSupport"})
@@ -148,13 +154,16 @@ async def test_start_calls_user_upsert_commands_and_answers_main_menu(monkeypatc
     menu_calls: list[dict[str, Any]] = []
     menu_markup = object()
 
-    async def fake_upsert(session: FakeSession, **kwargs: Any) -> PersistedUser:
+    async def fake_upsert(session: FakeSession, **kwargs: Any) -> UpsertedUser:
         upsert_calls.append({"session": session, **kwargs})
-        return PersistedUser(
-            tg_id=kwargs["tg_id"],
-            username=kwargs["username"],
-            first_name=kwargs["first_name"],
-            lang_code="en",
+        return UpsertedUser(
+            user=PersistedUser(
+                tg_id=kwargs["tg_id"],
+                username=kwargs["username"],
+                first_name=kwargs["first_name"],
+                lang_code="en",
+            ),
+            created=True,
         )
 
     async def fake_set_user_commands(*args: Any, **kwargs: Any) -> None:
@@ -164,7 +173,7 @@ async def test_start_calls_user_upsert_commands_and_answers_main_menu(monkeypatc
         menu_calls.append({"args": args, **kwargs})
         return menu_markup
 
-    monkeypatch.setattr(start_module, "upsert_user_from_telegram", fake_upsert)
+    monkeypatch.setattr(start_module, "upsert_user_from_telegram_with_created", fake_upsert)
     monkeypatch.setattr(start_module, "set_user_commands", fake_set_user_commands)
     monkeypatch.setattr(start_module, "main_menu_keyboard", fake_main_menu_keyboard)
 
@@ -222,19 +231,22 @@ async def test_start_does_not_upsert_or_set_commands_when_from_user_is_missing(
     upsert_calls: list[dict[str, Any]] = []
     command_calls: list[dict[str, Any]] = []
 
-    async def fake_upsert(session: FakeSession, **kwargs: Any) -> PersistedUser:
+    async def fake_upsert(session: FakeSession, **kwargs: Any) -> UpsertedUser:
         upsert_calls.append({"session": session, **kwargs})
-        return PersistedUser(
-            tg_id=kwargs["tg_id"],
-            username=kwargs["username"],
-            first_name=kwargs["first_name"],
-            lang_code="ru",
+        return UpsertedUser(
+            user=PersistedUser(
+                tg_id=kwargs["tg_id"],
+                username=kwargs["username"],
+                first_name=kwargs["first_name"],
+                lang_code="ru",
+            ),
+            created=True,
         )
 
     async def fake_set_user_commands(*args: Any, **kwargs: Any) -> None:
         command_calls.append({"args": args, **kwargs})
 
-    monkeypatch.setattr(start_module, "upsert_user_from_telegram", fake_upsert)
+    monkeypatch.setattr(start_module, "upsert_user_from_telegram_with_created", fake_upsert)
     monkeypatch.setattr(start_module, "set_user_commands", fake_set_user_commands)
 
     message = FakeMessage(from_user=None, chat=FakeChat(id=555))
@@ -265,7 +277,7 @@ async def test_start_without_from_user_or_chat_still_answers_without_db(monkeypa
     async def fail_set_user_commands(*args: Any, **kwargs: Any) -> None:
         raise AssertionError("start should not set commands without a chat id")
 
-    monkeypatch.setattr(start_module, "upsert_user_from_telegram", fail_upsert)
+    monkeypatch.setattr(start_module, "upsert_user_from_telegram_with_created", fail_upsert)
     monkeypatch.setattr(start_module, "set_user_commands", fail_set_user_commands)
 
     message = FakeMessage(from_user=None, chat=None)
@@ -290,7 +302,7 @@ async def test_start_surfaces_database_errors_as_localized_reply(monkeypatch) ->
     async def fail_set_user_commands(*args: Any, **kwargs: Any) -> None:
         raise AssertionError("commands must not be set after DB failure")
 
-    monkeypatch.setattr(start_module, "upsert_user_from_telegram", fail_upsert)
+    monkeypatch.setattr(start_module, "upsert_user_from_telegram_with_created", fail_upsert)
     monkeypatch.setattr(start_module, "set_user_commands", fail_set_user_commands)
 
     message = FakeMessage(

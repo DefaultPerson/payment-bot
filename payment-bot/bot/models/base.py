@@ -102,6 +102,7 @@ class User(Base):
         ForeignKey("users.id", ondelete="SET NULL"),
         index=True,
     )
+    referral_percent: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
     pending_promo_id: Mapped[int | None] = mapped_column(
         ForeignKey("promos.id", ondelete="SET NULL"),
         index=True,
@@ -339,6 +340,9 @@ class Referral(Base):
 
 class ReferralEarning(Base):
     __tablename__ = "referral_earnings"
+    __table_args__ = (
+        UniqueConstraint("invoice_id", name="uq_referral_earnings_invoice_id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     referrer_id: Mapped[int] = mapped_column(

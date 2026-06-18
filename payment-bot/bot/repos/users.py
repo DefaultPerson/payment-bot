@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
@@ -10,6 +12,12 @@ from bot.core.i18n import JsonI18n
 from bot.models import User, UserStatus
 
 SUPPORTED_LANGUAGES = frozenset({"ru", "ua", "en"})
+
+
+@dataclass(frozen=True, slots=True)
+class UpsertedTelegramUser:
+    user: User
+    created: bool
 
 
 def resolve_language(i18n: JsonI18n, language_code: str | None) -> str:
@@ -29,22 +37,39 @@ async def upsert_user_from_telegram(
     language_code: str | None,
     i18n: JsonI18n,
 ) -> User:
-    now = datetime.now(UTC)
-    user = await get_user_by_tg_id(session, tg_id)
+    result = await upsert_user_from_telegram_with_created(
+        session,
+        tg_id=tg_id,
+        username=username,
+        first_name=first_name,
+        language_code=language_code,
+        i18n=i18n,
+    )
+    return result.user
 
+
+async def upsert_user_from_telegram_with_created(
+    session: AsyncSession,
+    *,
+    tg_id: int,
+    username: str | None,
+    first_name: str | None,
+    language_code: str | None,
+    i18n: JsonI18n,
+) -> UpsertedTelegramUser:
+    now = datetime.now(UTC)
+    created = await _insert_user_if_missing(
+        session,
+        tg_id=tg_id,
+        username=username,
+        first_name=first_name,
+        lang_code=resolve_language(i18n, language_code),
+        now=now,
+    )
+    user = await get_user_by_tg_id(session, tg_id)
     if user is None:
-        await _insert_user_if_missing(
-            session,
-            tg_id=tg_id,
-            username=username,
-            first_name=first_name,
-            lang_code=resolve_language(i18n, language_code),
-            now=now,
-        )
-        user = await get_user_by_tg_id(session, tg_id)
-        if user is None:
-            msg = f"user with tg_id {tg_id} was not found after insert"
-            raise LookupError(msg)
+        msg = f"user with tg_id {tg_id} was not found after insert"
+        raise LookupError(msg)
 
     user.username = username
     user.first_name = first_name
@@ -56,7 +81,7 @@ async def upsert_user_from_telegram(
     user.updated_at = now
 
     await session.flush()
-    return user
+    return UpsertedTelegramUser(user=user, created=created)
 
 
 async def update_user_language(session: AsyncSession, *, tg_id: int, lang_code: str) -> User:
@@ -112,7 +137,7 @@ async def _insert_user_if_missing(
     first_name: str | None,
     lang_code: str,
     now: datetime,
-) -> None:
+) -> bool:
     statement = (
         insert(User)
         .values(
@@ -126,5 +151,14 @@ async def _insert_user_if_missing(
             updated_at=now,
         )
         .on_conflict_do_nothing(index_elements=[User.tg_id])
+        .returning(User.id)
     )
-    await session.execute(statement)
+    result = await session.execute(statement)
+    return _inserted_id(result) is not None
+
+
+def _inserted_id(result: Any) -> int | None:
+    scalar_one_or_none = getattr(result, "scalar_one_or_none", None)
+    if callable(scalar_one_or_none):
+        return scalar_one_or_none()
+    return None

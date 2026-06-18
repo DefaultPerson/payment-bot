@@ -292,6 +292,7 @@ def test_profile_text_locale_formats_expected_kwargs() -> None:
         days_to_next_tier=50,
         referral_count=3,
         referral_earned_usd="12.50",
+        referral_unpaid_earned_usd="7.50",
     )
 
     assert "42" in text
@@ -302,3 +303,4 @@ def test_profile_text_locale_formats_expected_kwargs() -> None:
     assert "50" in text
     assert "3" in text
     assert "12.50" in text
+    assert "7.50" in text

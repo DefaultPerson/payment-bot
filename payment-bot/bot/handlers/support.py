@@ -16,7 +16,6 @@ from bot.handlers.start import callback_context, message_context
 from bot.keyboards import (
     CB_ADMIN,
     CB_ENTER_CHAT,
-    CB_REFERRAL,
     CB_RENEW,
     CB_SUPPORT,
     support_keyboard,
@@ -25,7 +24,7 @@ from bot.repos.users import ensure_minimal_user, upsert_user_from_telegram
 
 logger = logging.getLogger(__name__)
 
-FUTURE_CALLBACKS = frozenset({CB_ADMIN, CB_REFERRAL, CB_RENEW, CB_ENTER_CHAT})
+FUTURE_CALLBACKS = frozenset({CB_ADMIN, CB_RENEW, CB_ENTER_CHAT})
 
 
 async def support(

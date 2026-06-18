@@ -10,7 +10,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from bot.config import Settings
 from bot.core.i18n import JsonI18n
-from bot.keyboards import CB_BUY, CB_ENTER_CHAT, CB_PROMO, CB_REFERRAL, CB_RENEW
+from bot.keyboards import CB_BUY, CB_ENTER_CHAT, CB_PROMO, CB_RENEW
 
 
 @dataclass(slots=True)
@@ -126,6 +126,7 @@ async def test_profile_command_fetches_subscription_and_answers_formatted_profil
     calls: list[dict[str, Any]] = []
     user = FakeUserRecord(id=11, tg_id=1001, lang_code="ua")
     subscription = object()
+    referral_stats = object()
     view = object()
     profile_markup = object()
 
@@ -139,6 +140,10 @@ async def test_profile_command_fetches_subscription_and_answers_formatted_profil
     ) -> object:
         calls.append({"name": "subscription", "session": session, "user_id": user_id})
         return subscription
+
+    async def fake_get_referral_stats(session: FakeSession, **kwargs: Any) -> object:
+        calls.append({"name": "referral_stats", "session": session, **kwargs})
+        return referral_stats
 
     def fake_build_profile_view(*args: Any, **kwargs: Any) -> object:
         calls.append({"name": "build", "args": args, **kwargs})
@@ -154,6 +159,7 @@ async def test_profile_command_fetches_subscription_and_answers_formatted_profil
 
     monkeypatch.setattr(profile_module, "ensure_minimal_user", fake_ensure_minimal_user)
     monkeypatch.setattr(profile_module, "get_subscription_for_user", fake_get_subscription_for_user)
+    monkeypatch.setattr(profile_module, "get_referral_stats", fake_get_referral_stats)
     monkeypatch.setattr(profile_module, "build_profile_view", fake_build_profile_view)
     monkeypatch.setattr(profile_module, "format_profile_text", fake_format_profile_text)
     monkeypatch.setattr(profile_module, "profile_keyboard", fake_profile_keyboard)
@@ -185,11 +191,17 @@ async def test_profile_command_fetches_subscription_and_answers_formatted_profil
         "session": session_factory.session,
         "user_id": 11,
     }
-    assert calls[2]["name"] == "build"
-    assert calls[2]["args"] == (user, subscription)
-    assert calls[2]["now"].tzinfo is not None
-    assert calls[3] == {"name": "format", "args": (view, i18n, "ua")}
-    assert calls[4] == {"name": "keyboard", "args": (i18n, settings, "ua")}
+    assert calls[2] == {
+        "name": "referral_stats",
+        "session": session_factory.session,
+        "referrer_id": 11,
+    }
+    assert calls[3]["name"] == "build"
+    assert calls[3]["args"] == (user, subscription)
+    assert calls[3]["now"].tzinfo is not None
+    assert calls[3]["referral_stats"] is referral_stats
+    assert calls[4] == {"name": "format", "args": (view, i18n, "ua")}
+    assert calls[5] == {"name": "keyboard", "args": (i18n, settings, "ua")}
     assert session_factory.session.commits == 1
     assert message.answers == [{"text": "formatted profile", "reply_markup": profile_markup}]
 
@@ -232,6 +244,11 @@ async def test_profile_callback_edits_message_and_acknowledges(monkeypatch) -> N
         "get_subscription_for_user",
         lambda *args, **kwargs: _async_return(None),
     )
+    monkeypatch.setattr(
+        profile_module,
+        "get_referral_stats",
+        lambda *args, **kwargs: _async_return(object()),
+    )
     monkeypatch.setattr(profile_module, "build_profile_view", lambda *args, **kwargs: object())
     monkeypatch.setattr(profile_module, "format_profile_text", lambda *args, **kwargs: "profile")
     monkeypatch.setattr(profile_module, "profile_keyboard", lambda *args, **kwargs: "keyboard")
@@ -267,6 +284,11 @@ async def test_profile_callback_answers_profile_when_message_is_not_editable(mon
         "get_subscription_for_user",
         lambda *args, **kwargs: _async_return(None),
     )
+    monkeypatch.setattr(
+        profile_module,
+        "get_referral_stats",
+        lambda *args, **kwargs: _async_return(object()),
+    )
     monkeypatch.setattr(profile_module, "build_profile_view", lambda *args, **kwargs: object())
     monkeypatch.setattr(profile_module, "format_profile_text", lambda *args, **kwargs: "profile")
     monkeypatch.setattr(profile_module, "profile_keyboard", lambda *args, **kwargs: "keyboard")
@@ -301,6 +323,11 @@ async def test_profile_callback_bounds_long_non_editable_answer(monkeypatch) -> 
         profile_module,
         "get_subscription_for_user",
         lambda *args, **kwargs: _async_return(None),
+    )
+    monkeypatch.setattr(
+        profile_module,
+        "get_referral_stats",
+        lambda *args, **kwargs: _async_return(object()),
     )
     monkeypatch.setattr(profile_module, "build_profile_view", lambda *args, **kwargs: object())
     monkeypatch.setattr(
@@ -342,6 +369,11 @@ async def test_profile_callback_answers_when_edit_raises_bad_request(monkeypatch
         profile_module,
         "get_subscription_for_user",
         lambda *args, **kwargs: _async_return(None),
+    )
+    monkeypatch.setattr(
+        profile_module,
+        "get_referral_stats",
+        lambda *args, **kwargs: _async_return(object()),
     )
     monkeypatch.setattr(profile_module, "build_profile_view", lambda *args, **kwargs: object())
     monkeypatch.setattr(profile_module, "format_profile_text", lambda *args, **kwargs: "profile")
@@ -917,7 +949,7 @@ def test_buy_button_is_not_a_future_callback() -> None:
     assert CB_BUY not in support_module.FUTURE_CALLBACKS
 
 
-@pytest.mark.parametrize("callback_data", [CB_PROMO, CB_REFERRAL, CB_RENEW, CB_ENTER_CHAT])
+@pytest.mark.parametrize("callback_data", [CB_PROMO, CB_RENEW, CB_ENTER_CHAT])
 async def test_future_buttons_answer_coming_soon_without_db_mutation(callback_data: str) -> None:
     import bot.handlers.support as support_module
 

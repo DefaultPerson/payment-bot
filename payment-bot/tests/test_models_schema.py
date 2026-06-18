@@ -79,6 +79,13 @@ def test_named_unique_constraints_match_phase1_migration() -> None:
     assert unique_constraint_columns("promos", "uq_promos_code") == ("code",)
 
 
+def test_phase5_referral_earnings_are_unique_per_invoice() -> None:
+    assert "referral_percent" in Base.metadata.tables["users"].c
+    assert unique_constraint_columns("referral_earnings", "uq_referral_earnings_invoice_id") == (
+        "invoice_id",
+    )
+
+
 def test_phase3_models_include_pending_promo_and_invoice_snapshot_columns() -> None:
     users = Base.metadata.tables["users"]
     invoices = Base.metadata.tables["invoices"]

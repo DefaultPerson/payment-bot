@@ -2,10 +2,10 @@
 
 Telegram payment bot for Hydra Monitors subscriptions.
 
-This repository state contains Phase 4: the service scaffold, subscription
+This repository state contains Phase 5: the service scaffold, subscription
 domain models, localized menus, admin-only manual grants, and CryptoBot purchase
 flow with polling-based payment finalization, loyalty pricing, promo codes, and
-Telegram Stars payments.
+Telegram Stars payments, plus referral links and referral earnings.
 
 ## Local Requirements
 
@@ -61,7 +61,9 @@ Telegram commands currently implemented:
 /language
 /support
 /promo <code>
+/referral
 /grant <user_id> <days>   # admins only
+/refset <user_id> <percent>   # admins only
 ```
 
 ## CryptoBot
@@ -90,6 +92,16 @@ and then cleared from the user. `percent` and `fixed_usd` promos discount the
 invoice before provider fees; `extra_days` promos add access days after a paid
 invoice without increasing loyalty active-day credit. `[promos]` controls the
 maximum percent of a quote that a discount promo may remove.
+
+Referrals are opened with `/referral`. The bot shows a deep link in the form
+`https://t.me/<bot.username>?start=ref_<telegram_id>`. Referral binding is
+accepted only on a user's first `/start`; later deep links do not change an
+existing user. Successful paid CryptoBot and Telegram Stars invoices create a
+manual-payout earning for the referrer from `invoice.net`. `[referral]`
+controls the default percent, minimum withdrawal amount, and referrer-change
+policy. Admins can set a personal percent for current and future referrals with
+`/refset <user_id> <percent>`. Profile and referral views show lifetime earned
+USD and unpaid USD available toward the manual withdrawal minimum.
 
 Telegram Stars payments are configured in `[stars]`. The bot sends Stars
 invoices with `currency = "XTR"` and an empty provider token. The 1-month tariff

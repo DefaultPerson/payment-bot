@@ -15,6 +15,7 @@ from bot.core.db import session_scope
 from bot.core.i18n import JsonI18n
 from bot.handlers.start import callback_context, message_context
 from bot.keyboards import CB_PROFILE, profile_keyboard
+from bot.repos.referrals import get_referral_stats
 from bot.repos.subscriptions import get_subscription_for_user
 from bot.repos.users import ensure_minimal_user
 from bot.services.profile import build_profile_view, format_profile_text
@@ -92,7 +93,13 @@ async def _build_profile_response(
             language_code=language_code,
         )
         subscription = await get_subscription_for_user(session, user.id)
-        view = build_profile_view(user, subscription, now=datetime.now(UTC))
+        referral_stats = await get_referral_stats(session, referrer_id=user.id)
+        view = build_profile_view(
+            user,
+            subscription,
+            now=datetime.now(UTC),
+            referral_stats=referral_stats,
+        )
         lang_code = user.lang_code
 
     return format_profile_text(view, i18n, lang_code), lang_code

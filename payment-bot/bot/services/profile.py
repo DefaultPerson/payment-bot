@@ -6,6 +6,7 @@ from decimal import Decimal
 
 from bot.core.i18n import JsonI18n
 from bot.models import Subscription, User, UserStatus
+from bot.repos.referrals import ReferralStats
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,6 +19,7 @@ class ProfileView:
     days_to_next_tier: int | None
     referral_count: int
     referral_earned_usd: Decimal
+    referral_unpaid_earned_usd: Decimal
 
 
 def build_profile_view(
@@ -25,6 +27,7 @@ def build_profile_view(
     subscription: Subscription | None,
     *,
     now: datetime,
+    referral_stats: ReferralStats | None = None,
 ) -> ProfileView:
     total_active_days = user.total_active_days or 0
     status = user.status or UserStatus.basic
@@ -37,8 +40,13 @@ def build_profile_view(
         subscription_active=subscription_active,
         expires_at=subscription.expires_at if subscription_active and subscription else None,
         days_to_next_tier=_days_to_next_tier(status, total_active_days),
-        referral_count=0,
-        referral_earned_usd=Decimal("0.00"),
+        referral_count=referral_stats.referral_count if referral_stats is not None else 0,
+        referral_earned_usd=(
+            referral_stats.earned_usd if referral_stats is not None else Decimal("0.00")
+        ),
+        referral_unpaid_earned_usd=(
+            referral_stats.unpaid_earned_usd if referral_stats is not None else Decimal("0.00")
+        ),
     )
 
 
@@ -72,6 +80,7 @@ def format_profile_text(view: ProfileView, i18n: JsonI18n, lang_code: str) -> st
         days_to_next_tier=days_to_next_tier,
         referral_count=view.referral_count,
         referral_earned_usd=f"{view.referral_earned_usd:.2f}",
+        referral_unpaid_earned_usd=f"{view.referral_unpaid_earned_usd:.2f}",
     )
 
 

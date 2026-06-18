@@ -12,6 +12,7 @@ def test_default_settings_are_safe_for_tests() -> None:
 
     assert settings.bot.fallback_language == "ru"
     assert settings.bot.supported_languages == ["ru", "ua", "en"]
+    assert settings.bot.username == "HydraPaymentBot"
     assert settings.http.host == "127.0.0.1"
     assert settings.http.port == 8080
     assert settings.admin_ids == []
@@ -67,6 +68,24 @@ def test_phase4_stars_config_defaults_are_safe_for_tests() -> None:
     assert settings.stars.app_store_fee_percent == Decimal("30")
     assert settings.stars.star_usd_rate == Decimal("0.013")
     assert settings.stars.invoice_expires_seconds == 3600
+
+
+def test_phase5_referral_config_defaults_are_safe_for_tests() -> None:
+    settings = Settings()
+
+    assert settings.referral.percent_default == Decimal("10")
+    assert settings.referral.min_withdraw_usd == Decimal("10")
+    assert settings.referral.allow_referrer_change is False
+
+
+def test_phase5_referral_config_rejects_invalid_percent() -> None:
+    with pytest.raises(ValidationError):
+        Settings(referral={"percent_default": Decimal("100")})
+
+
+def test_phase5_referral_config_rejects_invalid_min_withdrawal() -> None:
+    with pytest.raises(ValidationError):
+        Settings(referral={"min_withdraw_usd": Decimal("0")})
 
 
 def test_phase4_stars_config_rejects_invalid_rate() -> None:

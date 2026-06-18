@@ -7,6 +7,7 @@ import pytest
 
 from bot.core.i18n import JsonI18n
 from bot.models import Subscription, User, UserStatus
+from bot.repos.referrals import ReferralStats
 from bot.services.profile import ProfileView, build_profile_view, format_profile_text
 
 NOW = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
@@ -26,6 +27,7 @@ def test_profile_view_fields_match_service_contract() -> None:
         "days_to_next_tier",
         "referral_count",
         "referral_earned_usd",
+        "referral_unpaid_earned_usd",
     ]
 
 
@@ -48,6 +50,7 @@ def test_build_profile_view_reports_inactive_subscription_without_expiration() -
         days_to_next_tier=80,
         referral_count=0,
         referral_earned_usd=Decimal("0.00"),
+        referral_unpaid_earned_usd=Decimal("0.00"),
     )
 
 
@@ -104,7 +107,7 @@ def test_format_profile_text_uses_i18n_keys(tmp_path) -> None:
                     "tg={tg_id}; status={status}; days={total_active_days}; "
                     "subscription={subscription_status}; expires={expires_at}; "
                     "next={days_to_next_tier}; referrals={referral_count}; "
-                    "earned={referral_earned_usd}"
+                    "earned={referral_earned_usd}; unpaid={referral_unpaid_earned_usd}"
                 ),
                 "profile.status.bronze": "Bronze",
                 "profile.subscription.active": "Active",
@@ -126,11 +129,27 @@ def test_format_profile_text_uses_i18n_keys(tmp_path) -> None:
         days_to_next_tier=50,
         referral_count=0,
         referral_earned_usd=Decimal("0.00"),
+        referral_unpaid_earned_usd=Decimal("0.00"),
     )
 
     text = format_profile_text(view, i18n, "en")
 
     assert text == (
         "tg=123456789; status=Bronze; days=40; subscription=Active; "
-        f"expires={expires_at.isoformat()}; next=50; referrals=0; earned=0.00"
+        f"expires={expires_at.isoformat()}; next=50; referrals=0; earned=0.00; unpaid=0.00"
     )
+
+
+def test_build_profile_view_uses_referral_stats() -> None:
+    user = make_user(status=UserStatus.basic, total_active_days=10)
+    stats = ReferralStats(
+        referral_count=3,
+        earned_usd=Decimal("21.50"),
+        unpaid_earned_usd=Decimal("11.50"),
+    )
+
+    view = build_profile_view(user, None, now=NOW, referral_stats=stats)
+
+    assert view.referral_count == 3
+    assert view.referral_earned_usd == Decimal("21.50")
+    assert view.referral_unpaid_earned_usd == Decimal("11.50")
