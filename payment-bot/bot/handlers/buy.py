@@ -18,17 +18,20 @@ from bot.keyboards import (
     CB_CRYPTOBOT_PREFIX,
     CB_STARS_PREFIX,
     CB_TARIFF_PREFIX,
+    CB_XROCKET_PREFIX,
     payment_keyboard,
     tariff_detail_keyboard,
     tariff_keyboard,
 )
 from bot.payments.cryptobot import CryptoBotAPIError, CryptoBotClient
+from bot.payments.xrocket import XRocketAPIError, XRocketClient
 from bot.repos.promos import PromoUnavailable, get_pending_promo_snapshot_for_user
 from bot.repos.users import ensure_minimal_user
 from bot.services.payments import (
     cancel_unusable_invoice,
     create_cryptobot_invoice_for_user,
     create_stars_invoice_for_user,
+    create_xrocket_invoice_for_user,
 )
 from bot.services.pricing import TariffQuote, quote_tariff
 
@@ -278,6 +281,90 @@ async def stars_invoice_callback(
     await callback.answer()
 
 
+async def xrocket_invoice_callback(
+    callback: CallbackQuery,
+    settings: Settings,
+    i18n: JsonI18n,
+    session_factory: async_sessionmaker[AsyncSession],
+    xrocket_client: XRocketClient | None = None,
+) -> None:
+    context = callback_context(callback, settings)
+    tariff_code = _parse_prefixed_callback(getattr(callback, "data", None), CB_XROCKET_PREFIX)
+    if tariff_code is None or context.tg_id is None:
+        await callback.answer(
+            i18n.gettext("error.generic", context.language_code),
+            show_alert=True,
+        )
+        return
+    if not settings.xrocket.enabled or xrocket_client is None:
+        await callback.answer(
+            i18n.gettext("buy.invoice.failed", context.language_code),
+            show_alert=True,
+        )
+        return
+
+    try:
+        async with session_scope(session_factory) as session:
+            user = await ensure_minimal_user(
+                session,
+                tg_id=context.tg_id,
+                i18n=i18n,
+                language_code=context.language_code,
+            )
+            lang_code = user.lang_code
+    except SQLAlchemyError:
+        logger.exception("failed to resolve xRocket invoice user")
+        await callback.answer(i18n.gettext("error.generic", context.language_code), show_alert=True)
+        return
+
+    try:
+        created = await create_xrocket_invoice_for_user(
+            session_factory,
+            settings,
+            xrocket_client,
+            user,
+            tariff_code,
+            datetime.now(UTC),
+        )
+    except SQLAlchemyError:
+        logger.exception("failed to persist xRocket invoice")
+        await callback.answer(i18n.gettext("error.generic", lang_code), show_alert=True)
+        return
+    except XRocketAPIError:
+        logger.exception("xRocket invoice creation failed")
+        await callback.answer(
+            i18n.gettext("buy.invoice.failed", lang_code),
+            show_alert=True,
+        )
+        return
+    except LookupError:
+        logger.info("invalid xRocket invoice callback data: %r", getattr(callback, "data", None))
+        await callback.answer(i18n.gettext("error.generic", lang_code), show_alert=True)
+        return
+    except PromoUnavailable as exc:
+        await callback.answer(_promo_error_text(i18n, lang_code, exc.reason), show_alert=True)
+        return
+    except Exception:
+        logger.exception("unexpected xRocket invoice creation failure")
+        await callback.answer(
+            i18n.gettext("buy.invoice.failed", lang_code),
+            show_alert=True,
+        )
+        return
+
+    await _edit_text_or_answer(
+        callback,
+        _invoice_created_text(i18n, lang_code, created.pay_url),
+        reply_markup=payment_keyboard(
+            i18n,
+            settings,
+            lang_code,
+            created.pay_url,
+            payment_key="buy.pay.xrocket",
+        ),
+    )
+
+
 async def _resolve_user_language(
     tg_id: int | None,
     language_code: str | None,
@@ -395,4 +482,5 @@ def create_buy_router() -> Router:
     router.callback_query(F.data.startswith(CB_TARIFF_PREFIX))(tariff_callback)
     router.callback_query(F.data.startswith(CB_CRYPTOBOT_PREFIX))(cryptobot_invoice_callback)
     router.callback_query(F.data.startswith(CB_STARS_PREFIX))(stars_invoice_callback)
+    router.callback_query(F.data.startswith(CB_XROCKET_PREFIX))(xrocket_invoice_callback)
     return router

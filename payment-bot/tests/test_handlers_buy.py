@@ -15,6 +15,7 @@ from bot.core.i18n import JsonI18n
 from bot.keyboards import CB_STARS_PREFIX
 from bot.models import InvoiceStatus, PromoKind, UserStatus
 from bot.payments.cryptobot import CryptoBotAPIError, CryptoBotInvoice
+from bot.payments.xrocket import XRocketAPIError
 from bot.services.pricing import PromoSnapshot, quote_tariff
 from tests.test_handlers_user import (
     FakeBadRequestMessage,
@@ -421,6 +422,179 @@ async def test_cryptobot_invoice_callback_allows_missing_injected_client() -> No
     ]
 
 
+async def test_xrocket_invoice_callback_returns_payment_url(monkeypatch) -> None:
+    import bot.handlers.buy as buy_module
+
+    service_calls: list[dict[str, Any]] = []
+    keyboard_calls: list[dict[str, Any]] = []
+
+    async def fake_ensure_minimal_user(session: FakeSession, **kwargs: Any) -> FakeUserRecord:
+        return FakeUserRecord(id=7, tg_id=700, lang_code="en", status=UserStatus.basic)
+
+    async def fake_create_invoice(
+        session_factory_arg: FakeSessionFactory,
+        settings: Settings,
+        client: object,
+        user: FakeUserRecord,
+        tariff_code: str,
+        now: datetime,
+    ) -> SimpleNamespace:
+        service_calls.append(
+            {
+                "session_factory": session_factory_arg,
+                "settings": settings,
+                "client": client,
+                "user": user,
+                "tariff_code": tariff_code,
+                "now": now,
+            }
+        )
+        return SimpleNamespace(
+            pay_url="https://t.me/xrocket?start=pay",
+            quote=SimpleNamespace(gross_usd=Decimal("79.00")),
+            invoice=object(),
+        )
+
+    def fake_payment_keyboard(
+        i18n: JsonI18n,
+        settings: Settings,
+        lang_code: str,
+        pay_url: str,
+        *,
+        payment_key: str = "buy.pay.cryptobot",
+    ) -> str:
+        keyboard_calls.append(
+            {
+                "i18n": i18n,
+                "settings": settings,
+                "lang_code": lang_code,
+                "pay_url": pay_url,
+                "payment_key": payment_key,
+            }
+        )
+        return "payment-keyboard"
+
+    monkeypatch.setattr(buy_module, "ensure_minimal_user", fake_ensure_minimal_user)
+    monkeypatch.setattr(buy_module, "create_xrocket_invoice_for_user", fake_create_invoice)
+    monkeypatch.setattr(buy_module, "payment_keyboard", fake_payment_keyboard)
+
+    settings = Settings(xrocket={"enabled": True})
+    client = object()
+    session_factory = FakeSessionFactory()
+    callback_message = FakeMessage(chat=FakeChat(id=700))
+    callback = FakeCallback(
+        data="pay:xrocket:1m",
+        from_user=FakeTelegramUser(id=700, language_code="en"),
+        message=callback_message,
+    )
+
+    await buy_module.xrocket_invoice_callback(
+        callback,
+        settings=settings,
+        i18n=JsonI18n(),
+        session_factory=session_factory,
+        xrocket_client=client,
+    )
+
+    assert service_calls[0]["session_factory"] is session_factory
+    assert service_calls[0]["settings"] is settings
+    assert service_calls[0]["client"] is client
+    assert service_calls[0]["tariff_code"] == "1m"
+    assert service_calls[0]["now"].tzinfo is not None
+    assert keyboard_calls == [
+        {
+            "i18n": keyboard_calls[0]["i18n"],
+            "settings": settings,
+            "lang_code": "en",
+            "pay_url": "https://t.me/xrocket?start=pay",
+            "payment_key": "buy.pay.xrocket",
+        }
+    ]
+    assert session_factory.session.commits == 1
+    assert callback.answers == [{"text": None}]
+    assert callback_message.edits == [
+        {
+            "text": (
+                "Invoice created. Use the payment button below to complete your purchase.\n"
+                "https://t.me/xrocket?start=pay"
+            ),
+            "reply_markup": "payment-keyboard",
+        }
+    ]
+
+
+async def test_xrocket_invoice_callback_allows_missing_injected_client() -> None:
+    import bot.handlers.buy as buy_module
+
+    callback = FakeCallback(
+        data="pay:xrocket:1m",
+        from_user=FakeTelegramUser(id=700, language_code="en"),
+        message=FakeMessage(chat=FakeChat(id=700)),
+    )
+
+    await buy_module.xrocket_invoice_callback(
+        callback,
+        settings=Settings(xrocket={"enabled": True}),
+        i18n=JsonI18n(),
+        session_factory=FakeSessionFactory(),
+    )
+
+    assert callback.answers == [
+        {
+            "text": "Could not create invoice. Please try again or contact support.",
+            "show_alert": True,
+        }
+    ]
+
+
+async def test_xrocket_invoice_callback_provider_errors_do_not_send_pay_url(
+    monkeypatch,
+) -> None:
+    import bot.handlers.buy as buy_module
+
+    payment_keyboard_called = False
+
+    async def fake_ensure_minimal_user(session: FakeSession, **kwargs: Any) -> FakeUserRecord:
+        return FakeUserRecord(id=7, tg_id=700, lang_code="en", status=UserStatus.basic)
+
+    async def fail_create_invoice(*args: Any, **kwargs: Any) -> None:
+        raise XRocketAPIError("TOKEN_INVALID")
+
+    def fail_payment_keyboard(*args: Any, **kwargs: Any) -> None:
+        nonlocal payment_keyboard_called
+        payment_keyboard_called = True
+
+    monkeypatch.setattr(buy_module, "ensure_minimal_user", fake_ensure_minimal_user)
+    monkeypatch.setattr(buy_module, "create_xrocket_invoice_for_user", fail_create_invoice)
+    monkeypatch.setattr(buy_module, "payment_keyboard", fail_payment_keyboard)
+
+    session_factory = FakeSessionFactory()
+    callback_message = FakeMessage(chat=FakeChat(id=700))
+    callback = FakeCallback(
+        data="pay:xrocket:1m",
+        from_user=FakeTelegramUser(id=700, language_code="en"),
+        message=callback_message,
+    )
+
+    await buy_module.xrocket_invoice_callback(
+        callback,
+        settings=Settings(xrocket={"enabled": True}),
+        i18n=JsonI18n(),
+        session_factory=session_factory,
+        xrocket_client=object(),
+    )
+
+    assert session_factory.session.commits == 1
+    assert payment_keyboard_called is False
+    assert callback.answers == [
+        {
+            "text": "Could not create invoice. Please try again or contact support.",
+            "show_alert": True,
+        }
+    ]
+    assert callback_message.edits == []
+
+
 async def test_cryptobot_invoice_callback_surfaces_service_database_errors(monkeypatch) -> None:
     import bot.handlers.buy as buy_module
 
@@ -600,6 +774,33 @@ async def test_bad_cryptobot_callback_data_answers_generic_alert(monkeypatch) ->
         i18n=JsonI18n(),
         session_factory=FakeSessionFactory(),
         cryptobot_client=object(),
+    )
+
+    assert callback.answers == [
+        {"text": "Something went wrong. Please try again later.", "show_alert": True}
+    ]
+
+
+async def test_bad_xrocket_callback_data_answers_generic_alert(monkeypatch) -> None:
+    import bot.handlers.buy as buy_module
+
+    async def fail_create_invoice(*args: Any, **kwargs: Any) -> None:
+        raise AssertionError("invalid callback data must not create an invoice")
+
+    monkeypatch.setattr(buy_module, "create_xrocket_invoice_for_user", fail_create_invoice)
+
+    callback = FakeCallback(
+        data="pay:xrocket:",
+        from_user=FakeTelegramUser(id=700, language_code="en"),
+        message=FakeMessage(chat=FakeChat(id=700)),
+    )
+
+    await buy_module.xrocket_invoice_callback(
+        callback,
+        settings=Settings(xrocket={"enabled": True}),
+        i18n=JsonI18n(),
+        session_factory=FakeSessionFactory(),
+        xrocket_client=object(),
     )
 
     assert callback.answers == [

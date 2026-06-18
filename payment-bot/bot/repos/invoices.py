@@ -31,9 +31,32 @@ async def create_pending_cryptobot_invoice(
     expires_at: datetime,
     payload: str,
 ) -> Invoice:
+    return await create_pending_provider_invoice(
+        session,
+        provider=InvoiceProvider.cryptobot,
+        user=user,
+        tariff_id=tariff_id,
+        quote=quote,
+        currency="USD",
+        expires_at=expires_at,
+        payload=payload,
+    )
+
+
+async def create_pending_provider_invoice(
+    session: AsyncSession,
+    *,
+    provider: InvoiceProvider,
+    user: User,
+    tariff_id: int,
+    quote: SupportsInvoiceQuote,
+    currency: str,
+    expires_at: datetime,
+    payload: str,
+) -> Invoice:
     invoice = Invoice(
         user_id=user.id,
-        provider=InvoiceProvider.cryptobot,
+        provider=provider,
         provider_invoice_id=None,
         telegram_payment_charge_id=None,
         tariff_id=tariff_id,
@@ -47,7 +70,7 @@ async def create_pending_cryptobot_invoice(
         gross=quote.gross_usd,
         fee=quote.fee_usd,
         net=quote.net_usd,
-        currency="USD",
+        currency=currency,
         status=InvoiceStatus.active,
         payload=payload,
         provider_payload=None,
@@ -128,10 +151,25 @@ async def get_active_cryptobot_invoices(
     now: datetime,
     limit: int,
 ) -> list[Invoice]:
+    return await get_active_provider_invoices(
+        session,
+        provider=InvoiceProvider.cryptobot,
+        now=now,
+        limit=limit,
+    )
+
+
+async def get_active_provider_invoices(
+    session: AsyncSession,
+    *,
+    provider: InvoiceProvider,
+    now: datetime,
+    limit: int,
+) -> list[Invoice]:
     result = await session.scalars(
         select(Invoice)
         .where(
-            Invoice.provider == InvoiceProvider.cryptobot,
+            Invoice.provider == provider,
             Invoice.status == InvoiceStatus.active,
             Invoice.provider_invoice_id.is_not(None),
             Invoice.expires_at > now,
@@ -149,10 +187,27 @@ async def get_active_cryptobot_invoices_after_id(
     limit: int,
     after_id: int | None = None,
 ) -> list[Invoice]:
+    return await get_active_provider_invoices_after_id(
+        session,
+        provider=InvoiceProvider.cryptobot,
+        now=now,
+        limit=limit,
+        after_id=after_id,
+    )
+
+
+async def get_active_provider_invoices_after_id(
+    session: AsyncSession,
+    *,
+    provider: InvoiceProvider,
+    now: datetime,
+    limit: int,
+    after_id: int | None = None,
+) -> list[Invoice]:
     statement = (
         select(Invoice)
         .where(
-            Invoice.provider == InvoiceProvider.cryptobot,
+            Invoice.provider == provider,
             Invoice.status == InvoiceStatus.active,
             Invoice.provider_invoice_id.is_not(None),
             Invoice.expires_at > now,
@@ -171,10 +226,23 @@ async def lock_invoice_by_provider_id(
     session: AsyncSession,
     provider_invoice_id: str,
 ) -> Invoice | None:
+    return await lock_provider_invoice_by_provider_id(
+        session,
+        provider=InvoiceProvider.cryptobot,
+        provider_invoice_id=provider_invoice_id,
+    )
+
+
+async def lock_provider_invoice_by_provider_id(
+    session: AsyncSession,
+    *,
+    provider: InvoiceProvider,
+    provider_invoice_id: str,
+) -> Invoice | None:
     return await session.scalar(
         select(Invoice)
         .where(
-            Invoice.provider == InvoiceProvider.cryptobot,
+            Invoice.provider == provider,
             Invoice.provider_invoice_id == provider_invoice_id,
         )
         .with_for_update(),
@@ -327,10 +395,23 @@ async def mark_expired_cryptobot_invoices(
     *,
     now: datetime,
 ) -> int:
+    return await mark_expired_provider_invoices(
+        session,
+        provider=InvoiceProvider.cryptobot,
+        now=now,
+    )
+
+
+async def mark_expired_provider_invoices(
+    session: AsyncSession,
+    *,
+    provider: InvoiceProvider,
+    now: datetime,
+) -> int:
     result = await session.scalars(
         select(Invoice)
         .where(
-            Invoice.provider == InvoiceProvider.cryptobot,
+            Invoice.provider == provider,
             Invoice.status == InvoiceStatus.active,
             Invoice.expires_at <= now,
         )

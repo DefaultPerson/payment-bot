@@ -18,6 +18,7 @@ LANG_PREFIX = "lang:"
 CB_TARIFF_PREFIX = "tariff:"
 CB_CRYPTOBOT_PREFIX = "pay:cryptobot:"
 CB_STARS_PREFIX = "pay:stars:"
+CB_XROCKET_PREFIX = "pay:xrocket:"
 
 LANGUAGE_CODES = ("ru", "ua", "en")
 
@@ -184,6 +185,15 @@ def tariff_detail_keyboard(
                 )
             ]
         )
+    if settings.xrocket.enabled:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=i18n.gettext("buy.pay.xrocket", lang_code),
+                    callback_data=f"{CB_XROCKET_PREFIX}{tariff_code}",
+                )
+            ]
+        )
     return InlineKeyboardMarkup(
         inline_keyboard=rows,
     )
@@ -194,12 +204,14 @@ def payment_keyboard(
     settings: Settings,
     lang_code: str,
     pay_url: str,
+    *,
+    payment_key: str = "buy.pay.cryptobot",
 ) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text=i18n.gettext("buy.pay.cryptobot", lang_code),
+                    text=i18n.gettext(payment_key, lang_code),
                     url=pay_url,
                 )
             ],

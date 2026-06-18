@@ -23,14 +23,17 @@ from bot.models import (
 )
 from bot.payments.cryptobot import CryptoBotAPIError, CryptoBotInvoice
 from bot.payments.stars import STARS_CURRENCY, StarsInvoiceQuote, quote_stars_invoice
+from bot.payments.xrocket import XRocketAPIError, XRocketInvoice
 from bot.repos.invoices import (
     create_paid_stars_recurring_invoice,
     create_pending_cryptobot_invoice,
+    create_pending_provider_invoice,
     create_pending_stars_invoice,
     lock_invoice_by_id,
     lock_invoice_by_payload,
     lock_invoice_by_provider_id,
     lock_invoice_by_telegram_payment_charge_id,
+    lock_provider_invoice_by_provider_id,
     mark_invoice_paid,
     mark_invoice_provider_created,
     mark_stars_invoice_paid,
@@ -61,6 +64,18 @@ class SupportsCreateCryptoBotInvoice(Protocol):
         accepted_assets: list[str],
         expires_in: int,
     ) -> CryptoBotInvoice: ...
+
+
+class SupportsCreateXRocketInvoice(Protocol):
+    async def create_invoice(
+        self,
+        *,
+        amount: Decimal,
+        payload: str,
+        description: str,
+        currency: str,
+        expires_in: int,
+    ) -> XRocketInvoice: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,6 +155,10 @@ async def create_cryptobot_invoice_for_user(
             user=user,
             tariff_code=tariff_code,
             now=now,
+            provider=InvoiceProvider.cryptobot,
+            currency="USD",
+            expires_seconds=settings.cryptobot.invoice_expires_seconds,
+            fee_percent=settings.cryptobot.fee_percent,
         )
 
     try:
@@ -150,6 +169,51 @@ async def create_cryptobot_invoice_for_user(
             paid_btn_url=paid_btn_url,
         )
     except CryptoBotAPIError:
+        await cancel_unusable_invoice(session_factory, prepared.invoice_id)
+        raise
+
+    async with session_scope(session_factory) as session:
+        invoice = await lock_invoice_by_id(session, prepared.invoice_id)
+        if invoice is None:
+            msg = f"invoice {prepared.invoice_id} was not found"
+            raise LookupError(msg)
+        invoice = await mark_invoice_provider_created(
+            session,
+            invoice,
+            provider_invoice_id=provider_invoice.invoice_id,
+            raw_payload=provider_invoice.raw,
+        )
+    return CreatedInvoice(invoice=invoice, quote=prepared.quote, pay_url=provider_invoice.pay_url)
+
+
+async def create_xrocket_invoice_for_user(
+    session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+    client: SupportsCreateXRocketInvoice,
+    user: User,
+    tariff_code: str,
+    now: datetime,
+) -> CreatedInvoice:
+    async with session_scope(session_factory) as session:
+        prepared = await _prepare_local_invoice(
+            session,
+            settings=settings,
+            user=user,
+            tariff_code=tariff_code,
+            now=now,
+            provider=InvoiceProvider.xrocket,
+            currency=settings.xrocket.currency,
+            expires_seconds=settings.xrocket.invoice_expires_seconds,
+            fee_percent=settings.xrocket.fee_percent,
+        )
+
+    try:
+        provider_invoice = await _create_xrocket_provider_invoice(
+            client,
+            settings=settings,
+            prepared=prepared,
+        )
+    except XRocketAPIError:
         await cancel_unusable_invoice(session_factory, prepared.invoice_id)
         raise
 
@@ -284,6 +348,79 @@ async def process_paid_cryptobot_invoice(
         gross=paid_amounts.gross,
         fee=paid_amounts.fee,
         net=paid_amounts.net,
+    )
+    await _record_paid_referral_earning(
+        session,
+        invoice=invoice,
+        user=user,
+        now=now,
+        settings=settings,
+    )
+    return _paid_result(
+        processed=True,
+        invoice=invoice,
+        subscription=subscription,
+        user=user,
+        tariff=tariff,
+    )
+
+
+async def process_paid_xrocket_invoice(
+    session: AsyncSession,
+    *,
+    provider_invoice: XRocketInvoice,
+    now: datetime,
+    settings: Settings | None = None,
+) -> PaidInvoiceResult:
+    invoice = await lock_provider_invoice_by_provider_id(
+        session,
+        provider=InvoiceProvider.xrocket,
+        provider_invoice_id=provider_invoice.invoice_id,
+    )
+    if invoice is None:
+        msg = f"invoice for provider invoice {provider_invoice.invoice_id} was not found"
+        raise LookupError(msg)
+
+    if invoice.status is InvoiceStatus.paid:
+        return _paid_result(
+            processed=False,
+            invoice=invoice,
+            subscription=None,
+            user=None,
+            tariff=None,
+        )
+
+    if provider_invoice.status != "paid":
+        msg = "provider invoice is not paid"
+        raise ValueError(msg)
+    if provider_invoice.payload != invoice.payload:
+        msg = "provider invoice payload mismatch"
+        raise ValueError(msg)
+
+    if invoice.tariff_id is None:
+        msg = "invoice tariff_id is missing"
+        raise ValueError(msg)
+    if invoice.id is None:
+        msg = "invoice must have an id before payment processing"
+        raise ValueError(msg)
+
+    user = await _load_paid_invoice_user(session, invoice.user_id)
+    tariff = await _load_paid_invoice_tariff(session, invoice.tariff_id)
+    subscription = await extend_paid_subscription(
+        session,
+        user=user,
+        days=tariff_duration_days(tariff.duration_months),
+        source=SubscriptionSource.xrocket,
+        last_invoice_id=invoice.id,
+        now=now,
+        bonus_days=invoice.promo_extra_days or 0,
+        loyalty=settings.loyalty if settings is not None else None,
+    )
+    await mark_invoice_paid(
+        session,
+        invoice,
+        paid_at=now,
+        raw_payload=provider_invoice.raw,
     )
     await _record_paid_referral_earning(
         session,
@@ -497,6 +634,10 @@ async def _prepare_local_invoice(
     user: User,
     tariff_code: str,
     now: datetime,
+    provider: InvoiceProvider,
+    currency: str,
+    expires_seconds: int,
+    fee_percent: Decimal,
 ) -> PreparedInvoice:
     locked_user, promo = await get_pending_promo_for_user(
         session,
@@ -510,17 +651,30 @@ async def _prepare_local_invoice(
         tariff_code,
         locked_user.status,
         promo=promo_snapshot_from_row(promo) if promo is not None else None,
+        fee_percent=fee_percent,
     )
     tariff = await ensure_configured_tariff(session, settings, tariff_code)
     payload = f"inv:{uuid.uuid4()}"
-    invoice = await create_pending_cryptobot_invoice(
-        session,
-        user=locked_user,
-        tariff_id=tariff.id,
-        quote=quote,
-        expires_at=now + timedelta(seconds=settings.cryptobot.invoice_expires_seconds),
-        payload=payload,
-    )
+    if provider is InvoiceProvider.cryptobot:
+        invoice = await create_pending_cryptobot_invoice(
+            session,
+            user=locked_user,
+            tariff_id=tariff.id,
+            quote=quote,
+            expires_at=now + timedelta(seconds=expires_seconds),
+            payload=payload,
+        )
+    else:
+        invoice = await create_pending_provider_invoice(
+            session,
+            provider=provider,
+            user=locked_user,
+            tariff_id=tariff.id,
+            quote=quote,
+            currency=currency,
+            expires_at=now + timedelta(seconds=expires_seconds),
+            payload=payload,
+        )
     if invoice.id is None:
         msg = "invoice must have an id after flush"
         raise ValueError(msg)
@@ -562,9 +716,35 @@ async def _create_provider_invoice(
         msg = "CryptoBot invoice creation failed"
         raise CryptoBotAPIError(msg) from exc
 
-    if provider_invoice.pay_url is None:
+    if provider_invoice.pay_url is None or not provider_invoice.pay_url.strip():
         msg = "missing pay URL in CryptoBot invoice"
         raise CryptoBotAPIError(msg)
+    return provider_invoice
+
+
+async def _create_xrocket_provider_invoice(
+    client: SupportsCreateXRocketInvoice,
+    *,
+    settings: Settings,
+    prepared: PreparedInvoice,
+) -> XRocketInvoice:
+    try:
+        provider_invoice = await client.create_invoice(
+            amount=prepared.quote.gross_usd,
+            payload=prepared.payload,
+            description=prepared.description,
+            currency=settings.xrocket.currency,
+            expires_in=settings.xrocket.invoice_expires_seconds,
+        )
+    except XRocketAPIError:
+        raise
+    except Exception as exc:
+        msg = "xRocket invoice creation failed"
+        raise XRocketAPIError(msg) from exc
+
+    if provider_invoice.pay_url is None or not provider_invoice.pay_url.strip():
+        msg = "missing pay URL in xRocket invoice"
+        raise XRocketAPIError(msg)
     return provider_invoice
 
 

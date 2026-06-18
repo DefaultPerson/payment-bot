@@ -7,6 +7,7 @@ from bot import __main__ as main_module
 from bot.config import Settings
 from bot.jobs.runner import TaskRunner
 from bot.payments.cryptobot import CryptoBotClient
+from bot.payments.xrocket import XRocketClient
 
 
 def test_main_module_imports_without_runtime_side_effects() -> None:
@@ -34,7 +35,35 @@ def test_build_cryptobot_client_respects_enabled_flag_and_token() -> None:
     assert client.api_url == "https://testnet-pay.crypt.bot"
 
 
-def test_start_background_jobs_registers_notifications_and_optional_crypto(monkeypatch) -> None:
+def test_build_xrocket_client_respects_enabled_flag_and_token() -> None:
+    assert main_module.build_xrocket_client(Settings()) is None
+    assert (
+        main_module.build_xrocket_client(
+            Settings(xrocket={"enabled": False, "token": "secret"}),
+        )
+        is None
+    )
+
+    client = main_module.build_xrocket_client(
+        Settings(
+            xrocket={
+                "enabled": True,
+                "token": "secret",
+                "testnet": True,
+                "base_url": "https://pay.xrocket.test",
+            },
+        ),
+    )
+
+    assert isinstance(client, XRocketClient)
+    assert client.api_key == "secret"
+    assert client.testnet is True
+    assert client.base_url == "https://pay.xrocket.test"
+
+
+def test_start_background_jobs_registers_notifications_and_optional_payment_pollers(
+    monkeypatch,
+) -> None:
     started: list[tuple[str, object]] = []
 
     def fake_start(self: TaskRunner, name: str, coroutine: object) -> None:
@@ -49,9 +78,13 @@ def test_start_background_jobs_registers_notifications_and_optional_crypto(monke
     async def fake_crypto_loop(**kwargs: object) -> None:
         return None
 
+    async def fake_xrocket_loop(**kwargs: object) -> None:
+        return None
+
     monkeypatch.setattr(TaskRunner, "start", fake_start)
     monkeypatch.setattr(main_module, "notification_loop", fake_notification_loop, raising=False)
     monkeypatch.setattr(main_module, "crypto_poller_loop", fake_crypto_loop)
+    monkeypatch.setattr(main_module, "xrocket_poller_loop", fake_xrocket_loop, raising=False)
 
     main_module.start_background_jobs(
         task_runner=TaskRunner(),
@@ -61,6 +94,7 @@ def test_start_background_jobs_registers_notifications_and_optional_crypto(monke
         i18n=object(),
         service_channel=object(),
         cryptobot_client=None,
+        xrocket_client=None,
     )
 
     assert [name for name, _coroutine in started] == ["notifications"]
@@ -74,9 +108,81 @@ def test_start_background_jobs_registers_notifications_and_optional_crypto(monke
         i18n=object(),
         service_channel=object(),
         cryptobot_client=object(),
+        xrocket_client=None,
     )
 
     assert [name for name, _coroutine in started] == ["notifications", "crypto-poller"]
+
+    started.clear()
+    main_module.start_background_jobs(
+        task_runner=TaskRunner(),
+        session_factory=object(),
+        settings=Settings(),
+        bot=object(),
+        i18n=object(),
+        service_channel=object(),
+        cryptobot_client=object(),
+        xrocket_client=object(),
+    )
+
+    assert [name for name, _coroutine in started] == [
+        "notifications",
+        "crypto-poller",
+        "xrocket-poller",
+    ]
+
+
+async def test_close_payment_clients_closes_configured_clients() -> None:
+    class CloseableClient:
+        def __init__(self) -> None:
+            self.closed = False
+
+        async def close(self) -> None:
+            self.closed = True
+
+    cryptobot_client = CloseableClient()
+    xrocket_client = CloseableClient()
+
+    await main_module.close_payment_clients(
+        cryptobot_client=cryptobot_client,
+        xrocket_client=xrocket_client,
+    )
+
+    assert cryptobot_client.closed is True
+    assert xrocket_client.closed is True
+
+    await main_module.close_payment_clients(cryptobot_client=None, xrocket_client=None)
+
+
+async def test_close_payment_clients_continues_after_individual_close_error(
+    caplog,
+) -> None:
+    class FailingClient:
+        def __init__(self) -> None:
+            self.closed = False
+
+        async def close(self) -> None:
+            self.closed = True
+            raise RuntimeError("close failed")
+
+    class CloseableClient:
+        def __init__(self) -> None:
+            self.closed = False
+
+        async def close(self) -> None:
+            self.closed = True
+
+    cryptobot_client = FailingClient()
+    xrocket_client = CloseableClient()
+
+    await main_module.close_payment_clients(
+        cryptobot_client=cryptobot_client,
+        xrocket_client=xrocket_client,
+    )
+
+    assert cryptobot_client.closed is True
+    assert xrocket_client.closed is True
+    assert "failed to close payment client" in caplog.text
 
 
 async def test_bot_identity_cache_throttles_failed_checks() -> None:

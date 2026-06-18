@@ -28,6 +28,23 @@ def test_quote_basic_user_applies_duration_discount_and_crypto_fee() -> None:
     assert quote.fee_usd == Decimal("6.60")
 
 
+def test_quote_can_use_xrocket_fee_percent_without_changing_default_crypto_quote() -> None:
+    settings = Settings(xrocket={"fee_percent": Decimal("5")})
+
+    quote = quote_tariff(
+        settings,
+        "1m",
+        UserStatus.basic,
+        fee_percent=settings.xrocket.fee_percent,
+    )
+    default_quote = quote_tariff(settings, "1m", UserStatus.basic)
+
+    assert quote.net_usd == Decimal("79.00")
+    assert quote.gross_usd == Decimal("83.16")
+    assert quote.fee_usd == Decimal("4.16")
+    assert default_quote.gross_usd == Decimal("81.44")
+
+
 def test_quote_bronze_user_applies_duration_discount_and_status_discount() -> None:
     settings = Settings()
 

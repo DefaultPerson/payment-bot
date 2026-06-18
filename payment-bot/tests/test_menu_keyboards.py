@@ -27,6 +27,7 @@ BUY_DISPLAY_KEYS = {
     "buy.tariff.button",
     "buy.quote.text",
     "buy.pay.cryptobot",
+    "buy.pay.xrocket",
     "buy.invoice.created",
     "buy.invoice.failed",
 }
@@ -255,6 +256,22 @@ def test_tariff_detail_keyboard_contains_stars_payment_action_when_enabled() -> 
     assert "Pay with Telegram Stars" in keyboard_texts(keyboard)
 
 
+def test_tariff_detail_keyboard_contains_xrocket_payment_action_only_when_enabled() -> None:
+    keyboards = keyboard_module()
+
+    disabled = keyboards.tariff_detail_keyboard(JsonI18n(), "1m", "en", Settings())
+    enabled = keyboards.tariff_detail_keyboard(
+        JsonI18n(),
+        "1m",
+        "en",
+        Settings(xrocket={"enabled": True}),
+    )
+
+    assert f"{keyboards.CB_XROCKET_PREFIX}1m" not in keyboard_callback_data(disabled)
+    assert f"{keyboards.CB_XROCKET_PREFIX}1m" in keyboard_callback_data(enabled)
+    assert "Pay with xRocket" in keyboard_texts(enabled)
+
+
 def test_payment_keyboard_points_to_provider_url_and_support() -> None:
     keyboards = keyboard_module()
     settings = Settings(bot={"support_username": "HydraSupport"})
@@ -268,6 +285,22 @@ def test_payment_keyboard_points_to_provider_url_and_support() -> None:
 
     assert "https://t.me/CryptoBot?start=pay" in keyboard_urls(keyboard)
     assert "https://t.me/HydraSupport" in keyboard_urls(keyboard)
+
+
+def test_payment_keyboard_can_use_xrocket_provider_label() -> None:
+    keyboards = keyboard_module()
+    settings = Settings(bot={"support_username": "HydraSupport"})
+
+    keyboard = keyboards.payment_keyboard(
+        JsonI18n(),
+        settings,
+        "en",
+        pay_url="https://t.me/xrocket?start=pay",
+        payment_key="buy.pay.xrocket",
+    )
+
+    assert "https://t.me/xrocket?start=pay" in keyboard_urls(keyboard)
+    assert "Pay with xRocket" in keyboard_texts(keyboard)
 
 
 def test_locale_files_include_profile_display_contract_keys() -> None:
