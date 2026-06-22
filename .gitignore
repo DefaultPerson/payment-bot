@@ -60,3 +60,6 @@ payment-bot/logs/
 payment-bot/.ruff_cache/
 payment-bot/.pytest_cache/
 payment-bot/.venv/
+
+# Decommission backups (contain PII — keep local only, do NOT push)
+/access-manager-backup-2026-06-13/
