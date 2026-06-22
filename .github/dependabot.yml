@@ -1,6 +1,6 @@
 version: 2
 updates:
-  - package-ecosystem: "pip"
+  - package-ecosystem: "uv"
     directory: "/payment-bot"
     target-branch: "main"
     schedule:
@@ -11,8 +11,6 @@ updates:
     labels: ["deps", "security"]
     allow:
       - dependency-type: "direct"
-    ignore:
-      - dependency-name: "pip"
     rebase-strategy: "disabled"
     groups:
       minor-and-patch:
