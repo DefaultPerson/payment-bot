@@ -25,6 +25,7 @@ from bot.jobs.maintenance import invoice_cleanup_loop, metrics_snapshot_loop
 from bot.jobs.notifications import notification_loop
 from bot.jobs.runner import TaskRunner
 from bot.jobs.xrocket_poller import xrocket_poller_loop
+from bot.keyboards.icons import apply_valid_icon_ids, configured_icon_ids, disable_icons
 from bot.payments.cryptobot import CryptoBotClient
 from bot.payments.xrocket import XRocketClient
 
@@ -67,6 +68,31 @@ async def resolve_bot_username(bot: Bot, settings: Settings) -> None:
         return
     if me.username:
         settings.bot.username = me.username
+
+
+async def configure_menu_icons(bot: Bot, settings: Settings) -> None:
+    """Validate custom-emoji button icons; keep only ids Telegram confirms valid.
+
+    A stale ``custom_emoji_id`` raises ``CUSTOM_EMOJI_INVALID`` and would fail the whole
+    message send, so an unverifiable id is dropped (button renders without an icon).
+    """
+    if not settings.bot.custom_emoji_icons:
+        disable_icons()
+        return
+    ids = configured_icon_ids()
+    if not ids:
+        return
+    try:
+        stickers = await bot.get_custom_emoji_stickers(ids)
+    except Exception:
+        logger.warning("menu icon validation failed; disabling button icons", exc_info=True)
+        disable_icons()
+        return
+    valid = {sticker.custom_emoji_id for sticker in stickers}
+    apply_valid_icon_ids(valid)
+    dropped = sorted(set(ids) - valid)
+    if dropped:
+        logger.warning("dropped invalid menu icon ids", extra={"icon_ids": dropped})
 
 
 async def start_http_server(app: web.Application, *, host: str, port: int) -> web.AppRunner:
@@ -234,6 +260,7 @@ async def main() -> None:
             default=DefaultBotProperties(parse_mode=ParseMode.HTML),
         )
         await resolve_bot_username(bot, settings)
+        await configure_menu_icons(bot, settings)
         dispatcher = Dispatcher()
         i18n = JsonI18n(
             locales_dir=Path(__file__).resolve().parent / "locales",
