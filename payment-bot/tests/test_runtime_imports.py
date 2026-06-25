@@ -305,3 +305,48 @@ async def test_start_http_server_cleans_runner_when_site_start_fails(monkeypatch
         await main_module.start_http_server(web.Application(), host="127.0.0.1", port=1)
 
     assert cleanup_called is True
+
+
+async def test_resolve_bot_username_uses_getme_when_no_override() -> None:
+    class FakeMe:
+        username = "AutoFetchedBot"
+
+    class FakeBot:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def get_me(self) -> FakeMe:
+            self.calls += 1
+            return FakeMe()
+
+    settings = Settings()
+    bot = FakeBot()
+
+    await main_module.resolve_bot_username(bot, settings)
+
+    assert settings.bot.username == "AutoFetchedBot"
+    assert bot.calls == 1
+
+
+async def test_resolve_bot_username_prefers_explicit_override() -> None:
+    class FakeBot:
+        async def get_me(self) -> None:
+            raise AssertionError("get_me must not be called when override is set")
+
+    settings = Settings(bot={"username_override": "ForcedBot"})
+
+    await main_module.resolve_bot_username(FakeBot(), settings)
+
+    assert settings.bot.username == "ForcedBot"
+
+
+async def test_resolve_bot_username_keeps_config_on_getme_failure() -> None:
+    class FailingBot:
+        async def get_me(self) -> None:
+            raise RuntimeError("telegram unavailable")
+
+    settings = Settings()
+
+    await main_module.resolve_bot_username(FailingBot(), settings)
+
+    assert settings.bot.username == "HydraPaymentBot"

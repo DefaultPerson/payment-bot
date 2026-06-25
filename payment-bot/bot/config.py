@@ -18,7 +18,8 @@ from pydantic_settings import (
 class BotConfig(BaseModel):
     supported_languages: list[str] = Field(default_factory=lambda: ["ru", "ua", "en"])
     fallback_language: str = "ru"
-    username: str = Field(default="HydraPaymentBot", min_length=1)
+    username: str = Field(default="HydraPaymentBot", min_length=1)  # resolved at runtime from getMe
+    username_override: str = ""  # force a specific @username, skips getMe
     support_username: str = "HMonitorsBot"
 
     @model_validator(mode="after")

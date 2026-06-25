@@ -55,6 +55,20 @@ class BotIdentityCache:
         return True
 
 
+async def resolve_bot_username(bot: Bot, settings: Settings) -> None:
+    """Auto-derive @username from Telegram unless config provides an override."""
+    if settings.bot.username_override:
+        settings.bot.username = settings.bot.username_override
+        return
+    try:
+        me = await bot.get_me()
+    except Exception:
+        logger.warning("get_me failed; keeping configured bot username", exc_info=True)
+        return
+    if me.username:
+        settings.bot.username = me.username
+
+
 async def start_http_server(app: web.Application, *, host: str, port: int) -> web.AppRunner:
     runner = web.AppRunner(app)
     try:
@@ -219,6 +233,7 @@ async def main() -> None:
             token=settings.bot_token.get_secret_value(),
             default=DefaultBotProperties(parse_mode=ParseMode.HTML),
         )
+        await resolve_bot_username(bot, settings)
         dispatcher = Dispatcher()
         i18n = JsonI18n(
             locales_dir=Path(__file__).resolve().parent / "locales",

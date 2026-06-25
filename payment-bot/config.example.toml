@@ -1,6 +1,8 @@
 [bot]
 supported_languages = ["ru", "ua", "en"]
 fallback_language = "ru"
+# username is auto-derived from Telegram (getMe) at startup; this is the fallback.
+# Set username_override to force a specific @username and skip getMe.
 username = "HydraPaymentBot"
 support_username = "HMonitorsBot"
 
