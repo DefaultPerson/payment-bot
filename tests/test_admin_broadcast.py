@@ -39,15 +39,6 @@ class FakeBot:
         self.messages.append(kwargs)
 
 
-class FakeServiceChannel:
-    def __init__(self) -> None:
-        self.messages: list[str] = []
-
-    async def send_html(self, text: str) -> bool:
-        self.messages.append(text)
-        return True
-
-
 class FakeMetrics:
     def __init__(self) -> None:
         self.broadcasts: list[tuple[str, int]] = []
@@ -230,13 +221,12 @@ async def test_broadcast_forbidden_for_non_admin() -> None:
         i18n=JsonI18n(),
         session_factory=FakeSessionFactory(),
         bot=FakeBot(),
-        service_channel=FakeServiceChannel(),
     )
 
     assert message.answers == [{"text": "Only admins can broadcast."}]
 
 
-async def test_broadcast_sends_segment_logs_and_notifies_service_channel(monkeypatch) -> None:
+async def test_broadcast_sends_segment_logs_and_replies_to_admin(monkeypatch) -> None:
     import bot.handlers.admin.broadcast as broadcast_module
 
     async def fake_ensure_minimal_user(*args: Any, **kwargs: Any) -> FakeAdminRecord:
@@ -256,7 +246,6 @@ async def test_broadcast_sends_segment_logs_and_notifies_service_channel(monkeyp
         text="/broadcast active Hello users",
         from_user=FakeTelegramUser(id=500, language_code="en"),
     )
-    service_channel = FakeServiceChannel()
     metrics = FakeMetrics()
 
     await broadcast_module.broadcast(
@@ -265,7 +254,6 @@ async def test_broadcast_sends_segment_logs_and_notifies_service_channel(monkeyp
         i18n=JsonI18n(),
         session_factory=FakeSessionFactory(session),
         bot=FakeBot(),
-        service_channel=service_channel,
         metrics=metrics,
     )
 
@@ -277,8 +265,6 @@ async def test_broadcast_sends_segment_logs_and_notifies_service_channel(monkeyp
     assert session.logs[0].total_count == 2
     assert session.logs[0].success_count == 1
     assert session.logs[0].failed_count == 1
-    assert service_channel.messages
-    assert "Broadcast finished" in service_channel.messages[0]
     assert session.commits == 2
     assert session.events == ["commit", "send", "commit"]
     assert metrics.broadcasts == [("success", 1), ("failed", 1)]
@@ -310,7 +296,6 @@ async def test_broadcast_records_failed_metric_when_sender_fails(monkeypatch) ->
         i18n=JsonI18n(),
         session_factory=FakeSessionFactory(session),
         bot=FakeBot(),
-        service_channel=FakeServiceChannel(),
         metrics=metrics,
     )
 
@@ -346,7 +331,6 @@ async def test_broadcast_commits_started_log_before_sending(monkeypatch) -> None
         i18n=JsonI18n(),
         session_factory=FakeSessionFactory(session),
         bot=FakeBot(),
-        service_channel=FakeServiceChannel(),
     )
 
     assert session.commits == 2
@@ -373,7 +357,6 @@ async def test_broadcast_handles_database_error(monkeypatch) -> None:
         i18n=JsonI18n(),
         session_factory=FakeSessionFactory(),
         bot=FakeBot(),
-        service_channel=FakeServiceChannel(),
     )
 
     assert message.answers == [{"text": "Something went wrong. Please try again later."}]

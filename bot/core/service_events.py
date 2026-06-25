@@ -77,7 +77,7 @@ def render_event(
         lines.extend(f"<b>{escape(label)}:</b> {value}" for label, value in fields)
     if extra:
         body = "\n".join(f"{escape(str(key))}={escape(str(value))}" for key, value in extra.items())
-        lines.extend(("", "<b>Additional Info</b>", f"<blockquote expandable>{body}</blockquote>"))
+        lines.extend(("", "<b>Additional Info</b>", f"<blockquote>{body}</blockquote>"))
     return "\n".join(lines)
 
 

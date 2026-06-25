@@ -40,7 +40,7 @@ def test_render_event_matches_layout() -> None:
         "<b>Payment:</b> <code>69.12</code> <code>USDT</code>\n"
         "\n"
         "<b>Additional Info</b>\n"
-        "<blockquote expandable>provider_invoice_id=TEST-CB-0001\n"
+        "<blockquote>provider_invoice_id=TEST-CB-0001\n"
         "tariff=1m\n"
         "gross=79.00 USDT\n"
         "expires_at=2026-07-25 09:54 UTC</blockquote>"

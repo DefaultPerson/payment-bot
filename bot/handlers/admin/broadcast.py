@@ -10,9 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from bot.config import Settings
 from bot.core.db import session_scope
 from bot.core.i18n import JsonI18n
-from bot.core.logger import ServiceChannel
 from bot.core.metrics import PaymentBotMetrics
-from bot.core.service_events import render_event, user_mention
 from bot.repos.broadcasts import (
     BroadcastSegment,
     create_broadcast_log,
@@ -50,7 +48,6 @@ async def broadcast(
     i18n: JsonI18n,
     session_factory: async_sessionmaker[AsyncSession],
     bot: SupportsBroadcastBot,
-    service_channel: ServiceChannel,
     metrics: PaymentBotMetrics | None = None,
 ) -> None:
     language = _message_language(message, i18n)
@@ -126,14 +123,8 @@ async def broadcast(
         await message.answer(i18n.gettext("error.generic", language))
         return
 
-    await _notify_service_channel(
-        service_channel,
-        admin_tg_id=admin_tg_id,
-        segment=segment,
-        result_total=result.total,
-        result_successful=result.successful,
-        result_failed=result.failed,
-    )
+    # Result goes only to the admin who launched the broadcast (DM reply below);
+    # the service channel is intentionally not notified for broadcasts.
     await message.answer(
         i18n.gettext(
             "broadcast.success",
@@ -163,30 +154,6 @@ def _message_language(message: Message, i18n: JsonI18n) -> str:
 def _message_language_code(message: Message) -> str | None:
     user = message.from_user
     return user.language_code if user else None
-
-
-async def _notify_service_channel(
-    service_channel: ServiceChannel,
-    *,
-    admin_tg_id: int,
-    segment: str,
-    result_total: int,
-    result_successful: int,
-    result_failed: int,
-) -> None:
-    text = render_event(
-        glyph="loud",
-        title="Broadcast finished",
-        fields=[
-            ("Admin", user_mention(admin_tg_id, None)),
-            ("Sent", f"<code>{result_successful}/{result_total}</code>"),
-        ],
-        extra={"segment": segment, "failed": result_failed},
-    )
-    try:
-        await service_channel.send_html(text)
-    except Exception:
-        return
 
 
 async def _finish_successful_broadcast(
