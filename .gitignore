@@ -51,15 +51,10 @@ data/
 # Local git worktrees
 .worktrees/
 
-# Payment bot runtime files
-payment-bot/.env
-payment-bot/.env.*
-!payment-bot/.env.example
-payment-bot/config.toml
-payment-bot/logs/
-payment-bot/.ruff_cache/
-payment-bot/.pytest_cache/
-payment-bot/.venv/
+# Payment bot runtime files (service now lives at repo root)
+config.toml
+logs/
+.ruff_cache/
 
 # Decommission backups (contain PII — keep local only, do NOT push)
 /access-manager-backup-2026-06-13/
