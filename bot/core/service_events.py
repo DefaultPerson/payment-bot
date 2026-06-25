@@ -19,13 +19,13 @@ from html import escape
 
 # glyph key -> (plain unicode fallback, tgiosicons custom_emoji_id)
 EVENT_EMOJI: dict[str, tuple[str, str]] = {
-    "coin": ("\U0001fa99", "5778613750688911681"),  # 🪙 cryptobot
-    "gem": ("\U0001f48e", "5776023601941582822"),  # 💎 xrocket
+    # 🪙 coin, 2nd tgiosicons variation — shared by both crypto payment providers
+    "coin": ("\U0001fa99", "5904462880941545555"),  # 🪙 cryptobot + xrocket
     "star": ("⭐️", "6028338546736107668"),  # ⭐️ telegram stars
     "fast_up": ("⏫", "5938437708635443119"),  # ⏫ manual grant
     "loud": ("\U0001f4e2", "6021418126061605425"),  # 📢 broadcast
     "play": ("▶️", "5773626993010546707"),  # ▶️ notification run
-    "cross": ("❌", "6030757850274336631"),  # ❌ declined
+    "cross": ("❌", "5774077015388852135"),  # ❌ declined (2nd variation)
     "check": ("✅", "5774022692642492953"),  # ✅ approved / success
 }
 

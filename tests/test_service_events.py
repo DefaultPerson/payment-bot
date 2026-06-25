@@ -33,7 +33,7 @@ def test_render_event_matches_layout() -> None:
         },
     )
     assert text == (
-        '<tg-emoji emoji-id="5778613750688911681">\U0001fa99</tg-emoji>'
+        '<tg-emoji emoji-id="5904462880941545555">\U0001fa99</tg-emoji>'
         " <b>Cryptobot payment paid</b>\n"
         "\n"
         "<b>User:</b> @example_user // <code>123456789</code>\n"

@@ -414,7 +414,7 @@ async def _send_access(
 def _payment_event_text(result: PaidInvoiceResult) -> str:
     currency = result.currency or "USDT"
     return render_event(
-        glyph="gem",
+        glyph="coin",
         title="Xrocket payment paid",
         fields=[
             ("User", user_mention(result.user_tg_id, result.username)),
