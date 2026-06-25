@@ -18,7 +18,6 @@ class SupportsAccessBot(Protocol):
         chat_id: int,
         name: str,
         expire_date: datetime,
-        member_limit: int,
         creates_join_request: bool,
     ) -> object: ...
 
@@ -61,12 +60,14 @@ async def create_protected_chat_invite_links(
     expire_date = now + timedelta(seconds=settings.access.invite_link_ttl_seconds)
     invites: list[AccessInvite] = []
     for chat in settings.access.protected_chats:
+        # Join-request links (no member_limit — Telegram forbids combining the two).
+        # Entry is authorized per joining tg_id by the chat_join_request handler, not by
+        # trusting a forwardable link, so a shared link can no longer grant access.
         invite = await bot.create_chat_invite_link(
             chat_id=chat.chat_id,
             name=_invite_name(chat.title),
             expire_date=expire_date,
-            member_limit=1,
-            creates_join_request=False,
+            creates_join_request=True,
         )
         invites.append(AccessInvite(title=chat.title, invite_link=_invite_link(invite)))
     return invites

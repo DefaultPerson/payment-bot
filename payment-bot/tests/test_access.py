@@ -43,7 +43,7 @@ def make_settings() -> Settings:
     )
 
 
-async def test_create_invite_links_uses_single_use_ttl() -> None:
+async def test_create_invite_links_uses_join_request_ttl() -> None:
     bot = FakeBot()
     settings = make_settings()
     now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
@@ -51,12 +51,13 @@ async def test_create_invite_links_uses_single_use_ttl() -> None:
     links = await create_protected_chat_invite_links(bot, settings, now=now)
 
     assert links[0] == AccessInvite(title="Signals", invite_link="https://t.me/+-1001")
+    # Join-request link, no member_limit: entry is authorized per joining tg_id, not by
+    # the link itself (Telegram also forbids member_limit together with join requests).
     assert bot.invite_calls[0] == {
         "chat_id": -1001,
         "name": "Signals",
         "expire_date": now + timedelta(seconds=600),
-        "member_limit": 1,
-        "creates_join_request": False,
+        "creates_join_request": True,
     }
 
 

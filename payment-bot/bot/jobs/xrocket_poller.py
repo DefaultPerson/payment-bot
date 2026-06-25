@@ -40,7 +40,6 @@ class SupportsAccessDelivery(Protocol):
         chat_id: int,
         name: str,
         expire_date: datetime,
-        member_limit: int,
         creates_join_request: bool,
     ) -> object: ...
 
