@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from bot.config import Settings
 from bot.core.db import session_scope
 from bot.core.logger import ServiceChannel
+from bot.core.service_events import render_event, user_mention
 from bot.repos.subscriptions import get_subscription_for_user
 from bot.repos.users import get_user_by_tg_id
 
@@ -92,7 +93,12 @@ async def handle_chat_join_request(
         extra={"chat_id": chat_id, "tg_id": tg_id, "approved": approved},
     )
     if not approved:
-        await _notify_declined(service_channel, chat_id=chat_id, tg_id=tg_id)
+        await _notify_declined(
+            service_channel,
+            chat_id=chat_id,
+            tg_id=tg_id,
+            username=event.from_user.username,
+        )
 
 
 async def _notify_declined(
@@ -100,13 +106,19 @@ async def _notify_declined(
     *,
     chat_id: int,
     tg_id: int,
+    username: str | None = None,
 ) -> None:
     try:
         await service_channel.send_html(
-            "<b>join request declined</b>\n"
-            "reason=no active subscription\n"
-            f"chat_id={chat_id}\n"
-            f"tg_id={tg_id}"
+            render_event(
+                glyph="cross",
+                title="Join request declined",
+                fields=[
+                    ("User", user_mention(tg_id, username)),
+                    ("Reason", "no active subscription"),
+                ],
+                extra={"chat_id": chat_id},
+            )
         )
     except Exception:
         logger.exception(

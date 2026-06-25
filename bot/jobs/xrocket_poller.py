@@ -5,8 +5,6 @@ import logging
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from decimal import Decimal
-from html import escape
 from typing import Protocol
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -16,6 +14,7 @@ from bot.core.db import session_scope
 from bot.core.i18n import JsonI18n
 from bot.core.logger import ServiceChannel
 from bot.core.metrics import PaymentBotMetrics
+from bot.core.service_events import fmt_amount, fmt_dt, money, render_event, user_mention
 from bot.models import Invoice, InvoiceProvider
 from bot.payments.xrocket import XRocketInvoice
 from bot.repos.invoices import (
@@ -413,26 +412,20 @@ async def _send_access(
 
 
 def _payment_event_text(result: PaidInvoiceResult) -> str:
-    return (
-        "<b>xrocket payment paid</b>\n"
-        f"user_tg_id={result.user_tg_id}\n"
-        f"invoice_id={result.invoice_id}\n"
-        f"provider_invoice_id={escape(str(result.provider_invoice_id))}\n"
-        f"tariff={escape(str(result.tariff_code))}\n"
-        f"gross={_amount(result.gross)} {escape(str(result.currency or 'USDT'))}\n"
-        f"fee={_amount(result.fee)} {escape(str(result.currency or 'USDT'))}\n"
-        f"net={_amount(result.net)} {escape(str(result.currency or 'USDT'))}\n"
-        f"expires_at={_format_datetime(result.subscription_expires_at)}"
+    currency = result.currency or "USDT"
+    return render_event(
+        glyph="gem",
+        title="Xrocket payment paid",
+        fields=[
+            ("User", user_mention(result.user_tg_id, result.username)),
+            ("Payment", money(result.gross, currency)),
+        ],
+        extra={
+            "provider_invoice_id": result.provider_invoice_id,
+            "tariff": result.tariff_code,
+            "gross": f"{fmt_amount(result.gross)} {currency}",
+            "fee": f"{fmt_amount(result.fee)} {currency}",
+            "net": f"{fmt_amount(result.net)} {currency}",
+            "expires_at": fmt_dt(result.subscription_expires_at),
+        },
     )
-
-
-def _amount(value: Decimal | None) -> str:
-    return f"{value:.2f}" if value is not None else "unknown"
-
-
-def _format_datetime(value: datetime | None) -> str:
-    if value is None:
-        return "unknown"
-    if value.tzinfo is None:
-        value = value.replace(tzinfo=UTC)
-    return value.astimezone(UTC).strftime("%Y-%m-%d %H:%M UTC")

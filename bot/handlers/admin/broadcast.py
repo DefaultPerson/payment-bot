@@ -12,6 +12,7 @@ from bot.core.db import session_scope
 from bot.core.i18n import JsonI18n
 from bot.core.logger import ServiceChannel
 from bot.core.metrics import PaymentBotMetrics
+from bot.core.service_events import render_event, user_mention
 from bot.repos.broadcasts import (
     BroadcastSegment,
     create_broadcast_log,
@@ -173,12 +174,14 @@ async def _notify_service_channel(
     result_successful: int,
     result_failed: int,
 ) -> None:
-    text = (
-        "<b>broadcast finished</b>\n"
-        f"admin_id={admin_tg_id}\n"
-        f"segment={segment}\n"
-        f"sent={result_successful}/{result_total}\n"
-        f"failed={result_failed}"
+    text = render_event(
+        glyph="loud",
+        title="Broadcast finished",
+        fields=[
+            ("Admin", user_mention(admin_tg_id, None)),
+            ("Sent", f"<code>{result_successful}/{result_total}</code>"),
+        ],
+        extra={"segment": segment, "failed": result_failed},
     )
     try:
         await service_channel.send_html(text)

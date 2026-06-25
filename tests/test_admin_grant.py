@@ -70,6 +70,7 @@ class FakeUserRecord:
     id: int
     tg_id: int
     lang_code: str = "ru"
+    username: str | None = None
 
 
 @dataclass(slots=True)
@@ -316,9 +317,9 @@ async def test_admin_grant_extends_subscription_notifies_service_channel_and_rep
     assert session_factory.session.commits == 1
 
     assert len(service_channel.calls) == 1
-    assert "manual grant" in service_channel.calls[0]
+    assert "Admin manual grant" in service_channel.calls[0]
     assert "admin_id=100" in service_channel.calls[0]
-    assert "target_tg_id=123" in service_channel.calls[0]
+    assert "<code>123</code>" in service_channel.calls[0]
     assert message.answers == [
         {"text": "Granted access to user 123 for 10 days. Expires at 2026-06-27 12:30 UTC."}
     ]

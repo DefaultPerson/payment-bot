@@ -269,9 +269,7 @@ async def test_broadcast_sends_segment_logs_and_notifies_service_channel(monkeyp
         metrics=metrics,
     )
 
-    assert message.answers == [
-        {"text": "Broadcast finished for active: 1/2 sent, 1 failed."}
-    ]
+    assert message.answers == [{"text": "Broadcast finished for active: 1/2 sent, 1 failed."}]
     assert len(session.logs) == 1
     assert session.logs[0].admin_user_id == 50
     assert session.logs[0].target_filter == {"segment": "active"}
@@ -280,7 +278,7 @@ async def test_broadcast_sends_segment_logs_and_notifies_service_channel(monkeyp
     assert session.logs[0].success_count == 1
     assert session.logs[0].failed_count == 1
     assert service_channel.messages
-    assert "broadcast finished" in service_channel.messages[0]
+    assert "Broadcast finished" in service_channel.messages[0]
     assert session.commits == 2
     assert session.events == ["commit", "send", "commit"]
     assert metrics.broadcasts == [("success", 1), ("failed", 1)]

@@ -15,6 +15,7 @@ from bot.config import Settings
 from bot.core.db import session_scope
 from bot.core.i18n import JsonI18n
 from bot.core.logger import ServiceChannel
+from bot.core.service_events import render_event
 from bot.keyboards import profile_keyboard
 from bot.models import Subscription, User
 from bot.repos.subscriptions import (
@@ -31,6 +32,16 @@ from bot.services.access import revoke_protected_chat_access
 from bot.services.notifications import format_subscription_notification
 
 logger = logging.getLogger(__name__)
+
+# The run summary is posted only once per process start (reset on restart). The job
+# runs on a short interval, so a message every run would be channel noise.
+_run_event_sent = False
+
+
+def reset_run_event_state() -> None:
+    """Clear the once-per-start guard (test hook)."""
+    global _run_event_sent
+    _run_event_sent = False
 
 
 class SupportsNotificationBot(Protocol):
@@ -293,14 +304,24 @@ async def _notify_service_channel(
     service_channel: ServiceChannel,
     result: NotificationRunResult,
 ) -> None:
+    global _run_event_sent
+    if _run_event_sent:
+        return
+    _run_event_sent = True
     try:
         await service_channel.send_html(
-            "<b>subscription notification run</b>\n"
-            f"3d={result.three_day_sent}\n"
-            f"0d={result.zero_day_sent}\n"
-            f"post={result.post_sent}\n"
-            f"revoked={result.revoked}\n"
-            f"errors={result.errors}"
+            render_event(
+                glyph="play",
+                title="Subscription notification run",
+                fields=[("Trigger", "first run since start")],
+                extra={
+                    "3d": result.three_day_sent,
+                    "0d": result.zero_day_sent,
+                    "post": result.post_sent,
+                    "revoked": result.revoked,
+                    "errors": result.errors,
+                },
+            )
         )
     except Exception:
         logger.exception("failed to send subscription notification service event")

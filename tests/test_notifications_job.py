@@ -4,13 +4,21 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import pytest
 from sqlalchemy.exc import SQLAlchemyError
 
+import bot.jobs.notifications as notifications_module
 from bot.config import Settings
 from bot.core.i18n import JsonI18n
 from bot.models import Subscription, SubscriptionSource, User, UserStatus
 
 NOW = datetime(2026, 6, 18, 12, 0, tzinfo=UTC)
+
+
+@pytest.fixture(autouse=True)
+def _reset_run_event_guard() -> None:
+    # The run summary is gated to once per process; reset so each test starts fresh.
+    notifications_module.reset_run_event_state()
 
 
 class FakeBot:
@@ -189,7 +197,7 @@ async def test_notify_subscriptions_once_sends_then_marks_notifications(monkeypa
     assert len(bot.messages) == 3
     assert bot.bans[0]["until_date"] == NOW + timedelta(seconds=60)
     assert bot.unbans[0]["only_if_banned"] is True
-    assert any("subscription notification run" in text for text in service_channel.messages)
+    assert any("Subscription notification run" in text for text in service_channel.messages)
 
 
 async def test_notify_subscriptions_once_retries_failed_user_send(monkeypatch) -> None:
@@ -315,3 +323,15 @@ async def test_notification_loop_continues_after_unexpected_iteration_error(
 
     assert calls == 2
     assert sleeps == [5]
+
+
+async def test_run_summary_posts_only_once_per_start() -> None:
+    service_channel = FakeServiceChannel()
+    result = notifications_module.NotificationRunResult(three_day_sent=1)
+
+    await notifications_module._notify_service_channel(service_channel, result)
+    await notifications_module._notify_service_channel(service_channel, result)
+
+    assert len(service_channel.messages) == 1
+    assert "Subscription notification run" in service_channel.messages[0]
+    assert "first run since start" in service_channel.messages[0]

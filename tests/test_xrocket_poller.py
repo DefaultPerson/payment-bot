@@ -178,9 +178,7 @@ async def test_poll_once_fetches_active_invoices_individually_and_processes_paid
         del session, now
         assert provider is InvoiceProvider.xrocket
         invoices = [
-            invoice
-            for invoice in active_invoices
-            if after_id is None or invoice.id > after_id
+            invoice for invoice in active_invoices if after_id is None or invoice.id > after_id
         ]
         return invoices[:limit]
 
@@ -249,7 +247,7 @@ async def test_poll_once_fetches_active_invoices_individually_and_processes_paid
     assert session_factory.events.index("commit") < session_factory.events.index(
         "service-channel",
     )
-    assert "<b>xrocket payment paid</b>" in service_channel.messages[0]
+    assert "<b>Xrocket payment paid</b>" in service_channel.messages[0]
     assert bot.messages[0]["chat_id"] == 1001
     assert "Access chats are not configured" in bot.messages[0]["text"]
 

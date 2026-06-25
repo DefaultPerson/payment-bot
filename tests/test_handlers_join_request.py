@@ -104,10 +104,10 @@ def make_settings() -> Settings:
     )
 
 
-def make_event(*, chat_id: int, tg_id: int) -> Any:
+def make_event(*, chat_id: int, tg_id: int, username: str | None = None) -> Any:
     return SimpleNamespace(
         chat=SimpleNamespace(id=chat_id),
-        from_user=SimpleNamespace(id=tg_id),
+        from_user=SimpleNamespace(id=tg_id, username=username),
     )
 
 
@@ -204,8 +204,8 @@ async def test_decline_emits_service_channel_event() -> None:
     )
 
     assert len(service_channel.messages) == 1
-    assert "join request declined" in service_channel.messages[0]
-    assert "tg_id=1001" in service_channel.messages[0]
+    assert "Join request declined" in service_channel.messages[0]
+    assert "<code>1001</code>" in service_channel.messages[0]
 
 
 async def test_approve_does_not_emit_service_channel_event() -> None:

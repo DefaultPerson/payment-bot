@@ -11,6 +11,7 @@ from bot.config import Settings
 from bot.core.db import session_scope
 from bot.core.i18n import JsonI18n
 from bot.core.logger import ServiceChannel
+from bot.core.service_events import render_event, user_mention
 from bot.repos.subscriptions import extend_manual_subscription
 from bot.repos.users import ensure_minimal_user
 
@@ -78,6 +79,7 @@ async def grant(
         service_channel,
         admin_id=admin_id,
         target_tg_id=target_tg_id,
+        target_username=user.username,
         days=days,
         expires_at=expires_at,
     )
@@ -113,15 +115,18 @@ async def _notify_service_channel(
     *,
     admin_id: int,
     target_tg_id: int,
+    target_username: str | None = None,
     days: int,
     expires_at: datetime,
 ) -> None:
-    text = (
-        "<b>admin manual grant</b>\n"
-        f"admin_id={admin_id}\n"
-        f"target_tg_id={target_tg_id}\n"
-        f"days={days}\n"
-        f"expires_at={_format_expiry(expires_at)}"
+    text = render_event(
+        glyph="fast_up",
+        title="Admin manual grant",
+        fields=[
+            ("User", user_mention(target_tg_id, target_username)),
+            ("Granted", f"<code>{days}</code> days"),
+        ],
+        extra={"admin_id": admin_id, "expires_at": _format_expiry(expires_at)},
     )
     try:
         await service_channel.send_html(text)

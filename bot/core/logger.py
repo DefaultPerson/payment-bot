@@ -66,7 +66,18 @@ def setup_json_logging(settings: Settings) -> None:
 
 
 def _compact_html(text: str) -> str:
-    return "\n".join(line.strip() for line in text.splitlines() if line.strip())
+    # Strip each line but keep intentional single blank lines as section separators
+    # (collapse runs of blanks to one; drop leading/trailing blanks).
+    out: list[str] = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if line:
+            out.append(line)
+        elif out and out[-1] != "":
+            out.append("")
+    while out and out[-1] == "":
+        out.pop()
+    return "\n".join(out)
 
 
 class ServiceChannel:

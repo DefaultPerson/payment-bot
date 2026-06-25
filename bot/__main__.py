@@ -19,6 +19,11 @@ from bot.core.i18n import JsonI18n
 from bot.core.logger import ServiceChannel, setup_json_logging
 from bot.core.metrics import PaymentBotMetrics, create_metrics
 from bot.core.redis import check_redis, create_redis_client
+from bot.core.service_events import (
+    apply_valid_event_emoji,
+    configured_event_emoji_ids,
+    disable_event_emoji,
+)
 from bot.handlers import create_router
 from bot.jobs.crypto_poller import crypto_poller_loop
 from bot.jobs.maintenance import invoice_cleanup_loop, metrics_snapshot_loop
@@ -93,6 +98,31 @@ async def configure_menu_icons(bot: Bot, settings: Settings) -> None:
     dropped = sorted(set(ids) - valid)
     if dropped:
         logger.warning("dropped invalid menu icon ids", extra={"icon_ids": dropped})
+
+
+async def configure_event_emoji(bot: Bot, settings: Settings) -> None:
+    """Validate custom-emoji glyphs for service-channel events; fall back to plain unicode.
+
+    A stale ``custom_emoji_id`` raises ``CUSTOM_EMOJI_INVALID`` and would fail the whole
+    notification send, so any id Telegram cannot confirm is dropped to its plain glyph.
+    """
+    if not settings.bot.custom_emoji_icons:
+        disable_event_emoji()
+        return
+    ids = configured_event_emoji_ids()
+    if not ids:
+        return
+    try:
+        stickers = await bot.get_custom_emoji_stickers(ids)
+    except Exception:
+        logger.warning("event emoji validation failed; using plain emoji", exc_info=True)
+        disable_event_emoji()
+        return
+    valid = {sticker.custom_emoji_id for sticker in stickers}
+    apply_valid_event_emoji(valid)
+    dropped = sorted(set(ids) - valid)
+    if dropped:
+        logger.warning("dropped invalid event emoji ids", extra={"emoji_ids": dropped})
 
 
 async def start_http_server(app: web.Application, *, host: str, port: int) -> web.AppRunner:
@@ -261,6 +291,7 @@ async def main() -> None:
         )
         await resolve_bot_username(bot, settings)
         await configure_menu_icons(bot, settings)
+        await configure_event_emoji(bot, settings)
         dispatcher = Dispatcher()
         i18n = JsonI18n(
             locales_dir=Path(__file__).resolve().parent / "locales",

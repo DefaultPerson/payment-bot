@@ -111,6 +111,7 @@ class PaidInvoiceResult:
     invoice_id: int | None = None
     provider_invoice_id: str | None = None
     user_tg_id: int | None = None
+    username: str | None = None
     lang_code: str | None = None
     tariff_code: str | None = None
     gross: Decimal | None = None
@@ -924,6 +925,7 @@ def _paid_result(
         invoice_id=invoice.id,
         provider_invoice_id=invoice.provider_invoice_id,
         user_tg_id=user.tg_id if user is not None else None,
+        username=user.username if user is not None else None,
         lang_code=user.lang_code if user is not None else None,
         tariff_code=tariff.code if tariff is not None else None,
         gross=invoice.gross,
