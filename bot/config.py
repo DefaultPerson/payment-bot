@@ -158,7 +158,7 @@ class TariffsConfig(BaseModel):
                 code="test",
                 plan_code="main",
                 duration_months=3,
-                base_price_usd=Decimal("0.50"),
+                base_price_usd=Decimal("1.00"),
                 test_only=True,
                 stars_amount_override=1,
             ),
