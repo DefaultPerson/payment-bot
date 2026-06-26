@@ -23,9 +23,9 @@ def test_quote_basic_user_applies_duration_discount_and_crypto_fee() -> None:
     assert quote.tariff.code == "3m"
     assert quote.status is UserStatus.basic
     assert quote.duration_days == 90
-    assert quote.net_usd == Decimal("213.30")
-    assert quote.gross_usd == Decimal("219.90")
-    assert quote.fee_usd == Decimal("6.60")
+    assert quote.net_usd == Decimal("168.15")
+    assert quote.gross_usd == Decimal("173.35")
+    assert quote.fee_usd == Decimal("5.20")
 
 
 def test_quote_can_use_xrocket_fee_percent_without_changing_default_crypto_quote() -> None:
@@ -39,10 +39,10 @@ def test_quote_can_use_xrocket_fee_percent_without_changing_default_crypto_quote
     )
     default_quote = quote_tariff(settings, "1m", UserStatus.basic)
 
-    assert quote.net_usd == Decimal("79.00")
-    assert quote.gross_usd == Decimal("83.16")
-    assert quote.fee_usd == Decimal("4.16")
-    assert default_quote.gross_usd == Decimal("81.44")
+    assert quote.net_usd == Decimal("59.00")
+    assert quote.gross_usd == Decimal("62.11")
+    assert quote.fee_usd == Decimal("3.11")
+    assert default_quote.gross_usd == Decimal("60.82")
 
 
 def test_quote_bronze_user_applies_duration_discount_and_status_discount() -> None:
@@ -50,16 +50,16 @@ def test_quote_bronze_user_applies_duration_discount_and_status_discount() -> No
 
     quote = quote_tariff(settings, "3m", UserStatus.bronze)
 
-    assert quote.net_usd == Decimal("191.97")
-    assert quote.gross_usd == Decimal("197.91")
-    assert quote.fee_usd == Decimal("5.94")
+    assert quote.net_usd == Decimal("151.34")
+    assert quote.gross_usd == Decimal("156.02")
+    assert quote.fee_usd == Decimal("4.68")
 
 
 @pytest.mark.parametrize(
     ("status", "expected_net", "expected_gross"),
     [
-        (UserStatus.silver, Decimal("175.50"), Decimal("180.93")),
-        (UserStatus.gold, Decimal("135.00"), Decimal("139.18")),
+        (UserStatus.silver, Decimal("185.25"), Decimal("190.98")),
+        (UserStatus.gold, Decimal("142.50"), Decimal("146.91")),
     ],
 )
 def test_quote_fixed_monthly_status_prices_apply_duration_discount(
@@ -111,10 +111,10 @@ def test_quote_applies_percent_promo_after_loyalty_discounts() -> None:
 
     quote = quote_tariff(settings, "3m", UserStatus.bronze, promo=promo)
 
-    assert quote.net_usd == Decimal("153.58")
-    assert quote.promo_discount_usd == Decimal("38.39")
+    assert quote.net_usd == Decimal("121.07")
+    assert quote.promo_discount_usd == Decimal("30.27")
     assert quote.promo_extra_days == 0
-    assert quote.gross_usd == Decimal("158.33")
+    assert quote.gross_usd == Decimal("124.81")
 
 
 def test_quote_caps_fixed_usd_promo_discount() -> None:
@@ -128,9 +128,9 @@ def test_quote_caps_fixed_usd_promo_discount() -> None:
 
     quote = quote_tariff(settings, "1m", UserStatus.basic, promo=promo)
 
-    assert quote.net_usd == Decimal("39.50")
-    assert quote.promo_discount_usd == Decimal("39.50")
-    assert quote.gross_usd == Decimal("40.72")
+    assert quote.net_usd == Decimal("29.50")
+    assert quote.promo_discount_usd == Decimal("29.50")
+    assert quote.gross_usd == Decimal("30.41")
 
 
 def test_quote_extra_days_promo_preserves_price_and_returns_bonus_days() -> None:
@@ -144,7 +144,7 @@ def test_quote_extra_days_promo_preserves_price_and_returns_bonus_days() -> None
 
     quote = quote_tariff(settings, "1m", UserStatus.basic, promo=promo)
 
-    assert quote.net_usd == Decimal("79.00")
+    assert quote.net_usd == Decimal("59.00")
     assert quote.promo_discount_usd == Decimal("0.00")
     assert quote.promo_extra_days == 7
-    assert quote.gross_usd == Decimal("81.44")
+    assert quote.gross_usd == Decimal("60.82")

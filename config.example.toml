@@ -70,32 +70,42 @@ post_expired_delay_hours = 24
 invoice_cleanup_interval_seconds = 300
 metrics_snapshot_interval_seconds = 60
 
+# Tariff plans (products). Each plan groups its duration variants below (matched by
+# plan_code) and declares which chats it unlocks. chat_ids = [] means the plan opens
+# every chat listed in [access].protected_chats (the current single-plan behaviour);
+# listing ids restricts the plan to that subset.
+[[tariffs.plans]]
+code = "main"
+title = "Hydra Monitors"
+description = ""
+chat_ids = []
+active = true
+
+# Duration variants. base_price_usd is the pre-discount total for the whole duration;
+# duration_discount_percent is applied on top. Net access price (status=basic):
+#   1m = $59.00, 3m = $168.15 (-5%), 6m = $318.60 (-10%).
 [[tariffs.items]]
 code = "1m"
+plan_code = "main"
 duration_months = 1
-base_price_usd = 79
+base_price_usd = 59
 duration_discount_percent = 0
 active = true
 
 [[tariffs.items]]
 code = "3m"
+plan_code = "main"
 duration_months = 3
-base_price_usd = 237
-duration_discount_percent = 10
+base_price_usd = 177
+duration_discount_percent = 5
 active = true
 
 [[tariffs.items]]
 code = "6m"
+plan_code = "main"
 duration_months = 6
-base_price_usd = 474
-duration_discount_percent = 15
-active = true
-
-[[tariffs.items]]
-code = "12m"
-duration_months = 12
-base_price_usd = 948
-duration_discount_percent = 25
+base_price_usd = 354
+duration_discount_percent = 10
 active = true
 
 [access]

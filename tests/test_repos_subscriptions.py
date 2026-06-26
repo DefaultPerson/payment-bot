@@ -287,6 +287,46 @@ async def test_extend_paid_subscription_sets_source_and_last_invoice() -> None:
     ]
 
 
+async def test_extend_paid_subscription_stores_plan_code() -> None:
+    session = FakeAsyncSession()
+    user = make_user(user_id=12)
+    session.add(user)
+    now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
+
+    subscription = await extend_paid_subscription(
+        session,
+        user=user,
+        days=30,
+        source=SubscriptionSource.cryptobot,
+        last_invoice_id=1,
+        now=now,
+        plan_code="main",
+    )
+
+    assert subscription.plan_code == "main"
+
+
+async def test_extend_subscription_preserves_plan_when_extension_omits_it() -> None:
+    session = FakeAsyncSession()
+    user = make_user(user_id=13)
+    session.add(user)
+    started = datetime(2026, 6, 1, 12, 0, tzinfo=UTC)
+    existing = make_subscription(
+        subscription_id=3,
+        user_id=13,
+        started_at=started,
+        expires_at=datetime(2026, 7, 1, 12, 0, tzinfo=UTC),
+    )
+    existing.plan_code = "main"
+    session.add(existing)
+    now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
+
+    updated = await extend_manual_subscription(session, user=user, days=7, now=now)
+
+    assert updated is existing
+    assert updated.plan_code == "main"
+
+
 async def test_extend_paid_subscription_extends_from_future_and_preserves_higher_status() -> None:
     session = FakeAsyncSession()
     user = make_user(user_id=11, status=UserStatus.gold, total_active_days=5)

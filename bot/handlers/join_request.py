@@ -13,8 +13,10 @@ from bot.config import Settings
 from bot.core.db import session_scope
 from bot.core.logger import ServiceChannel
 from bot.core.service_events import render_event, user_mention
+from bot.models import Subscription
 from bot.repos.subscriptions import get_subscription_for_user
 from bot.repos.users import get_user_by_tg_id
+from bot.services.access import allowed_chat_ids_for_plan
 
 logger = logging.getLogger(__name__)
 
@@ -25,13 +27,13 @@ class SupportsJoinRequestBot(Protocol):
     async def decline_chat_join_request(self, *, chat_id: int, user_id: int) -> object: ...
 
 
-async def has_active_subscription(
+async def active_subscription_for(
     session: AsyncSession,
     *,
     tg_id: int,
     now: datetime,
-) -> bool:
-    """Whether the *joining* ``tg_id`` may currently enter protected chats.
+) -> Subscription | None:
+    """The joining ``tg_id``'s subscription if it is currently active, else ``None``.
 
     Authorization is bound to the joining account, not to a forwardable invite link —
     that binding is exactly what closes the link-sharing gap of the old member-limited
@@ -39,9 +41,20 @@ async def has_active_subscription(
     """
     user = await get_user_by_tg_id(session, tg_id)
     if user is None or user.id is None:
-        return False
+        return None
     subscription = await get_subscription_for_user(session, user.id)
-    return subscription is not None and subscription.expires_at > now
+    if subscription is not None and subscription.expires_at > now:
+        return subscription
+    return None
+
+
+async def has_active_subscription(
+    session: AsyncSession,
+    *,
+    tg_id: int,
+    now: datetime,
+) -> bool:
+    return await active_subscription_for(session, tg_id=tg_id, now=now) is not None
 
 
 async def handle_chat_join_request(
@@ -66,7 +79,8 @@ async def handle_chat_join_request(
 
     try:
         async with session_scope(session_factory) as session:
-            approved = await has_active_subscription(session, tg_id=tg_id, now=now)
+            subscription = await active_subscription_for(session, tg_id=tg_id, now=now)
+            plan_code = subscription.plan_code if subscription is not None else None
     except SQLAlchemyError:
         # Leave the request pending rather than risk declining a paying user; the bot
         # re-evaluates it on the next delivery and the expiry watcher is unaffected.
@@ -75,6 +89,11 @@ async def handle_chat_join_request(
             extra={"chat_id": chat_id, "tg_id": tg_id},
         )
         return
+
+    # Approve only when the subscription is active AND its plan unlocks this chat.
+    approved = subscription is not None and chat_id in allowed_chat_ids_for_plan(
+        settings, plan_code
+    )
 
     try:
         if approved:

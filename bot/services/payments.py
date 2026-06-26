@@ -46,7 +46,7 @@ from bot.repos.promos import (
 )
 from bot.repos.referrals import get_referral_by_referee_id
 from bot.repos.subscriptions import extend_paid_subscription
-from bot.repos.tariffs import ensure_configured_tariff
+from bot.repos.tariffs import ensure_configured_tariff, resolve_plan_code
 from bot.services.pricing import TariffQuote, quote_tariff, tariff_duration_days
 from bot.services.referrals import record_referral_earning
 
@@ -339,6 +339,7 @@ async def process_paid_cryptobot_invoice(
         now=now,
         bonus_days=invoice.promo_extra_days or 0,
         loyalty=settings.loyalty if settings is not None else None,
+        plan_code=resolve_plan_code(settings, tariff.code) if settings is not None else None,
     )
     paid_amounts = _paid_amounts_from_payload(provider_invoice.raw)
     await mark_invoice_paid(
@@ -416,6 +417,7 @@ async def process_paid_xrocket_invoice(
         now=now,
         bonus_days=invoice.promo_extra_days or 0,
         loyalty=settings.loyalty if settings is not None else None,
+        plan_code=resolve_plan_code(settings, tariff.code) if settings is not None else None,
     )
     await mark_invoice_paid(
         session,
@@ -537,6 +539,7 @@ async def process_paid_stars_invoice(
         now=now,
         bonus_days=invoice.promo_extra_days or 0,
         loyalty=settings.loyalty if settings is not None else None,
+        plan_code=resolve_plan_code(settings, tariff.code) if settings is not None else None,
     )
     if _stars_subscription_period_from_invoice(invoice) is not None:
         subscription.stars_subscription_active = True
@@ -610,6 +613,7 @@ async def _process_paid_stars_recurring_invoice(
         now=now,
         bonus_days=0,
         loyalty=settings.loyalty if settings is not None else None,
+        plan_code=resolve_plan_code(settings, tariff.code) if settings is not None else None,
     )
     subscription.stars_subscription_active = True
     await _record_paid_referral_earning(

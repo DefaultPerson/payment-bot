@@ -76,7 +76,7 @@ async def test_buy_callback_edits_tariff_list(monkeypatch) -> None:
         return FakeUserRecord(id=7, tg_id=700, lang_code="en")
 
     monkeypatch.setattr(buy_module, "ensure_minimal_user", fake_ensure_minimal_user)
-    monkeypatch.setattr(buy_module, "tariff_keyboard", lambda *args: "tariff-keyboard")
+    monkeypatch.setattr(buy_module, "plan_keyboard", lambda *args: "plan-keyboard")
 
     i18n = JsonI18n()
     session_factory = FakeSessionFactory()
@@ -103,9 +103,63 @@ async def test_buy_callback_edits_tariff_list(monkeypatch) -> None:
         }
     ]
     assert callback.answers == [{"text": None}]
+    # Menu 1 — tariff (product) selection, shown even with a single plan.
+    assert callback_message.edits == [{"text": "Choose a tariff:", "reply_markup": "plan-keyboard"}]
+
+
+async def test_plan_callback_shows_duration_menu(monkeypatch) -> None:
+    import bot.handlers.buy as buy_module
+
+    async def fake_ensure_minimal_user(session: FakeSession, **kwargs: Any) -> FakeUserRecord:
+        return FakeUserRecord(id=7, tg_id=700, lang_code="en")
+
+    monkeypatch.setattr(buy_module, "ensure_minimal_user", fake_ensure_minimal_user)
+    monkeypatch.setattr(buy_module, "tariff_keyboard", lambda *args: "duration-keyboard")
+
+    callback_message = FakeMessage(chat=FakeChat(id=700))
+    callback = FakeCallback(
+        data="plan:main",
+        from_user=FakeTelegramUser(id=700, language_code="en"),
+        message=callback_message,
+    )
+
+    await buy_module.plan_callback(
+        callback,
+        settings=Settings(),
+        i18n=JsonI18n(),
+        session_factory=FakeSessionFactory(),
+    )
+
+    # Menu 2 — duration selection for the chosen plan.
     assert callback_message.edits == [
-        {"text": "Choose a tariff:", "reply_markup": "tariff-keyboard"}
+        {"text": "Choose a duration:", "reply_markup": "duration-keyboard"}
     ]
+
+
+async def test_back_to_tariffs_callback_shows_plan_menu(monkeypatch) -> None:
+    import bot.handlers.buy as buy_module
+
+    async def fake_ensure_minimal_user(session: FakeSession, **kwargs: Any) -> FakeUserRecord:
+        return FakeUserRecord(id=7, tg_id=700, lang_code="en")
+
+    monkeypatch.setattr(buy_module, "ensure_minimal_user", fake_ensure_minimal_user)
+    monkeypatch.setattr(buy_module, "plan_keyboard", lambda *args: "plan-keyboard")
+
+    callback_message = FakeMessage(chat=FakeChat(id=700))
+    callback = FakeCallback(
+        data="back:tariffs",
+        from_user=FakeTelegramUser(id=700, language_code="en"),
+        message=callback_message,
+    )
+
+    await buy_module.back_to_tariffs_callback(
+        callback,
+        settings=Settings(),
+        i18n=JsonI18n(),
+        session_factory=FakeSessionFactory(),
+    )
+
+    assert callback_message.edits == [{"text": "Choose a tariff:", "reply_markup": "plan-keyboard"}]
 
 
 async def test_tariff_callback_edits_quote_detail(monkeypatch) -> None:
@@ -138,8 +192,8 @@ async def test_tariff_callback_edits_quote_detail(monkeypatch) -> None:
     text = callback_message.edits[0]["text"]
     assert "3 months" in text
     assert "USDT, TON, BTC" in text
-    assert "$219.90" in text
-    assert "$213.30" in text
+    assert "$173.35" in text
+    assert "$168.15" in text
     assert callback.answers == [{"text": None}]
     assert callback_message.edits[0]["reply_markup"] == "detail-keyboard"
 
@@ -300,7 +354,7 @@ def test_format_quote_text_includes_promo_discount() -> None:
 
     text = buy_module._format_quote_text(JsonI18n(), Settings(), "en", quote)
 
-    assert "Promo SAVE20: -$15.80" in text
+    assert "Promo SAVE20: -$11.80" in text
 
 
 async def test_cryptobot_invoice_callback_returns_payment_url(monkeypatch) -> None:
@@ -899,13 +953,13 @@ async def test_create_cryptobot_invoice_for_user_commits_before_provider_call(mo
     assert client_calls == [
         {"commits_before_provider": 1},
         {
-            "amount": Decimal("81.44"),
+            "amount": Decimal("60.82"),
             "payload": "inv:00000000-0000-0000-0000-000000000001",
             "description": "Hydra Monitors access: 1 month",
             "paid_btn_url": "https://t.me/HydraSupport",
             "accepted_assets": ["USDT", "TON", "BTC"],
             "expires_in": 3600,
-        }
+        },
     ]
     assert repo_calls[2]["name"] == "lock"
     assert repo_calls[2]["args"] == (session, 77)
@@ -913,7 +967,7 @@ async def test_create_cryptobot_invoice_for_user_commits_before_provider_call(mo
     assert repo_calls[3]["provider_invoice_id"] == "crypto-123"
     assert repo_calls[3]["raw_payload"] == provider_invoice.raw
     assert created.pay_url == "https://t.me/CryptoBot?start=pay"
-    assert created.quote.gross_usd == Decimal("81.44")
+    assert created.quote.gross_usd == Decimal("60.82")
     assert session.commits == 2
 
 

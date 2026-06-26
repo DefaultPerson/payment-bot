@@ -7,8 +7,28 @@ from typing import Protocol
 
 from bot.config import Settings
 from bot.core.i18n import JsonI18n
+from bot.repos.tariffs import get_plan
 
 INVITE_LINK_NAME_LIMIT = 32
+
+
+def allowed_chat_ids_for_plan(settings: Settings, plan_code: str | None) -> set[int]:
+    """Chats a subscription on ``plan_code`` may enter.
+
+    A plan with an empty ``chat_ids`` (and an unknown/None plan) opens every configured
+    protected chat — the current single-plan behaviour. A plan that lists chats is
+    restricted to that subset.
+    """
+    all_chats = {chat.chat_id for chat in settings.access.protected_chats}
+    if plan_code is None:
+        return all_chats
+    try:
+        plan = get_plan(settings, plan_code)
+    except LookupError:
+        return all_chats
+    if not plan.chat_ids:
+        return all_chats
+    return set(plan.chat_ids)
 
 
 class SupportsAccessBot(Protocol):
@@ -109,9 +129,13 @@ async def revoke_protected_chat_access(
     *,
     tg_id: int,
     now: datetime,
+    plan_code: str | None = None,
 ) -> None:
     until_date = now + timedelta(seconds=settings.access.revoke_ban_seconds)
+    allowed = allowed_chat_ids_for_plan(settings, plan_code)
     for chat in settings.access.protected_chats:
+        if chat.chat_id not in allowed:
+            continue
         await bot.ban_chat_member(
             chat_id=chat.chat_id,
             user_id=tg_id,

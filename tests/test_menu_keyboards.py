@@ -48,10 +48,7 @@ def keyboard_callback_data(keyboard) -> set[str]:
 
 def keyboard_urls(keyboard) -> set[str]:
     return {
-        button.url
-        for row in keyboard.inline_keyboard
-        for button in row
-        if button.url is not None
+        button.url for row in keyboard.inline_keyboard for button in row if button.url is not None
     }
 
 
@@ -208,9 +205,36 @@ def test_profile_keyboard_contains_expected_actions_and_support_url() -> None:
     assert "https://t.me/HydraSupport" in keyboard_urls(keyboard)
 
 
-def test_tariff_keyboard_contains_active_tariffs_and_support_url() -> None:
+def test_plan_keyboard_lists_active_plans_and_support_url() -> None:
     settings = Settings(
         bot={"support_username": "HydraSupport"},
+        tariffs={
+            "plans": [
+                {"code": "main", "title": "Main plan"},
+                {"code": "pro", "title": "Pro plan", "active": False},
+            ],
+            "items": [
+                {
+                    "code": "main_1m",
+                    "plan_code": "main",
+                    "duration_months": 1,
+                    "base_price_usd": "59",
+                }
+            ],
+        },
+    )
+    keyboards = keyboard_module()
+
+    keyboard = keyboards.plan_keyboard(JsonI18n(), settings, "en")
+
+    assert f"{keyboards.CB_PLAN_PREFIX}main" in keyboard_callback_data(keyboard)
+    assert f"{keyboards.CB_PLAN_PREFIX}pro" not in keyboard_callback_data(keyboard)
+    assert "Main plan" in keyboard_texts(keyboard)
+    assert "https://t.me/HydraSupport" in keyboard_urls(keyboard)
+
+
+def test_tariff_keyboard_lists_plan_durations_with_promo_and_back() -> None:
+    settings = Settings(
         tariffs={
             "items": [
                 {
@@ -230,11 +254,35 @@ def test_tariff_keyboard_contains_active_tariffs_and_support_url() -> None:
     )
     keyboards = keyboard_module()
 
-    keyboard = keyboards.tariff_keyboard(JsonI18n(), settings, "en")
+    keyboard = keyboards.tariff_keyboard(JsonI18n(), settings, "en", "main")
+    callbacks = keyboard_callback_data(keyboard)
 
-    assert f"{keyboards.CB_TARIFF_PREFIX}active" in keyboard_callback_data(keyboard)
-    assert f"{keyboards.CB_TARIFF_PREFIX}inactive" not in keyboard_callback_data(keyboard)
-    assert "https://t.me/HydraSupport" in keyboard_urls(keyboard)
+    assert f"{keyboards.CB_TARIFF_PREFIX}active" in callbacks
+    assert f"{keyboards.CB_TARIFF_PREFIX}inactive" not in callbacks
+    # Promo entry and back navigation live on the duration page; support does not.
+    assert f"{keyboards.CB_PROMO_BUY_PREFIX}main" in callbacks
+    assert keyboards.CB_BACK_TARIFFS in callbacks
+    assert "https://t.me/HydraSupport" not in keyboard_urls(keyboard)
+
+
+def test_tariff_keyboard_labels_show_discount_and_net_price() -> None:
+    keyboards = keyboard_module()
+
+    keyboard = keyboards.tariff_keyboard(JsonI18n(), Settings(), "en", "main")
+    texts = keyboard_texts(keyboard)
+
+    # 1m has no discount ($59.00); 3m is -5% ($168.15); 6m is -10% ($318.60).
+    assert any("$59.00" in text and "%" not in text for text in texts)
+    assert any("$168.15" in text and "5%" in text for text in texts)
+    assert any("$318.60" in text and "10%" in text for text in texts)
+
+
+def test_tariff_detail_keyboard_has_back_to_duration() -> None:
+    keyboards = keyboard_module()
+
+    keyboard = keyboards.tariff_detail_keyboard(JsonI18n(), "3m", "en", Settings())
+
+    assert f"{keyboards.CB_BACK_DURATION_PREFIX}main" in keyboard_callback_data(keyboard)
 
 
 def test_tariff_detail_keyboard_contains_cryptobot_payment_action() -> None:
@@ -314,7 +362,6 @@ def test_locale_files_include_profile_display_contract_keys() -> None:
         locale_data = json.loads(locale_path.read_text(encoding="utf-8"))
 
         assert PROFILE_DISPLAY_KEYS | BUY_DISPLAY_KEYS <= set(locale_data), locale_path.name
-
 
 
 def test_profile_text_locale_formats_expected_kwargs() -> None:

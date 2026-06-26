@@ -530,7 +530,7 @@ async def test_create_xrocket_invoice_for_user_commits_before_provider_call(
     assert client_calls == [
         {"commits_before_provider": 1},
         {
-            "amount": Decimal("83.16"),
+            "amount": Decimal("62.11"),
             "payload": "inv:00000000-0000-0000-0000-000000000001",
             "description": "Hydra Monitors access: 1 month",
             "currency": "USDT",
@@ -544,7 +544,7 @@ async def test_create_xrocket_invoice_for_user_commits_before_provider_call(
     assert repo_calls[3]["raw_payload"] == provider_invoice.raw
     assert created.invoice.provider_invoice_id == "123"
     assert created.pay_url == "https://t.me/xrocket?start=pay"
-    assert created.quote.gross_usd == Decimal("83.16")
+    assert created.quote.gross_usd == Decimal("62.11")
     assert session.committed == 2
 
 

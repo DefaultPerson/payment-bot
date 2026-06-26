@@ -117,8 +117,80 @@ def make_user(*, user_id: int = 1, tg_id: int = 1001) -> User:
     return user
 
 
-def make_subscription(*, user_id: int = 1, expires_at: datetime = FUTURE) -> Subscription:
-    return Subscription(user_id=user_id, expires_at=expires_at)
+def make_subscription(
+    *,
+    user_id: int = 1,
+    expires_at: datetime = FUTURE,
+    plan_code: str | None = None,
+) -> Subscription:
+    return Subscription(user_id=user_id, expires_at=expires_at, plan_code=plan_code)
+
+
+def _plan_restricted_settings() -> Settings:
+    # Two protected chats; plan "vip" unlocks only the Research chat (-1002).
+    return Settings(
+        access={
+            "protected_chats": [
+                {"chat_id": -1001, "title": "Signals"},
+                {"chat_id": -1002, "title": "Research"},
+            ],
+        },
+        tariffs={
+            "plans": [{"code": "vip", "chat_ids": [-1002]}],
+            "items": [
+                {
+                    "code": "vip_1m",
+                    "plan_code": "vip",
+                    "duration_months": 1,
+                    "base_price_usd": "59",
+                }
+            ],
+        },
+    )
+
+
+async def test_plan_approves_join_only_for_its_chats() -> None:
+    settings = _plan_restricted_settings()
+    bot = FakeBot()
+
+    await handle_chat_join_request(
+        make_event(chat_id=-1002, tg_id=1001),
+        settings,
+        FakeSessionFactory(
+            FakeSession(
+                user=make_user(),
+                subscription=make_subscription(expires_at=FUTURE, plan_code="vip"),
+            )
+        ),
+        bot,
+        FakeServiceChannel(),
+        now=NOW,
+    )
+
+    assert bot.approvals == [{"chat_id": -1002, "user_id": 1001}]
+    assert bot.declines == []
+
+
+async def test_plan_declines_join_for_chat_outside_plan() -> None:
+    settings = _plan_restricted_settings()
+    bot = FakeBot()
+
+    await handle_chat_join_request(
+        make_event(chat_id=-1001, tg_id=1001),
+        settings,
+        FakeSessionFactory(
+            FakeSession(
+                user=make_user(),
+                subscription=make_subscription(expires_at=FUTURE, plan_code="vip"),
+            )
+        ),
+        bot,
+        FakeServiceChannel(),
+        now=NOW,
+    )
+
+    assert bot.approvals == []
+    assert bot.declines == [{"chat_id": -1001, "user_id": 1001}]
 
 
 async def _run(session: FakeSession, *, chat_id: int = -1001, tg_id: int = 1001) -> FakeBot:

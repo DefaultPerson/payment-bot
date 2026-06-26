@@ -159,6 +159,7 @@ async def extend_manual_subscription(
     days: int,
     now: datetime,
     loyalty: SupportsLoyaltyThresholds | None = None,
+    plan_code: str | None = None,
 ) -> Subscription:
     return await _extend_subscription(
         session,
@@ -170,6 +171,7 @@ async def extend_manual_subscription(
         now=now,
         update_paid_fields=False,
         loyalty=loyalty,
+        plan_code=plan_code,
     )
 
 
@@ -183,6 +185,7 @@ async def extend_paid_subscription(
     now: datetime,
     bonus_days: int = 0,
     loyalty: SupportsLoyaltyThresholds | None = None,
+    plan_code: str | None = None,
 ) -> Subscription:
     return await _extend_subscription(
         session,
@@ -194,6 +197,7 @@ async def extend_paid_subscription(
         now=now,
         update_paid_fields=True,
         loyalty=loyalty,
+        plan_code=plan_code,
     )
 
 
@@ -208,6 +212,7 @@ async def _extend_subscription(
     now: datetime,
     update_paid_fields: bool,
     loyalty: SupportsLoyaltyThresholds | None,
+    plan_code: str | None = None,
 ) -> Subscription:
     if bonus_days < 0:
         msg = "bonus_days must not be negative"
@@ -229,6 +234,7 @@ async def _extend_subscription(
             expires_at=new_expires_at,
             source=source,
             last_invoice_id=last_invoice_id if update_paid_fields else None,
+            plan_code=plan_code,
             stars_subscription_active=False,
             created_at=now,
             updated_at=now,
@@ -238,6 +244,10 @@ async def _extend_subscription(
         subscription.expires_at = new_expires_at
         _reset_notification_markers(subscription)
         subscription.updated_at = now
+        # Only overwrite the stored plan when a caller supplies one, so a manual
+        # extension that omits it doesn't wipe a paid subscription's plan.
+        if plan_code is not None:
+            subscription.plan_code = plan_code
         if update_paid_fields:
             subscription.source = source
             subscription.last_invoice_id = last_invoice_id

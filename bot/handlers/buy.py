@@ -14,18 +14,23 @@ from bot.core.db import session_scope
 from bot.core.i18n import JsonI18n
 from bot.handlers.start import callback_context
 from bot.keyboards import (
+    CB_BACK_DURATION_PREFIX,
+    CB_BACK_TARIFFS,
     CB_BUY,
     CB_CRYPTOBOT_PREFIX,
+    CB_PLAN_PREFIX,
     CB_STARS_PREFIX,
     CB_TARIFF_PREFIX,
     CB_XROCKET_PREFIX,
     payment_keyboard,
+    plan_keyboard,
     tariff_detail_keyboard,
     tariff_keyboard,
 )
 from bot.payments.cryptobot import CryptoBotAPIError, CryptoBotClient
 from bot.payments.xrocket import XRocketAPIError, XRocketClient
 from bot.repos.promos import PromoUnavailable, get_pending_promo_snapshot_for_user
+from bot.repos.tariffs import get_plan
 from bot.repos.users import ensure_minimal_user
 from bot.services.payments import (
     cancel_unusable_invoice,
@@ -59,11 +64,93 @@ async def buy_callback(
         await callback.answer(i18n.gettext("error.generic", context.language_code), show_alert=True)
         return
 
+    # Menu 1 — tariff (product) selection. Always shown, even with a single plan.
     await _edit_text_or_answer(
         callback,
         i18n.gettext("buy.title", lang_code),
-        reply_markup=tariff_keyboard(i18n, settings, lang_code),
+        reply_markup=plan_keyboard(i18n, settings, lang_code),
     )
+
+
+async def plan_callback(
+    callback: CallbackQuery,
+    settings: Settings,
+    i18n: JsonI18n,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Menu 2 — duration selection for the chosen plan."""
+    context = callback_context(callback, settings)
+    plan_code = _parse_prefixed_callback(getattr(callback, "data", None), CB_PLAN_PREFIX)
+    if plan_code is None:
+        await callback.answer(i18n.gettext("error.generic", context.language_code), show_alert=True)
+        return
+    await _show_duration_menu(callback, settings, i18n, session_factory, plan_code)
+
+
+async def back_to_tariffs_callback(
+    callback: CallbackQuery,
+    settings: Settings,
+    i18n: JsonI18n,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Back from Menu 2 to Menu 1."""
+    await buy_callback(callback, settings, i18n, session_factory)
+
+
+async def back_to_duration_callback(
+    callback: CallbackQuery,
+    settings: Settings,
+    i18n: JsonI18n,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Back from Menu 3 (quote/payment) to Menu 2 (durations)."""
+    context = callback_context(callback, settings)
+    plan_code = _parse_prefixed_callback(getattr(callback, "data", None), CB_BACK_DURATION_PREFIX)
+    if plan_code is None:
+        await callback.answer(i18n.gettext("error.generic", context.language_code), show_alert=True)
+        return
+    await _show_duration_menu(callback, settings, i18n, session_factory, plan_code)
+
+
+async def _show_duration_menu(
+    callback: CallbackQuery,
+    settings: Settings,
+    i18n: JsonI18n,
+    session_factory: async_sessionmaker[AsyncSession],
+    plan_code: str,
+) -> None:
+    context = callback_context(callback, settings)
+    try:
+        lang_code = await _resolve_user_language(
+            context.tg_id,
+            context.language_code,
+            i18n,
+            session_factory,
+        )
+    except SQLAlchemyError:
+        logger.exception("failed to resolve duration menu user")
+        await callback.answer(i18n.gettext("error.generic", context.language_code), show_alert=True)
+        return
+
+    await _edit_text_or_answer(
+        callback,
+        _duration_menu_text(i18n, settings, lang_code, plan_code),
+        reply_markup=tariff_keyboard(i18n, settings, lang_code, plan_code),
+    )
+
+
+def _duration_menu_text(
+    i18n: JsonI18n,
+    settings: Settings,
+    lang_code: str,
+    plan_code: str,
+) -> str:
+    title = i18n.gettext("buy.duration.title", lang_code)
+    try:
+        description = get_plan(settings, plan_code).description
+    except LookupError:
+        description = ""
+    return f"{description}\n\n{title}" if description else title
 
 
 async def tariff_callback(
@@ -479,6 +566,9 @@ def _promo_error_text(i18n: JsonI18n, lang_code: str, reason: str) -> str:
 def create_buy_router() -> Router:
     router = Router(name="buy")
     router.callback_query(F.data == CB_BUY)(buy_callback)
+    router.callback_query(F.data == CB_BACK_TARIFFS)(back_to_tariffs_callback)
+    router.callback_query(F.data.startswith(CB_BACK_DURATION_PREFIX))(back_to_duration_callback)
+    router.callback_query(F.data.startswith(CB_PLAN_PREFIX))(plan_callback)
     router.callback_query(F.data.startswith(CB_TARIFF_PREFIX))(tariff_callback)
     router.callback_query(F.data.startswith(CB_CRYPTOBOT_PREFIX))(cryptobot_invoice_callback)
     router.callback_query(F.data.startswith(CB_STARS_PREFIX))(stars_invoice_callback)

@@ -270,6 +270,7 @@ async def test_admin_grant_extends_subscription_notifies_service_channel_and_rep
         days: int,
         now: datetime,
         loyalty: object,
+        plan_code: str | None = None,
     ) -> FakeSubscription:
         calls.append(
             {
@@ -279,6 +280,7 @@ async def test_admin_grant_extends_subscription_notifies_service_channel_and_rep
                 "days": days,
                 "now": now,
                 "loyalty": loyalty,
+                "plan_code": plan_code,
             }
         )
         return subscription
@@ -313,6 +315,7 @@ async def test_admin_grant_extends_subscription_notifies_service_channel_and_rep
     assert calls[1]["session"] is session_factory.session
     assert calls[1]["user"] is user
     assert calls[1]["days"] == 10
+    assert calls[1]["plan_code"] == "main"
     assert calls[1]["now"].tzinfo is UTC
     assert session_factory.session.commits == 1
 

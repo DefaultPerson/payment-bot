@@ -34,20 +34,25 @@ def test_phase2_cryptobot_config_defaults_are_safe_for_tests() -> None:
 def test_phase2_default_tariffs_are_available() -> None:
     settings = Settings()
 
+    assert [plan.code for plan in settings.tariffs.plans] == ["main"]
+    assert settings.tariffs.default_plan_code == "main"
     assert [tariff.code for tariff in settings.tariffs.items] == [
         "1m",
         "3m",
         "6m",
-        "12m",
     ]
-    assert [tariff.duration_months for tariff in settings.tariffs.items] == [1, 3, 6, 12]
+    assert [tariff.plan_code for tariff in settings.tariffs.items] == ["main", "main", "main"]
+    assert [tariff.duration_months for tariff in settings.tariffs.items] == [1, 3, 6]
     assert [tariff.duration_discount_percent for tariff in settings.tariffs.items] == [
         Decimal("0"),
+        Decimal("5"),
         Decimal("10"),
-        Decimal("15"),
-        Decimal("25"),
     ]
-    assert all(tariff.base_price_usd > 0 for tariff in settings.tariffs.items)
+    assert [tariff.base_price_usd for tariff in settings.tariffs.items] == [
+        Decimal("59"),
+        Decimal("177"),
+        Decimal("354"),
+    ]
     assert settings.loyalty.bronze_discount_percent == Decimal("10")
     assert settings.loyalty.silver_active_days == 90
     assert settings.loyalty.silver_monthly_price_usd == Decimal("65")
@@ -178,6 +183,56 @@ def test_phase2_tariff_codes_must_be_unique() -> None:
                 ]
             }
         )
+
+
+def test_phase6_plan_codes_must_be_unique() -> None:
+    with pytest.raises(ValidationError, match="plan codes must be unique"):
+        Settings(
+            tariffs={
+                "plans": [{"code": "main"}, {"code": "main"}],
+                "items": [],
+            }
+        )
+
+
+def test_phase6_tariff_plan_code_must_reference_configured_plan() -> None:
+    with pytest.raises(ValidationError, match="must reference a configured plan: pro"):
+        Settings(
+            tariffs={
+                "plans": [{"code": "main"}],
+                "items": [
+                    {
+                        "code": "1m",
+                        "plan_code": "pro",
+                        "duration_months": 1,
+                        "base_price_usd": Decimal("59"),
+                    }
+                ],
+            }
+        )
+
+
+def test_phase6_plan_chat_ids_and_default_plan_resolution() -> None:
+    settings = Settings(
+        tariffs={
+            "plans": [
+                {"code": "lite", "active": False, "chat_ids": [-100]},
+                {"code": "pro", "chat_ids": [-200, -300]},
+            ],
+            "items": [
+                {
+                    "code": "pro_1m",
+                    "plan_code": "pro",
+                    "duration_months": 1,
+                    "base_price_usd": Decimal("59"),
+                }
+            ],
+        }
+    )
+
+    # default_plan_code skips the inactive plan and picks the first active one.
+    assert settings.tariffs.default_plan_code == "pro"
+    assert settings.tariffs.plans[1].chat_ids == [-200, -300]
 
 
 def test_phase2_access_defaults_are_empty_and_safe() -> None:

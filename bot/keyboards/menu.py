@@ -5,6 +5,9 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from bot.config import Settings
 from bot.core.i18n import JsonI18n
 from bot.keyboards.icons import icon_for
+from bot.models import UserStatus
+from bot.repos.tariffs import get_active_plans, get_plan_tariffs, resolve_plan_code
+from bot.services.pricing import quote_tariff
 
 CB_PROFILE = "profile"
 CB_LANGUAGE = "language"
@@ -16,10 +19,15 @@ CB_RENEW = "renew"
 CB_ENTER_CHAT = "enter_chat"
 CB_ADMIN = "admin"
 LANG_PREFIX = "lang:"
+CB_PLAN_PREFIX = "plan:"
 CB_TARIFF_PREFIX = "tariff:"
 CB_CRYPTOBOT_PREFIX = "pay:cryptobot:"
 CB_STARS_PREFIX = "pay:stars:"
 CB_XROCKET_PREFIX = "pay:xrocket:"
+CB_PROMO_BUY_PREFIX = "promo_buy:"
+CB_PROMO_CANCEL = "promo_cancel"
+CB_BACK_TARIFFS = "back:tariffs"
+CB_BACK_DURATION_PREFIX = "back:dur:"
 
 LANGUAGE_CODES = ("ru", "ua", "en")
 
@@ -159,21 +167,63 @@ def profile_keyboard(i18n: JsonI18n, settings: Settings, lang_code: str) -> Inli
     )
 
 
-def tariff_keyboard(i18n: JsonI18n, settings: Settings, lang_code: str) -> InlineKeyboardMarkup:
-    rows = []
-    for tariff in settings.tariffs.items:
-        if not tariff.active:
-            continue
+def plan_keyboard(i18n: JsonI18n, settings: Settings, lang_code: str) -> InlineKeyboardMarkup:
+    """Menu 1 — tariff (product) selection. Shown even when a single plan is active so the
+    flow stays a distinct step and a second plan just appears as another button."""
+    rows = [
+        [
+            _button(
+                plan.title or plan.code,
+                icon_key="menu.button.buy",
+                callback_data=f"{CB_PLAN_PREFIX}{plan.code}",
+            )
+        ]
+        for plan in get_active_plans(settings)
+    ]
+    rows.append(
+        [
+            _button(
+                i18n.gettext("support.button", lang_code),
+                icon_key="support.button",
+                url=_support_url(settings),
+            )
+        ]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
+
+def tariff_keyboard(
+    i18n: JsonI18n,
+    settings: Settings,
+    lang_code: str,
+    plan_code: str | None = None,
+) -> InlineKeyboardMarkup:
+    """Menu 2 — duration selection within a plan, with per-duration discount + price, a
+    promo-code entry, and a back button to the tariff list."""
+    plan_code = plan_code or settings.tariffs.default_plan_code
+    rows = []
+    for tariff in get_plan_tariffs(settings, plan_code):
+        net_usd = quote_tariff(settings, tariff.code, UserStatus.basic).net_usd
+        discount = tariff.duration_discount_percent
+        if discount > 0:
+            text = i18n.gettext(
+                "buy.duration.button_discount",
+                lang_code,
+                months=tariff.duration_months,
+                price=f"{net_usd:.2f}",
+                discount=f"{discount:.0f}",
+            )
+        else:
+            text = i18n.gettext(
+                "buy.duration.button",
+                lang_code,
+                months=tariff.duration_months,
+                price=f"{net_usd:.2f}",
+            )
         rows.append(
             [
                 _button(
-                    i18n.gettext(
-                        "buy.tariff.button",
-                        lang_code,
-                        months=tariff.duration_months,
-                        price=f"{tariff.base_price_usd:.2f}",
-                    ),
+                    text,
                     icon_key="buy.tariff.button",
                     callback_data=f"{CB_TARIFF_PREFIX}{tariff.code}",
                 )
@@ -183,9 +233,17 @@ def tariff_keyboard(i18n: JsonI18n, settings: Settings, lang_code: str) -> Inlin
     rows.append(
         [
             _button(
-                i18n.gettext("support.button", lang_code),
-                icon_key="support.button",
-                url=_support_url(settings),
+                i18n.gettext("buy.promo.button", lang_code),
+                icon_key="menu.button.promo",
+                callback_data=f"{CB_PROMO_BUY_PREFIX}{plan_code}",
+            )
+        ]
+    )
+    rows.append(
+        [
+            _button(
+                i18n.gettext("buy.back", lang_code),
+                callback_data=CB_BACK_TARIFFS,
             )
         ]
     )
@@ -227,6 +285,18 @@ def tariff_detail_keyboard(
                 )
             ]
         )
+    plan_code = resolve_plan_code(settings, tariff_code)
+    back_callback = (
+        f"{CB_BACK_DURATION_PREFIX}{plan_code}" if plan_code is not None else CB_BACK_TARIFFS
+    )
+    rows.append(
+        [
+            _button(
+                i18n.gettext("buy.back", lang_code),
+                callback_data=back_callback,
+            )
+        ]
+    )
     return InlineKeyboardMarkup(
         inline_keyboard=rows,
     )

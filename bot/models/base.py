@@ -233,6 +233,9 @@ class Subscription(Base):
     last_invoice_id: Mapped[int | None] = mapped_column(
         ForeignKey("invoices.id", ondelete="SET NULL"),
     )
+    # Config plan code (not an FK — plans live in settings, like protected_chats).
+    # Drives which chats the subscription unlocks; NULL falls back to all protected chats.
+    plan_code: Mapped[str | None] = mapped_column(String(50))
     stars_subscription_active: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,

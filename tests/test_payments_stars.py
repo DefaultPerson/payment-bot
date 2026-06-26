@@ -18,12 +18,12 @@ def test_quote_stars_invoice_compensates_app_store_fee_and_rounds_up() -> None:
 
     stars = quote_stars_invoice(settings, quote)
 
-    assert stars.amount == 8682
+    assert stars.amount == 6484
     assert stars.currency == "XTR"
     assert stars.subscription_period == STARS_RECURRING_MONTH_SECONDS
-    assert stars.gross_usd == Decimal("112.87")
-    assert stars.fee_usd == Decimal("33.86")
-    assert stars.net_usd == Decimal("79.01")
+    assert stars.gross_usd == Decimal("84.29")
+    assert stars.fee_usd == Decimal("25.29")
+    assert stars.net_usd == Decimal("59.00")
 
 
 def test_quote_stars_invoice_keeps_one_shot_tariffs_non_recurring() -> None:

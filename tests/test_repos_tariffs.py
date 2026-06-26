@@ -7,7 +7,67 @@ import pytest
 
 from bot.config import Settings
 from bot.models import Tariff
-from bot.repos.tariffs import ensure_configured_tariff, get_active_tariffs, get_tariff
+from bot.repos.tariffs import (
+    default_plan,
+    ensure_configured_tariff,
+    get_active_plans,
+    get_active_tariffs,
+    get_plan,
+    get_plan_tariffs,
+    get_tariff,
+    plan_for_tariff,
+    resolve_plan_code,
+)
+
+
+def _multi_plan_settings() -> Settings:
+    return Settings(
+        tariffs={
+            "plans": [
+                {"code": "main", "title": "Main", "chat_ids": [-100]},
+                {"code": "pro", "title": "Pro", "chat_ids": [-200], "active": False},
+            ],
+            "items": [
+                {
+                    "code": "main_1m",
+                    "plan_code": "main",
+                    "duration_months": 1,
+                    "base_price_usd": Decimal("59"),
+                },
+                {
+                    "code": "pro_1m",
+                    "plan_code": "pro",
+                    "duration_months": 1,
+                    "base_price_usd": Decimal("99"),
+                },
+            ],
+        }
+    )
+
+
+def test_get_active_plans_filters_inactive() -> None:
+    assert [plan.code for plan in get_active_plans(_multi_plan_settings())] == ["main"]
+
+
+def test_default_plan_is_first_active() -> None:
+    assert default_plan(_multi_plan_settings()).code == "main"
+
+
+def test_get_plan_resolves_inactive_plans_too() -> None:
+    assert get_plan(_multi_plan_settings(), "pro").chat_ids == [-200]
+
+
+def test_get_plan_tariffs_filters_by_plan() -> None:
+    settings = _multi_plan_settings()
+    assert [tariff.code for tariff in get_plan_tariffs(settings, "main")] == ["main_1m"]
+
+
+def test_plan_for_tariff_and_resolve_plan_code() -> None:
+    settings = _multi_plan_settings()
+    assert plan_for_tariff(settings, "main_1m").code == "main"
+    assert resolve_plan_code(settings, "main_1m") == "main"
+    assert resolve_plan_code(settings, "unknown") is None
+    assert resolve_plan_code(settings, None) is None
 
 
 class FakeAsyncSession:
@@ -103,7 +163,7 @@ async def test_ensure_configured_tariff_creates_missing_tariff() -> None:
     assert tariff.id == 1
     assert tariff.code == "1m"
     assert tariff.duration_months == 1
-    assert tariff.base_price_usd == Decimal("79.00")
+    assert tariff.base_price_usd == Decimal("59.00")
     assert tariff.active is True
     assert session.flushed == 1
     assert session.committed == 0
@@ -126,7 +186,7 @@ async def test_ensure_configured_tariff_updates_existing_tariff_values() -> None
     assert tariff is existing
     assert tariff.id == 7
     assert tariff.duration_months == 1
-    assert tariff.base_price_usd == Decimal("79.00")
+    assert tariff.base_price_usd == Decimal("59.00")
     assert tariff.active is True
     assert session.flushed == 1
     assert session.committed == 0

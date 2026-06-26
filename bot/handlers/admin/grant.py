@@ -13,6 +13,7 @@ from bot.core.i18n import JsonI18n
 from bot.core.logger import ServiceChannel
 from bot.core.service_events import render_event, user_mention
 from bot.repos.subscriptions import extend_manual_subscription
+from bot.repos.tariffs import default_plan
 from bot.repos.users import ensure_minimal_user
 
 logger = logging.getLogger(__name__)
@@ -68,6 +69,7 @@ async def grant(
                 days=days,
                 now=now,
                 loyalty=settings.loyalty,
+                plan_code=default_plan(settings).code,
             )
             expires_at = subscription.expires_at
     except SQLAlchemyError:

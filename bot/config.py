@@ -87,8 +87,23 @@ class XRocketConfig(BaseModel):
         return _blank_secret_to_none(value)
 
 
+class PlanConfig(BaseModel):
+    """A subscription product. Groups duration variants and the chats it unlocks.
+
+    ``chat_ids`` empty = the plan opens every configured ``access.protected_chats``
+    (the current single-plan behaviour). Listing ids restricts the plan to that subset.
+    """
+
+    code: str
+    title: str = ""
+    description: str = ""
+    chat_ids: list[int] = Field(default_factory=list)
+    active: bool = True
+
+
 class TariffConfig(BaseModel):
     code: str
+    plan_code: str = "main"
     duration_months: int = Field(ge=1)
     base_price_usd: Decimal = Field(gt=0)
     duration_discount_percent: Decimal = Field(default=Decimal("0"), ge=0, lt=100)
@@ -96,32 +111,46 @@ class TariffConfig(BaseModel):
 
 
 class TariffsConfig(BaseModel):
+    plans: list[PlanConfig] = Field(
+        default_factory=lambda: [PlanConfig(code="main", title="Hydra Monitors")],
+    )
     items: list[TariffConfig] = Field(
         default_factory=lambda: [
-            TariffConfig(code="1m", duration_months=1, base_price_usd=Decimal("79")),
+            TariffConfig(
+                code="1m",
+                plan_code="main",
+                duration_months=1,
+                base_price_usd=Decimal("59"),
+            ),
             TariffConfig(
                 code="3m",
+                plan_code="main",
                 duration_months=3,
-                base_price_usd=Decimal("237"),
-                duration_discount_percent=Decimal("10"),
+                base_price_usd=Decimal("177"),
+                duration_discount_percent=Decimal("5"),
             ),
             TariffConfig(
                 code="6m",
+                plan_code="main",
                 duration_months=6,
-                base_price_usd=Decimal("474"),
-                duration_discount_percent=Decimal("15"),
-            ),
-            TariffConfig(
-                code="12m",
-                duration_months=12,
-                base_price_usd=Decimal("948"),
-                duration_discount_percent=Decimal("25"),
+                base_price_usd=Decimal("354"),
+                duration_discount_percent=Decimal("10"),
             ),
         ],
     )
 
     @model_validator(mode="after")
-    def validate_unique_codes(self) -> TariffsConfig:
+    def validate_codes(self) -> TariffsConfig:
+        plan_codes: set[str] = set()
+        plan_duplicates: set[str] = set()
+        for plan in self.plans:
+            if plan.code in plan_codes:
+                plan_duplicates.add(plan.code)
+            plan_codes.add(plan.code)
+        if plan_duplicates:
+            msg = "plan codes must be unique"
+            raise ValueError(msg)
+
         seen: set[str] = set()
         duplicates: set[str] = set()
         for tariff in self.items:
@@ -131,7 +160,22 @@ class TariffsConfig(BaseModel):
         if duplicates:
             msg = "tariff codes must be unique"
             raise ValueError(msg)
+
+        unknown_plans = sorted(
+            {tariff.plan_code for tariff in self.items if tariff.plan_code not in plan_codes}
+        )
+        if unknown_plans:
+            joined = ", ".join(unknown_plans)
+            msg = f"tariff plan_code must reference a configured plan: {joined}"
+            raise ValueError(msg)
         return self
+
+    @property
+    def default_plan_code(self) -> str:
+        for plan in self.plans:
+            if plan.active:
+                return plan.code
+        return self.plans[0].code if self.plans else "main"
 
 
 class LoyaltyConfig(BaseModel):
