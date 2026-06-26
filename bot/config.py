@@ -55,6 +55,7 @@ class CryptoBotConfig(BaseModel):
         validation_alias=AliasChoices("token", "CRYPTOBOT_TOKEN"),
     )
     api_url: str = "https://pay.crypt.bot"
+    testnet_api_url: str = "https://testnet-pay.crypt.bot"  # used when payments.test_mode is on
     accepted_assets: list[str] = Field(default_factory=lambda: ["USDT", "TON", "BTC"])
     fee_percent: Decimal = Field(default=Decimal("3"), ge=0, lt=100)
     invoice_expires_seconds: int = Field(default=3600, ge=1, le=2_678_400)
@@ -87,6 +88,18 @@ class XRocketConfig(BaseModel):
         return _blank_secret_to_none(value)
 
 
+class PaymentsConfig(BaseModel):
+    """Master switch: route live providers to their TEST networks.
+
+    When ``test_mode`` is on, CryptoBot uses ``cryptobot.testnet_api_url`` with
+    ``CRYPTOBOT_TESTNET_TOKEN`` and xRocket runs ``testnet=True`` using
+    ``XROCKET_TESTNET_TOKEN`` (applied in Settings resolution). Telegram Stars
+    has no test network and is unaffected.
+    """
+
+    test_mode: bool = False
+
+
 class PlanConfig(BaseModel):
     """A subscription product. Groups duration variants and the chats it unlocks.
 
@@ -108,6 +121,8 @@ class TariffConfig(BaseModel):
     base_price_usd: Decimal = Field(gt=0)
     duration_discount_percent: Decimal = Field(default=Decimal("0"), ge=0, lt=100)
     active: bool = True
+    test_only: bool = False  # selectable only when payments.test_mode is on
+    stars_amount_override: int | None = Field(default=None, ge=1)  # pin XTR price (1 for tests)
 
 
 class TariffsConfig(BaseModel):
@@ -283,6 +298,16 @@ class Settings(BaseSettings):
         validation_alias="XROCKET_TOKEN",
         exclude=True,
     )
+    cryptobot_testnet_token: SecretStr | None = Field(
+        default=None,
+        validation_alias="CRYPTOBOT_TESTNET_TOKEN",
+        exclude=True,
+    )
+    xrocket_testnet_token: SecretStr | None = Field(
+        default=None,
+        validation_alias="XROCKET_TESTNET_TOKEN",
+        exclude=True,
+    )
 
     bot: BotConfig = Field(default_factory=BotConfig)
     service_channel: ServiceChannelConfig = Field(default_factory=ServiceChannelConfig)
@@ -298,6 +323,7 @@ class Settings(BaseSettings):
     notifications: NotificationsConfig = Field(default_factory=NotificationsConfig)
     observability: ObservabilityConfig = Field(default_factory=ObservabilityConfig)
     access: AccessConfig = Field(default_factory=AccessConfig)
+    payments: PaymentsConfig = Field(default_factory=PaymentsConfig)
 
     @classmethod
     def settings_customise_sources(
@@ -345,6 +371,11 @@ class Settings(BaseSettings):
     def blank_xrocket_token_is_none(cls, value: Any) -> Any:
         return _blank_secret_to_none(value)
 
+    @field_validator("cryptobot_testnet_token", "xrocket_testnet_token", mode="before")
+    @classmethod
+    def blank_testnet_token_is_none(cls, value: Any) -> Any:
+        return _blank_secret_to_none(value)
+
     @model_validator(mode="after")
     def apply_flat_aliases_and_validate_provider_tokens(self) -> Settings:
         if self.service_channel_id is not None:
@@ -355,9 +386,27 @@ class Settings(BaseSettings):
             self.cryptobot.token = self.cryptobot_token
         if self.xrocket_token is not None:
             self.xrocket.token = self.xrocket_token
+        if self.payments.test_mode:
+            self._apply_payments_test_mode()
+        self._filter_test_only_tariffs()
         self._validate_cryptobot_token()
         self._validate_xrocket_token()
         return self
+
+    def _apply_payments_test_mode(self) -> None:
+        """Route live providers to their test networks (Stars has none)."""
+        self.cryptobot.api_url = self.cryptobot.testnet_api_url
+        if self.cryptobot_testnet_token is not None:
+            self.cryptobot.token = self.cryptobot_testnet_token
+        self.xrocket.testnet = True
+        if self.xrocket_testnet_token is not None:
+            self.xrocket.token = self.xrocket_testnet_token
+
+    def _filter_test_only_tariffs(self) -> None:
+        """Hide test-only tariffs outside test mode so they can't be sold in production."""
+        if self.payments.test_mode:
+            return
+        self.tariffs.items = [tariff for tariff in self.tariffs.items if not tariff.test_only]
 
     def _validate_cryptobot_token(self) -> None:
         if self.cryptobot.token is not None:
@@ -373,6 +422,20 @@ class Settings(BaseSettings):
                 msg = "XROCKET_TOKEN must not be empty when set"
                 raise ValueError(msg)
 
+    def _validate_test_mode_tokens(self) -> None:
+        if self.cryptobot.enabled and self.cryptobot_testnet_token is None:
+            msg = (
+                "CRYPTOBOT_TESTNET_TOKEN must be set when "
+                "payments.test_mode is on and cryptobot is enabled"
+            )
+            raise ValueError(msg)
+        if self.xrocket.enabled and self.xrocket_testnet_token is None:
+            msg = (
+                "XROCKET_TESTNET_TOKEN must be set when "
+                "payments.test_mode is on and xrocket is enabled"
+            )
+            raise ValueError(msg)
+
     def validate_runtime(self) -> None:
         bot_token = self.bot_token.get_secret_value()
         if bot_token == "test-token" or "replace-me" in bot_token:
@@ -387,6 +450,8 @@ class Settings(BaseSettings):
         if not self.database_url.startswith("postgresql+asyncpg://"):
             msg = "DATABASE_URL must use postgresql+asyncpg://"
             raise ValueError(msg)
+        if self.payments.test_mode:
+            self._validate_test_mode_tokens()
         self._validate_cryptobot_token()
         self._validate_xrocket_token()
 

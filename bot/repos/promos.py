@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import TYPE_CHECKING
 
 from sqlalchemy import func, select
@@ -100,6 +101,70 @@ async def get_promo_by_code(session: AsyncSession, code: str) -> Promo | None:
     return await session.scalar(
         select(Promo).where(func.upper(Promo.code) == normalized),
     )
+
+
+# --- admin CRUD -----------------------------------------------------------------------------
+
+
+async def create_promo(
+    session: AsyncSession,
+    *,
+    code: str,
+    kind: PromoKind,
+    value: Decimal,
+    created_by: int | None,
+    max_uses: int | None = None,
+    expires_at: datetime | None = None,
+    allowed_tariffs: list[str] | None = None,
+) -> Promo:
+    """Insert a promo. ``IntegrityError`` (duplicate code) propagates to the caller."""
+    promo = Promo(
+        code=normalize_promo_code(code),
+        kind=kind,
+        value=value,
+        max_uses=max_uses,
+        expires_at=expires_at,
+        created_by=created_by,
+        active=True,
+        allowed_tariffs=allowed_tariffs,
+    )
+    session.add(promo)
+    await session.flush()
+    return promo
+
+
+async def list_active_promos(
+    session: AsyncSession,
+    *,
+    limit: int,
+    offset: int,
+) -> list[Promo]:
+    result = await session.scalars(
+        select(Promo)
+        .where(Promo.active.is_(True))
+        .order_by(Promo.id.desc())
+        .limit(limit)
+        .offset(offset),
+    )
+    return list(result.all())
+
+
+async def count_active_promos(session: AsyncSession) -> int:
+    count = await session.scalar(
+        select(func.count(Promo.id)).where(Promo.active.is_(True)),
+    )
+    return int(count or 0)
+
+
+async def deactivate_promo(session: AsyncSession, promo_id: int) -> bool:
+    promo = await session.scalar(
+        select(Promo).where(Promo.id == promo_id).with_for_update(),
+    )
+    if promo is None or not promo.active:
+        return False
+    promo.active = False
+    await session.flush()
+    return True
 
 
 async def user_has_redeemed_promo(

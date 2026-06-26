@@ -143,6 +143,35 @@ docker compose up --build
 Health endpoint inside the container listens on `127.0.0.1:8080`.
 No payment webhook endpoints are exposed.
 
+## Testing payments
+
+One switch routes the live crypto providers to their TEST networks (Telegram Stars
+has no test network):
+
+```toml
+# config.toml
+[payments]
+test_mode = true   # CryptoBot -> testnet host + CRYPTOBOT_TESTNET_TOKEN;
+                   # xRocket   -> testnet + XROCKET_TESTNET_TOKEN
+```
+
+Put testnet tokens in `.env` (`CRYPTOBOT_TESTNET_TOKEN` from `@CryptoTestnetBot`,
+`XROCKET_TESTNET_TOKEN` from `@xrocket_testnet_bot`). Keep `test_mode = false` in
+production, or force it via env with `PAYMENTS__TEST_MODE=false`.
+
+A cheap `test_only` tariff (`code = "test"`) ships in `config.toml`. It is
+auto-hidden unless `test_mode` is on, so it can never be sold in production. Buy it
+through any provider for an end-to-end check; its Stars price is pinned to **1 ⭐**
+via `stars_amount_override` (crypto uses `base_price_usd` on testnet).
+
+Telegram Stars has no sandbox: pay the test tariff with 1 real Star, then refund
+manually — the bot exposes no refund command:
+
+```bash
+uv run python -m bot.tools.refund_star --invoice-id <id>
+# or: uv run python -m bot.tools.refund_star --user-id <tg_id> --charge-id <telegram_payment_charge_id>
+```
+
 ## Observability
 
 The HTTP server exposes Prometheus metrics at `/metrics`. Import the Grafana

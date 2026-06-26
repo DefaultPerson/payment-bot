@@ -118,6 +118,11 @@ class User(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+    # Bumped (throttled) on every interaction by ActivityMiddleware; powers DAU/MAU.
+    last_active_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        index=True,
+    )
 
 
 class Tariff(Base):

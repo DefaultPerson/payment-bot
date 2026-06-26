@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from aiogram.types import Message
+from aiogram.fsm.context import FSMContext
+from aiogram.types import CallbackQuery, Message
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -12,11 +14,22 @@ from bot.core.db import session_scope
 from bot.core.i18n import JsonI18n
 from bot.core.logger import ServiceChannel
 from bot.core.service_events import render_event, user_mention
+from bot.handlers.admin._nav import callback_language, edit_or_answer, message_language
+from bot.handlers.admin.states import AdminGrantState
+from bot.keyboards.admin import back_keyboard, cancel_keyboard
 from bot.repos.subscriptions import extend_manual_subscription
 from bot.repos.tariffs import default_plan
 from bot.repos.users import ensure_minimal_user
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class GrantResult:
+    target_tg_id: int
+    days: int
+    expires_at: datetime
+    target_username: str | None
 
 
 def parse_grant_args(text: str) -> tuple[int, int]:
@@ -40,76 +53,122 @@ def parse_grant_args(text: str) -> tuple[int, int]:
     return user_id, days
 
 
-async def grant(
-    message: Message,
+async def perform_grant(
+    *,
+    target_tg_id: int,
+    days: int,
+    admin_id: int,
     settings: Settings,
     i18n: JsonI18n,
     session_factory: async_sessionmaker[AsyncSession],
     service_channel: ServiceChannel,
-) -> None:
-    language = _message_language(message, i18n)
-    admin_id = _message_user_id(message)
-    if admin_id is None or admin_id not in settings.admin_ids:
-        await message.answer(i18n.gettext("grant.forbidden", language))
-        return
+) -> GrantResult:
+    """Extend a user's subscription by ``days`` and notify the service channel.
 
-    try:
-        target_tg_id, days = parse_grant_args(message.text or "")
-    except ValueError:
-        await message.answer(i18n.gettext("grant.usage", language))
-        return
-
+    Shared core of the grant flow; raises ``SQLAlchemyError`` on DB failure for the caller
+    to translate into a user-facing error.
+    """
     now = datetime.now(UTC)
-    try:
-        async with session_scope(session_factory) as session:
-            user = await ensure_minimal_user(session, tg_id=target_tg_id, i18n=i18n)
-            subscription = await extend_manual_subscription(
-                session,
-                user=user,
-                days=days,
-                now=now,
-                loyalty=settings.loyalty,
-                plan_code=default_plan(settings).code,
-            )
-            expires_at = subscription.expires_at
-    except SQLAlchemyError:
-        logger.exception("failed to apply manual grant")
-        await message.answer(i18n.gettext("error.generic", language))
-        return
+    async with session_scope(session_factory) as session:
+        user = await ensure_minimal_user(session, tg_id=target_tg_id, i18n=i18n)
+        subscription = await extend_manual_subscription(
+            session,
+            user=user,
+            days=days,
+            now=now,
+            loyalty=settings.loyalty,
+            plan_code=default_plan(settings).code,
+        )
+        expires_at = subscription.expires_at
+        target_username = user.username
 
     await _notify_service_channel(
         service_channel,
         admin_id=admin_id,
         target_tg_id=target_tg_id,
-        target_username=user.username,
+        target_username=target_username,
         days=days,
         expires_at=expires_at,
     )
-
-    success_text = i18n.gettext(
-        "grant.success",
-        language,
-        user_id=target_tg_id,
+    return GrantResult(
+        target_tg_id=target_tg_id,
         days=days,
-        expires_at=_format_expiry(expires_at),
+        expires_at=expires_at,
+        target_username=target_username,
     )
-    await message.answer(success_text)
 
 
-async def grant_forbidden(message: Message, i18n: JsonI18n) -> None:
-    language = _message_language(message, i18n)
-    await message.answer(i18n.gettext("grant.forbidden", language))
+async def grant_start(
+    callback: CallbackQuery,
+    settings: Settings,
+    i18n: JsonI18n,
+    state: FSMContext,
+) -> None:
+    user = callback.from_user
+    if user is None or user.id not in settings.admin_ids:
+        await callback.answer()
+        return
+    lang = callback_language(callback, i18n)
+    await state.set_state(AdminGrantState.waiting_input)
+    await edit_or_answer(
+        callback,
+        i18n.gettext("admin.grant.prompt", lang),
+        reply_markup=cancel_keyboard(i18n, lang),
+    )
 
 
-def _message_user_id(message: Message) -> int | None:
-    user = message.from_user
-    return user.id if user else None
+async def grant_input(
+    message: Message,
+    settings: Settings,
+    i18n: JsonI18n,
+    session_factory: async_sessionmaker[AsyncSession],
+    service_channel: ServiceChannel,
+    state: FSMContext,
+) -> None:
+    lang = message_language(message, i18n)
+    admin_id = message.from_user.id if message.from_user else None
+    if admin_id is None:
+        return
 
+    try:
+        target_tg_id, days = parse_grant_args(f"/grant {message.text or ''}")
+    except ValueError:
+        await message.answer(
+            i18n.gettext("admin.grant.invalid", lang),
+            reply_markup=cancel_keyboard(i18n, lang),
+        )
+        return
 
-def _message_language(message: Message, i18n: JsonI18n) -> str:
-    user = message.from_user
-    language_code = user.language_code if user else None
-    return i18n.resolve_language(language_code)
+    try:
+        result = await perform_grant(
+            target_tg_id=target_tg_id,
+            days=days,
+            admin_id=admin_id,
+            settings=settings,
+            i18n=i18n,
+            session_factory=session_factory,
+            service_channel=service_channel,
+        )
+    except SQLAlchemyError:
+        logger.exception("failed to apply manual grant")
+        await state.set_state(None)
+        await message.answer(
+            i18n.gettext("error.generic", lang),
+            reply_markup=back_keyboard(i18n, lang),
+        )
+        return
+
+    await state.set_state(None)
+    await message.answer(
+        i18n.gettext(
+            "grant.success",
+            lang,
+            user_id=result.target_tg_id,
+            days=result.days,
+            expires_at=_format_expiry(result.expires_at),
+        ),
+        reply_markup=back_keyboard(i18n, lang),
+    )
 
 
 async def _notify_service_channel(

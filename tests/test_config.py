@@ -425,3 +425,123 @@ def test_flat_service_channel_env_aliases_are_supported(tmp_path: Path) -> None:
 def test_invalid_language_fallback_fails() -> None:
     with pytest.raises(ValidationError):
         Settings(bot={"supported_languages": ["ru"], "fallback_language": "en"})
+
+
+def test_payments_test_mode_defaults_off() -> None:
+    settings = Settings()
+
+    assert settings.payments.test_mode is False
+    assert settings.cryptobot.api_url == "https://pay.crypt.bot"
+    assert settings.cryptobot.testnet_api_url == "https://testnet-pay.crypt.bot"
+    assert settings.xrocket.testnet is False
+
+
+def test_payments_test_mode_routes_providers_to_testnet(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        """
+        [payments]
+        test_mode = true
+
+        [cryptobot]
+        enabled = true
+
+        [xrocket]
+        enabled = true
+        """,
+        encoding="utf-8",
+    )
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "\n".join(
+            [
+                "CRYPTOBOT_TOKEN=prod-crypto",
+                "CRYPTOBOT_TESTNET_TOKEN=test-crypto",
+                "XROCKET_TOKEN=prod-xrocket",
+                "XROCKET_TESTNET_TOKEN=test-xrocket",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    settings = load_settings(config_path=config_path, env_file=env_file)
+
+    assert settings.payments.test_mode is True
+    assert settings.cryptobot.api_url == "https://testnet-pay.crypt.bot"
+    assert settings.cryptobot.token is not None
+    assert settings.cryptobot.token.get_secret_value() == "test-crypto"
+    assert settings.xrocket.testnet is True
+    assert settings.xrocket.token is not None
+    assert settings.xrocket.token.get_secret_value() == "test-xrocket"
+
+
+def test_payments_prod_mode_keeps_live_endpoints(tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "\n".join(
+            [
+                "CRYPTOBOT_TOKEN=prod-crypto",
+                "CRYPTOBOT_TESTNET_TOKEN=test-crypto",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    settings = load_settings(config_path=tmp_path / "missing.toml", env_file=env_file)
+
+    assert settings.payments.test_mode is False
+    assert settings.cryptobot.api_url == "https://pay.crypt.bot"
+    assert settings.cryptobot.token is not None
+    assert settings.cryptobot.token.get_secret_value() == "prod-crypto"
+
+
+def test_runtime_validation_requires_testnet_tokens_in_test_mode() -> None:
+    settings = Settings(
+        BOT_TOKEN="123456:abcdef",
+        DATABASE_URL="postgresql+asyncpg://u:p@h/db",
+        service_channel={"chat_id": -100123},
+        payments={"test_mode": True},
+        cryptobot={"enabled": True},
+        xrocket={"enabled": True},
+    )
+
+    with pytest.raises(ValueError, match="CRYPTOBOT_TESTNET_TOKEN"):
+        settings.validate_runtime()
+
+
+def test_testnet_token_blank_value_normalizes_to_none(tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text("CRYPTOBOT_TESTNET_TOKEN=\n", encoding="utf-8")
+
+    settings = load_settings(config_path=tmp_path / "missing.toml", env_file=env_file)
+
+    assert settings.cryptobot_testnet_token is None
+
+
+def _settings_with_test_tariff(*, test_mode: bool) -> Settings:
+    return Settings(
+        payments={"test_mode": test_mode},
+        tariffs={
+            "items": [
+                {"code": "1m", "duration_months": 1, "base_price_usd": Decimal("79")},
+                {
+                    "code": "test",
+                    "duration_months": 3,
+                    "base_price_usd": Decimal("0.50"),
+                    "test_only": True,
+                },
+            ]
+        },
+    )
+
+
+def test_test_only_tariff_hidden_outside_test_mode() -> None:
+    settings = _settings_with_test_tariff(test_mode=False)
+
+    assert [tariff.code for tariff in settings.tariffs.items] == ["1m"]
+
+
+def test_test_only_tariff_visible_in_test_mode() -> None:
+    settings = _settings_with_test_tariff(test_mode=True)
+
+    assert [tariff.code for tariff in settings.tariffs.items] == ["1m", "test"]

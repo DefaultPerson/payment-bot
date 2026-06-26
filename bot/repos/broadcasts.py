@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
 
@@ -12,34 +11,37 @@ from bot.models import BroadcastLog, Subscription, User
 BroadcastSegment = Literal["all", "active", "inactive"]
 
 
-@dataclass(frozen=True, slots=True)
-class BroadcastTarget:
-    tg_id: int
-    lang_code: str
-
-
 async def get_broadcast_targets(
     session: AsyncSession,
     *,
     segment: str,
     now: datetime,
-) -> list[BroadcastTarget]:
+) -> list[int]:
+    """Return the tg_ids for a segment, filtered SQL-side (no full ORM rows / Python set).
+
+    ``active`` = has a subscription with ``expires_at > now``; ``inactive`` = the negation
+    (no subscription, or only an expired one). The composed broadcast is copied verbatim to
+    every id, so language is irrelevant here.
+
+    Note: ``aiogram-broadcast`` materialises this list into Redis FSM state (~8 bytes/id). Fine
+    to ~50k recipients; beyond that the serial, unthrottled send becomes the real limit and a
+    streaming sender would be warranted.
+    """
     if segment not in {"all", "active", "inactive"}:
         msg = f"unknown broadcast segment: {segment}"
         raise ValueError(msg)
 
-    users_result = await session.scalars(select(User).order_by(User.id.asc()))
-    users = list(users_result.all())
-    if segment == "all":
-        return [_target(user) for user in users]
-
-    active_result = await session.scalars(
-        select(Subscription).where(Subscription.expires_at > now),
+    active_exists = (
+        select(Subscription.id)
+        .where(Subscription.user_id == User.id, Subscription.expires_at > now)
+        .exists()
     )
-    active_user_ids = {subscription.user_id for subscription in active_result.all()}
+    stmt = select(User.tg_id)
     if segment == "active":
-        return [_target(user) for user in users if user.id in active_user_ids]
-    return [_target(user) for user in users if user.id not in active_user_ids]
+        stmt = stmt.where(active_exists)
+    elif segment == "inactive":
+        stmt = stmt.where(~active_exists)
+    return list(await session.scalars(stmt.order_by(User.id.asc())))
 
 
 async def create_broadcast_log(
@@ -103,7 +105,3 @@ async def finish_broadcast_log_by_id(
         failed_count=failed_count,
         finished_at=finished_at,
     )
-
-
-def _target(user: User) -> BroadcastTarget:
-    return BroadcastTarget(tg_id=user.tg_id, lang_code=user.lang_code)

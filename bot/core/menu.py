@@ -11,7 +11,8 @@ from bot.core.i18n import JsonI18n
 logger = logging.getLogger(__name__)
 
 USER_COMMANDS = ("start", "language")
-ADMIN_COMMANDS = ("grant", "broadcast")
+# Admin actions are now driven entirely by the inline admin panel, not slash commands.
+ADMIN_COMMANDS: tuple[str, ...] = ()
 TELEGRAM_LANGUAGE_CODES = {
     "ua": "uk",
 }

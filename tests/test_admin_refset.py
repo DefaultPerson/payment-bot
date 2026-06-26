@@ -27,6 +27,14 @@ class FakeMessage:
         self.answers.append({"text": text, **kwargs})
 
 
+class FakeState:
+    def __init__(self, current: str | None = "AdminRefsetState:waiting_input") -> None:
+        self.current = current
+
+    async def set_state(self, value: Any) -> None:
+        self.current = value
+
+
 class FakeSession:
     def __init__(self) -> None:
         self.commits = 0
@@ -83,22 +91,21 @@ def test_parse_refset_args_rejects_invalid_command(text: str) -> None:
         parse_refset_args(text)
 
 
-def test_admin_router_registers_refset_with_admin_filter() -> None:
+def test_admin_router_registers_refset_fsm_handlers() -> None:
     import bot.handlers.admin.refset as refset_module
     from bot.filters.admin import IsAdmin
     from bot.handlers.admin import create_admin_router
 
-    handlers = create_admin_router().message.handlers
-    indexes = [
-        index for index, handler in enumerate(handlers) if handler.callback is refset_module.refset
-    ]
+    router = create_admin_router()
+    starts = [h for h in router.callback_query.handlers if h.callback is refset_module.refset_start]
+    inputs = [h for h in router.message.handlers if h.callback is refset_module.refset_input]
 
-    assert indexes
-    handler = handlers[indexes[0]]
-    assert any(isinstance(filter_object.callback, IsAdmin) for filter_object in handler.filters)
+    assert len(starts) == 1
+    assert len(inputs) == 1
+    assert any(isinstance(f.callback, IsAdmin) for f in inputs[0].filters)
 
 
-async def test_refset_updates_referrer_custom_percent(monkeypatch) -> None:
+async def test_refset_input_updates_referrer_custom_percent(monkeypatch) -> None:
     import bot.handlers.admin.refset as refset_module
 
     calls: list[dict[str, Any]] = []
@@ -113,17 +120,16 @@ async def test_refset_updates_referrer_custom_percent(monkeypatch) -> None:
     monkeypatch.setattr(refset_module, "ensure_minimal_user", fake_ensure)
     monkeypatch.setattr(refset_module, "set_custom_percent_for_referrer", fake_set_custom_percent)
 
-    message = FakeMessage(
-        text="/refset 1001 15",
-        from_user=FakeTelegramUser(id=500, language_code="en"),
-    )
+    message = FakeMessage(text="1001 15", from_user=FakeTelegramUser(500, "en"))
     session_factory = FakeSessionFactory()
+    state = FakeState()
 
-    await refset_module.refset(
+    await refset_module.refset_input(
         message,
         settings=Settings(admin_ids=[500]),
         i18n=JsonI18n(),
         session_factory=session_factory,
+        state=state,
     )
 
     assert calls == [
@@ -133,12 +139,13 @@ async def test_refset_updates_referrer_custom_percent(monkeypatch) -> None:
             "percent": Decimal("15"),
         }
     ]
-    assert message.answers == [
-        {"text": "Referral percent for user 1001 set to 15%. Updated links: 3."}
-    ]
+    assert (
+        message.answers[0]["text"] == "Referral percent for user 1001 set to 15%. Updated links: 3."
+    )
+    assert state.current is None
 
 
-async def test_refset_reports_no_referrals_but_stores_future_override(monkeypatch) -> None:
+async def test_refset_input_reports_future_override(monkeypatch) -> None:
     import bot.handlers.admin.refset as refset_module
 
     async def fake_ensure(session: FakeSession, **kwargs: Any) -> FakeUserRecord:
@@ -150,42 +157,41 @@ async def test_refset_reports_no_referrals_but_stores_future_override(monkeypatc
     monkeypatch.setattr(refset_module, "ensure_minimal_user", fake_ensure)
     monkeypatch.setattr(refset_module, "set_custom_percent_for_referrer", fake_set_custom_percent)
 
-    message = FakeMessage(
-        text="/refset 1001 15",
-        from_user=FakeTelegramUser(id=500, language_code="en"),
-    )
+    message = FakeMessage(text="1001 15", from_user=FakeTelegramUser(500, "en"))
 
-    await refset_module.refset(
+    await refset_module.refset_input(
         message,
         settings=Settings(admin_ids=[500]),
         i18n=JsonI18n(),
         session_factory=FakeSessionFactory(),
+        state=FakeState(),
     )
 
-    assert message.answers == [
-        {"text": "Referral percent for user 1001 set to 15%. Future referrals will use it."}
-    ]
-
-
-async def test_refset_forbidden_for_non_admin() -> None:
-    from bot.handlers.admin.refset import refset
-
-    message = FakeMessage(
-        text="/refset 1001 15",
-        from_user=FakeTelegramUser(id=400, language_code="en"),
+    assert (
+        message.answers[0]["text"]
+        == "Referral percent for user 1001 set to 15%. Future referrals will use it."
     )
 
-    await refset(
+
+async def test_refset_input_invalid_reprompts(monkeypatch) -> None:
+    import bot.handlers.admin.refset as refset_module
+
+    message = FakeMessage(text="bad input", from_user=FakeTelegramUser(500, "en"))
+    state = FakeState()
+
+    await refset_module.refset_input(
         message,
         settings=Settings(admin_ids=[500]),
         i18n=JsonI18n(),
         session_factory=FakeSessionFactory(),
+        state=state,
     )
 
-    assert message.answers == [{"text": "Only admins can set referral percent."}]
+    assert message.answers[0]["text"] == "Invalid input. Send: user_id percent (0 to 99)."
+    assert state.current == "AdminRefsetState:waiting_input"
 
 
-async def test_refset_handles_database_error(monkeypatch) -> None:
+async def test_refset_input_handles_database_error(monkeypatch) -> None:
     import bot.handlers.admin.refset as refset_module
 
     async def fail_ensure(*args: Any, **kwargs: Any) -> None:
@@ -193,16 +199,16 @@ async def test_refset_handles_database_error(monkeypatch) -> None:
 
     monkeypatch.setattr(refset_module, "ensure_minimal_user", fail_ensure)
 
-    message = FakeMessage(
-        text="/refset 1001 15",
-        from_user=FakeTelegramUser(id=500, language_code="en"),
-    )
+    message = FakeMessage(text="1001 15", from_user=FakeTelegramUser(500, "en"))
+    state = FakeState()
 
-    await refset_module.refset(
+    await refset_module.refset_input(
         message,
         settings=Settings(admin_ids=[500]),
         i18n=JsonI18n(),
         session_factory=FakeSessionFactory(),
+        state=state,
     )
 
-    assert message.answers == [{"text": "Something went wrong. Please try again later."}]
+    assert message.answers[0]["text"] == "Something went wrong. Please try again later."
+    assert state.current is None

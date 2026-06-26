@@ -20,6 +20,12 @@ file_path = "logs/payment-bot.log"
 max_bytes = 5242880
 backup_count = 5
 
+[payments]
+# Master test switch: routes CryptoBot + xRocket to their TEST networks.
+# On -> uses CRYPTOBOT_TESTNET_TOKEN / XROCKET_TESTNET_TOKEN (.env) and testnet hosts.
+# Telegram Stars has no test network and is unaffected. Keep false for production.
+test_mode = false
+
 [cryptobot]
 enabled = true
 api_url = "https://pay.crypt.bot"

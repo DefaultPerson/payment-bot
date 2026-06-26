@@ -39,3 +39,27 @@ def test_quote_stars_invoice_keeps_one_shot_tariffs_non_recurring() -> None:
 def test_stars_subscription_period_is_only_for_one_month_tariff() -> None:
     assert stars_subscription_period(1) == STARS_RECURRING_MONTH_SECONDS
     assert stars_subscription_period(3) is None
+
+
+def test_quote_stars_invoice_honors_amount_override() -> None:
+    settings = Settings(
+        payments={"test_mode": True},
+        tariffs={
+            "items": [
+                {
+                    "code": "test",
+                    "duration_months": 3,
+                    "base_price_usd": Decimal("0.50"),
+                    "test_only": True,
+                    "stars_amount_override": 1,
+                }
+            ]
+        },
+    )
+    quote = quote_tariff(settings, "test", UserStatus.basic)
+
+    stars = quote_stars_invoice(settings, quote)
+
+    assert stars.amount == 1
+    assert stars.subscription_period is None
+    assert stars.gross_usd == Decimal("0.01")

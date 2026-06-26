@@ -36,13 +36,21 @@ from bot.jobs.notifications import notification_loop
 from bot.jobs.runner import TaskRunner
 from bot.jobs.xrocket_poller import xrocket_poller_loop
 from bot.keyboards.icons import apply_valid_icon_ids, configured_icon_ids, disable_icons
+from bot.middlewares import ActivityMiddleware, FsmCommandExitMiddleware
 from bot.payments.cryptobot import CryptoBotClient
 from bot.payments.xrocket import XRocketClient
 from bot.services.broadcast_ui import (
-    BroadcastCommandExitMiddleware,
     PersistentBroadcastUIMiddleware,
     create_redis_jobstore,
     set_scheduled_broadcast_bot,
+)
+
+# FSM states whose flows a slash-command must be able to escape (see FsmCommandExitMiddleware).
+_FSM_EXIT_PREFIXES = (
+    "BroadcastUIState",
+    "AdminGrantState",
+    "AdminRefsetState",
+    "AdminPromoState",
 )
 
 logger = logging.getLogger(__name__)
@@ -336,9 +344,15 @@ async def main() -> None:
         dispatcher.update.middleware.register(
             PersistentBroadcastUIMiddleware(broadcast_service, broadcast_scheduler)
         )
-        # A command always clears the composer's FSM state so it leaves the flow instead of
-        # being swallowed and deleted by the state-gated UI handlers.
-        dispatcher.message.outer_middleware.register(BroadcastCommandExitMiddleware())
+        # Stamp last_active_at (throttled) on every interaction so DAU/MAU is queryable.
+        dispatcher.update.middleware.register(
+            ActivityMiddleware(session_factory, redis_client)
+        )
+        # A command always clears a composer/admin-panel FSM state so it leaves the flow
+        # instead of being swallowed and deleted by the state-gated handlers.
+        dispatcher.message.outer_middleware.register(
+            FsmCommandExitMiddleware(_FSM_EXIT_PREFIXES)
+        )
         dispatcher.include_router(create_router())
         # Registered AFTER the app router so bot commands are always handled (not eaten by
         # the composer); only non-command input falls through to the FSM-state-gated UI.

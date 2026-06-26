@@ -26,9 +26,12 @@ class StarsInvoiceQuote:
 
 def quote_stars_invoice(settings: Settings, quote: TariffQuote) -> StarsInvoiceQuote:
     spendable_share = Decimal("1") - (settings.stars.app_store_fee_percent / Decimal("100"))
-    stars = (quote.net_usd / settings.stars.star_usd_rate / spendable_share).to_integral_value(
-        rounding=ROUND_CEILING,
-    )
+    if quote.tariff.stars_amount_override is not None:
+        stars = Decimal(quote.tariff.stars_amount_override)
+    else:
+        stars = (quote.net_usd / settings.stars.star_usd_rate / spendable_share).to_integral_value(
+            rounding=ROUND_CEILING,
+        )
     gross_usd = _money(Decimal(stars) * settings.stars.star_usd_rate)
     fee_usd = _money(gross_usd * (settings.stars.app_store_fee_percent / Decimal("100")))
     net_usd = _money(gross_usd - fee_usd)

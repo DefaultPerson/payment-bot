@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,6 +26,23 @@ def resolve_language(i18n: JsonI18n, language_code: str | None) -> str:
 
 async def get_user_by_tg_id(session: AsyncSession, tg_id: int) -> User | None:
     return await session.scalar(select(User).where(User.tg_id == tg_id))
+
+
+async def touch_user_last_active(
+    session: AsyncSession,
+    *,
+    tg_id: int,
+    now: datetime,
+) -> None:
+    """Stamp ``last_active_at`` for an existing user (single indexed UPDATE).
+
+    No-op if the user row does not exist yet — the upsert in ``/start``/``/language`` creates
+    it, and DAU/MAU only counts users who have at least reached one of those entry points.
+    Called (throttled) from ``ActivityMiddleware`` on every interaction.
+    """
+    await session.execute(
+        update(User).where(User.tg_id == tg_id).values(last_active_at=now),
+    )
 
 
 async def upsert_user_from_telegram(

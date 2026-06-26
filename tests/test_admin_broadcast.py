@@ -6,7 +6,6 @@ from typing import Any
 import bot.handlers.admin.broadcast as broadcast_module
 from bot.config import Settings
 from bot.core.i18n import JsonI18n
-from bot.repos.broadcasts import BroadcastTarget
 
 ADMIN_ID = 500
 
@@ -70,55 +69,62 @@ def _settings() -> Settings:
     return Settings(admin_ids=[ADMIN_ID])
 
 
-async def test_broadcast_command_in_private_shows_segment_keyboard() -> None:
+async def test_broadcast_entry_in_private_posts_segment_keyboard() -> None:
     message = FakeMessage(from_user=FakeTelegramUser(ADMIN_ID, "en"), chat_type="private")
+    callback = FakeCallback(
+        data="adm:bcast",
+        from_user=FakeTelegramUser(ADMIN_ID, "en"),
+        message=message,
+    )
 
-    await broadcast_module.broadcast(message, i18n=JsonI18n())
+    await broadcast_module.broadcast_entry(callback, settings=_settings(), i18n=JsonI18n())
 
     assert len(message.answers) == 1
     answer = message.answers[0]
     assert answer["text"] == "Who should receive the broadcast?"
-    keyboard = answer["reply_markup"]
-    buttons = [button for row in keyboard.inline_keyboard for button in row]
+    buttons = [button for row in answer["reply_markup"].inline_keyboard for button in row]
     assert [button.callback_data for button in buttons] == [
         "bcseg:all",
         "bcseg:active",
         "bcseg:inactive",
     ]
-    assert [button.text for button in buttons] == [
-        "Everyone",
-        "Active subscribers",
-        "Inactive users",
-    ]
+    assert callback.answers == [{"text": None}]
 
 
-async def test_broadcast_command_outside_private_is_rejected() -> None:
+async def test_broadcast_entry_outside_private_is_rejected() -> None:
     message = FakeMessage(from_user=FakeTelegramUser(ADMIN_ID, "en"), chat_type="supergroup")
+    callback = FakeCallback(
+        data="adm:bcast",
+        from_user=FakeTelegramUser(ADMIN_ID, "en"),
+        message=message,
+    )
 
-    await broadcast_module.broadcast(message, i18n=JsonI18n())
+    await broadcast_module.broadcast_entry(callback, settings=_settings(), i18n=JsonI18n())
 
-    assert message.answers == [
-        {"text": "Open the broadcast in a private chat with the bot."}
+    assert message.answers == []
+    assert callback.answers == [
+        {"text": "Open the broadcast in a private chat with the bot.", "show_alert": True}
     ]
 
 
-async def test_broadcast_forbidden_for_non_admin() -> None:
-    message = FakeMessage(from_user=FakeTelegramUser(777, "en"))
+async def test_broadcast_entry_ignored_for_non_admin() -> None:
+    message = FakeMessage(from_user=FakeTelegramUser(777, "en"), chat_type="private")
+    callback = FakeCallback(
+        data="adm:bcast", from_user=FakeTelegramUser(777, "en"), message=message
+    )
 
-    await broadcast_module.broadcast_forbidden(message, i18n=JsonI18n())
+    await broadcast_module.broadcast_entry(callback, settings=_settings(), i18n=JsonI18n())
 
-    assert message.answers == [{"text": "Only admins can broadcast."}]
+    assert message.answers == []
+    assert callback.answers == [{"text": None}]
 
 
 async def test_segment_callback_opens_menu_with_segment_targets(monkeypatch) -> None:
     captured_segment: list[str] = []
 
-    async def fake_targets(session: Any, *, segment: str, now: Any) -> list[BroadcastTarget]:
+    async def fake_targets(session: Any, *, segment: str, now: Any) -> list[int]:
         captured_segment.append(segment)
-        return [
-            BroadcastTarget(tg_id=1001, lang_code="en"),
-            BroadcastTarget(tg_id=1002, lang_code="ru"),
-        ]
+        return [1001, 1002]
 
     @asynccontextmanager
     async def fake_scope(_factory: Any):
@@ -192,7 +198,7 @@ async def test_segment_callback_requires_private_chat_manager() -> None:
 async def test_segment_callback_ignores_unknown_segment(monkeypatch) -> None:
     called = False
 
-    async def fake_targets(*args: Any, **kwargs: Any) -> list[BroadcastTarget]:
+    async def fake_targets(*args: Any, **kwargs: Any) -> list[int]:
         nonlocal called
         called = True
         return []

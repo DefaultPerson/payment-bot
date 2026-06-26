@@ -82,11 +82,13 @@ def test_build_commands_includes_user_commands() -> None:
     assert "/broadcast" not in names
 
 
-def test_build_commands_includes_admin_commands() -> None:
-    commands = menu_module().build_commands(JsonI18n(), "en", is_admin=True)
+def test_build_commands_excludes_admin_commands() -> None:
+    # Admin actions moved to the inline admin panel; the slash-command menu has no admin entries.
+    names = command_names(menu_module().build_commands(JsonI18n(), "en", is_admin=True))
 
-    assert "/grant" in command_names(commands)
-    assert "/broadcast" in command_names(commands)
+    assert names == {"/start", "/language"}
+    assert "/grant" not in names
+    assert "/broadcast" not in names
 
 
 async def test_set_user_commands_scopes_commands_to_chat() -> None:

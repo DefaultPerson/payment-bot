@@ -178,28 +178,3 @@ class PersistentBroadcastUIMiddleware(BaseMiddleware):
 
         data[self._manager_key] = manager
         return await handler(event, data)
-
-
-class BroadcastCommandExitMiddleware(BaseMiddleware):
-    """Let a bot command always escape the broadcast composer.
-
-    While the admin is inside a ``BroadcastUIState`` the library's state-gated handlers
-    delete every message in the chat — including ``/`` commands, which then never run. This
-    clears the broadcast FSM state when a command arrives, so the command is handled normally
-    and the admin leaves the flow (the trade-off is that a broadcast message cannot itself
-    start with ``/``). Register on ``dispatcher.message.outer_middleware``.
-    """
-
-    async def __call__(
-        self,
-        handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
-        event: TelegramObject,
-        data: dict[str, Any],
-    ) -> Any:
-        state = data.get("state")
-        text = getattr(event, "text", None)
-        if state is not None and text and text.startswith("/"):
-            current = await state.get_state()
-            if current and current.startswith("BroadcastUIState"):
-                await state.set_state(None)
-        return await handler(event, data)
