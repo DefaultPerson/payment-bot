@@ -335,3 +335,28 @@ async def test_run_summary_posts_only_once_per_start() -> None:
     assert len(service_channel.messages) == 1
     assert "Subscription notification run" in service_channel.messages[0]
     assert "first run since start" in service_channel.messages[0]
+
+
+def test_notification_run_result_is_empty() -> None:
+    assert notifications_module.NotificationRunResult().is_empty()
+    assert not notifications_module.NotificationRunResult(errors=1).is_empty()
+    assert not notifications_module.NotificationRunResult(three_day_sent=1).is_empty()
+    assert not notifications_module.NotificationRunResult(revoked=1).is_empty()
+
+
+async def test_run_summary_skips_when_all_zero() -> None:
+    service_channel = FakeServiceChannel()
+
+    await notifications_module._notify_service_channel(
+        service_channel, notifications_module.NotificationRunResult()
+    )
+
+    assert service_channel.messages == []
+
+    # an empty first run must not consume the once-per-start slot
+    await notifications_module._notify_service_channel(
+        service_channel, notifications_module.NotificationRunResult(revoked=1)
+    )
+
+    assert len(service_channel.messages) == 1
+    assert "Subscription notification run" in service_channel.messages[0]

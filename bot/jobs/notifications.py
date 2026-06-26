@@ -69,6 +69,12 @@ class NotificationRunResult:
             errors=self.errors + 1,
         )
 
+    def is_empty(self) -> bool:
+        """True when the run did nothing — no notifications, no revokes, no errors."""
+        return not any(
+            (self.three_day_sent, self.zero_day_sent, self.post_sent, self.revoked, self.errors)
+        )
+
 
 async def notify_subscriptions_once(
     *,
@@ -305,7 +311,9 @@ async def _notify_service_channel(
     result: NotificationRunResult,
 ) -> None:
     global _run_event_sent
-    if _run_event_sent:
+    # Skip the once-per-start heartbeat while the run is empty; an empty run must not
+    # consume the slot, so the first run that actually does something still reports it.
+    if _run_event_sent or result.is_empty():
         return
     _run_event_sent = True
     try:
