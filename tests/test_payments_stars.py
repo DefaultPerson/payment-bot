@@ -5,7 +5,6 @@ from decimal import Decimal
 from bot.config import Settings
 from bot.models import UserStatus
 from bot.payments.stars import (
-    STARS_RECURRING_MONTH_SECONDS,
     quote_stars_invoice,
     stars_subscription_period,
 )
@@ -20,7 +19,8 @@ def test_quote_stars_invoice_compensates_app_store_fee_and_rounds_up() -> None:
 
     assert stars.amount == 6484
     assert stars.currency == "XTR"
-    assert stars.subscription_period == STARS_RECURRING_MONTH_SECONDS
+    # One-shot for every duration: Stars subscriptions can't be sent via answerInvoice.
+    assert stars.subscription_period is None
     assert stars.gross_usd == Decimal("84.29")
     assert stars.fee_usd == Decimal("25.29")
     assert stars.net_usd == Decimal("59.00")
@@ -36,8 +36,10 @@ def test_quote_stars_invoice_keeps_one_shot_tariffs_non_recurring() -> None:
     assert stars.amount > 0
 
 
-def test_stars_subscription_period_is_only_for_one_month_tariff() -> None:
-    assert stars_subscription_period(1) == STARS_RECURRING_MONTH_SECONDS
+def test_stars_subscription_period_is_always_none_one_shot() -> None:
+    # Stars invoices are one-shot for every duration (no recurring subscription_period),
+    # because Telegram only allows subscriptions through createInvoiceLink.
+    assert stars_subscription_period(1) is None
     assert stars_subscription_period(3) is None
 
 

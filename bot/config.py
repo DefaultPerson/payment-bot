@@ -76,6 +76,10 @@ class XRocketConfig(BaseModel):
     )
     testnet: bool = False
     base_url: str | None = None
+    # The aiorocket2 SDK's built-in testnet host (pay.testnet.xrocket.tg) is dead (TLS
+    # handshake failure). When payments.test_mode is on we override base_url with this
+    # working testnet endpoint instead.
+    testnet_base_url: str = "https://pay.testnet.xrocket.exchange"
     currency: str = Field(default="USDT", min_length=1)
     fee_percent: Decimal = Field(default=Decimal("0"), ge=0, lt=100)
     invoice_expires_seconds: int = Field(default=3600, ge=1, le=86_400)
@@ -92,9 +96,9 @@ class PaymentsConfig(BaseModel):
     """Master switch: route live providers to their TEST networks.
 
     When ``test_mode`` is on, CryptoBot uses ``cryptobot.testnet_api_url`` with
-    ``CRYPTOBOT_TESTNET_TOKEN`` and xRocket runs ``testnet=True`` using
-    ``XROCKET_TESTNET_TOKEN`` (applied in Settings resolution). Telegram Stars
-    has no test network and is unaffected.
+    ``CRYPTOBOT_TESTNET_TOKEN`` and xRocket points ``base_url`` at
+    ``xrocket.testnet_base_url`` using ``XROCKET_TESTNET_TOKEN`` (applied in Settings
+    resolution). Telegram Stars has no test network and is unaffected.
     """
 
     test_mode: bool = False
@@ -419,6 +423,7 @@ class Settings(BaseSettings):
         if self.cryptobot_testnet_token is not None:
             self.cryptobot.token = self.cryptobot_testnet_token
         self.xrocket.testnet = True
+        self.xrocket.base_url = self.xrocket.testnet_base_url
         if self.xrocket_testnet_token is not None:
             self.xrocket.token = self.xrocket_testnet_token
 

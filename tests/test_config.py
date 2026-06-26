@@ -479,6 +479,7 @@ def test_payments_test_mode_routes_providers_to_testnet(tmp_path: Path) -> None:
     assert settings.cryptobot.token is not None
     assert settings.cryptobot.token.get_secret_value() == "test-crypto"
     assert settings.xrocket.testnet is True
+    assert settings.xrocket.base_url == "https://pay.testnet.xrocket.exchange"
     assert settings.xrocket.token is not None
     assert settings.xrocket.token.get_secret_value() == "test-xrocket"
 

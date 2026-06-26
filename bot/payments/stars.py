@@ -46,8 +46,12 @@ def quote_stars_invoice(settings: Settings, quote: TariffQuote) -> StarsInvoiceQ
 
 
 def stars_subscription_period(duration_months: int) -> int | None:
-    if duration_months == 1:
-        return STARS_RECURRING_MONTH_SECONDS
+    # Telegram Stars subscriptions (subscription_period) can ONLY be created via
+    # createInvoiceLink. Sending one inline through sendInvoice/answerInvoice fails with
+    # "Bad Request: SUBSCRIPTION_EXPORT_MISSING". We issue one-shot Stars invoices for every
+    # duration; renewal is manual, like crypto/xRocket. STARS_RECURRING_MONTH_SECONDS is kept
+    # for the dormant recurring-processing path and a possible future invoice-link migration.
+    del duration_months
     return None
 
 

@@ -38,6 +38,9 @@ poll_batch_size = 50
 [xrocket]
 enabled = false
 testnet = false
+# The SDK's built-in testnet host (pay.testnet.xrocket.tg) is dead; when payments.test_mode
+# is on, base_url is overridden with this working testnet endpoint.
+testnet_base_url = "https://pay.testnet.xrocket.exchange"
 currency = "USDT"
 fee_percent = 0
 invoice_expires_seconds = 3600
