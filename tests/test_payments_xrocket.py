@@ -106,7 +106,7 @@ async def test_create_invoice_maps_decimal_amount_and_payload_to_sdk() -> None:
             "create_invoice",
             {
                 "amount": 73.3,
-                "min_payment": 0,
+                "min_payment": None,
                 "num_payments": 1,
                 "currency": "USDT",
                 "description": "Hydra 1m",

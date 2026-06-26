@@ -75,9 +75,13 @@ class XRocketClient:
     ) -> XRocketInvoice:
         client = self._get_client()
         try:
+            # min_payment MUST be None (not 0) for a fixed-amount invoice. The xRocket API
+            # rejects a request that specifies BOTH amount and minPayment with "Only one of
+            # the parameters amount or minPayment must be specified"; 0 counts as specified.
+            # minPayment is only for multi-payment invoices where amount is null.
             invoice = await client.create_invoice(
                 amount=float(amount),
-                min_payment=0,
+                min_payment=None,
                 num_payments=1,
                 currency=currency,
                 description=description,
