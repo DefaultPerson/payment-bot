@@ -186,59 +186,6 @@ async def test_revoke_protected_chat_access_temp_bans_then_unbans() -> None:
     assert bot.unbans[0]["only_if_banned"] is True
 
 
-async def test_revoke_scopes_bans_to_plan_chats() -> None:
-    from bot.services.access import revoke_protected_chat_access
-
-    bot = FakeBot()
-    settings = Settings(
-        access={
-            "revoke_ban_seconds": 60,
-            "protected_chats": [
-                {"chat_id": -1001, "title": "Signals"},
-                {"chat_id": -1002, "title": "Research"},
-            ],
-        },
-        tariffs={
-            "plans": [{"code": "vip", "chat_ids": [-1002]}],
-            "items": [
-                {
-                    "code": "vip_1m",
-                    "plan_code": "vip",
-                    "duration_months": 1,
-                    "base_price_usd": "59",
-                }
-            ],
-        },
-    )
-    now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
-
-    await revoke_protected_chat_access(bot, settings, tg_id=1001, now=now, plan_code="vip")
-
-    # The vip plan opens only -1002, so revocation must not touch -1001.
-    assert [call["chat_id"] for call in bot.bans] == [-1002]
-    assert [call["chat_id"] for call in bot.unbans] == [-1002]
-
-
-async def test_revoke_without_plan_code_bans_all_protected_chats() -> None:
-    from bot.services.access import revoke_protected_chat_access
-
-    bot = FakeBot()
-    settings = Settings(
-        access={
-            "revoke_ban_seconds": 60,
-            "protected_chats": [
-                {"chat_id": -1001, "title": "Signals"},
-                {"chat_id": -1002, "title": "Research"},
-            ],
-        },
-    )
-    now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
-
-    await revoke_protected_chat_access(bot, settings, tg_id=1001, now=now)
-
-    assert [call["chat_id"] for call in bot.bans] == [-1001, -1002]
-
-
 def test_access_and_payment_locale_keys_are_available() -> None:
     i18n = JsonI18n(fallback_language="en")
 

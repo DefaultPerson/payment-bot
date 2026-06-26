@@ -274,9 +274,15 @@ def create_promo_router() -> Router:
     router = Router(name="promo")
     router.callback_query(F.data.startswith(CB_PROMO_BUY_PREFIX))(promo_buy_callback)
     router.callback_query(F.data == CB_PROMO_CANCEL)(promo_cancel_callback)
-    # State-gated text capture must precede the /promo command so an in-flow message is
-    # consumed by the FSM handler even if it happens to start with "/promo".
-    router.message(StateFilter(BuyPromoStates.waiting_code))(promo_code_message)
+    # Capture only plain text (no commands) while waiting for a promo code, so /start,
+    # /promo, /language etc. still reach their own handlers instead of being swallowed and
+    # misread as a code. A command-based exit leaves the state set; the start handler
+    # clears it (bot/handlers/start.py).
+    router.message(
+        StateFilter(BuyPromoStates.waiting_code),
+        F.text,
+        ~F.text.startswith("/"),
+    )(promo_code_message)
     router.message(Command("promo"))(promo_command)
     router.callback_query(F.data == CB_PROMO)(promo_callback)
     return router

@@ -129,13 +129,13 @@ async def revoke_protected_chat_access(
     *,
     tg_id: int,
     now: datetime,
-    plan_code: str | None = None,
 ) -> None:
+    # Expiry removes the user's only subscription, so they lose access entirely — revoke
+    # from EVERY protected chat. Per-plan scoping is intentionally NOT applied here: the
+    # ban+unban pair is a harmless no-op for a non-member, and scoping the revoke would
+    # orphan chats a user had joined under a previous/broader plan.
     until_date = now + timedelta(seconds=settings.access.revoke_ban_seconds)
-    allowed = allowed_chat_ids_for_plan(settings, plan_code)
     for chat in settings.access.protected_chats:
-        if chat.chat_id not in allowed:
-            continue
         await bot.ban_chat_member(
             chat_id=chat.chat_id,
             user_id=tg_id,

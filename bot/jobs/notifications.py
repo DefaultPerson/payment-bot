@@ -257,13 +257,7 @@ async def _process_revoke_batch(
             errors += 1
             continue
         try:
-            await revoke_protected_chat_access(
-                bot,
-                settings,
-                tg_id=user.tg_id,
-                now=now,
-                plan_code=subscription.plan_code,
-            )
+            await revoke_protected_chat_access(bot, settings, tg_id=user.tg_id, now=now)
         except Exception:
             logger.exception(
                 "failed to revoke subscription access",

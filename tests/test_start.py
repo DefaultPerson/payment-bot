@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any, get_type_hints
 
 from aiogram import Bot
+from aiogram.fsm.context import FSMContext
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -139,11 +140,20 @@ def test_start_handler_has_aiogram_di_compatible_signature() -> None:
     signature = inspect.signature(start)
     type_hints = get_type_hints(start)
 
-    assert list(signature.parameters) == ["message", "settings", "i18n", "session_factory", "bot"]
+    assert list(signature.parameters) == [
+        "message",
+        "settings",
+        "i18n",
+        "session_factory",
+        "bot",
+        "state",
+    ]
     assert type_hints["settings"] is Settings
     assert type_hints["i18n"] is JsonI18n
     assert type_hints["session_factory"] == async_sessionmaker[AsyncSession]
     assert type_hints["bot"] is Bot
+    # state is aiogram's FSMContext (optional so direct unit calls can omit it).
+    assert type_hints["state"] == (FSMContext | None)
 
 
 async def test_start_calls_user_upsert_commands_and_answers_main_menu(monkeypatch) -> None:
@@ -221,6 +231,54 @@ async def test_start_calls_user_upsert_commands_and_answers_main_menu(monkeypatc
     assert len(message.answers) == 1
     assert "Welcome to Hydra Monitors payment bot." in message.answers[0]["text"]
     assert message.answers[0]["reply_markup"] is menu_markup
+
+
+async def test_start_clears_pending_fsm_state(monkeypatch) -> None:
+    import bot.handlers.start as start_module
+
+    class FakeState:
+        def __init__(self) -> None:
+            self.cleared = False
+
+        async def clear(self) -> None:
+            self.cleared = True
+
+    async def fake_upsert(session: FakeSession, **kwargs: Any) -> UpsertedUser:
+        return UpsertedUser(
+            user=PersistedUser(
+                tg_id=kwargs["tg_id"],
+                username=None,
+                first_name=None,
+                lang_code="en",
+            ),
+            created=False,
+        )
+
+    monkeypatch.setattr(start_module, "upsert_user_from_telegram_with_created", fake_upsert)
+    monkeypatch.setattr(start_module, "set_user_commands", _noop_async)
+    monkeypatch.setattr(start_module, "main_menu_keyboard", lambda *a, **k: object())
+
+    state = FakeState()
+    message = FakeMessage(
+        from_user=FakeTelegramUser(id=1, language_code="en"),
+        chat=FakeChat(id=1),
+    )
+
+    await start(
+        message,
+        settings=Settings(),
+        i18n=JsonI18n(),
+        session_factory=FakeSessionFactory(),
+        bot=object(),
+        state=state,
+    )
+
+    # /start is the universal reset: a lingering inline-promo FSM must be cleared.
+    assert state.cleared is True
+
+
+async def _noop_async(*args: Any, **kwargs: Any) -> None:
+    return None
 
 
 async def test_start_does_not_upsert_or_set_commands_when_from_user_is_missing(

@@ -141,6 +141,10 @@ class TariffsConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_codes(self) -> TariffsConfig:
+        if not self.plans:
+            msg = "at least one tariff plan must be configured"
+            raise ValueError(msg)
+
         plan_codes: set[str] = set()
         plan_duplicates: set[str] = set()
         for plan in self.plans:
@@ -181,14 +185,20 @@ class TariffsConfig(BaseModel):
 class LoyaltyConfig(BaseModel):
     bronze_discount_percent: Decimal = Field(default=Decimal("10"), ge=0, lt=100)
     silver_active_days: int = Field(default=90, ge=1)
-    silver_monthly_price_usd: Decimal = Field(default=Decimal("65"), gt=0)
+    # Fixed monthly price for the silver/gold tiers. Keep these at or below the cheapest
+    # basic monthly rate (base_price_usd / duration_months) — otherwise loyalty becomes a
+    # penalty (a loyal silver/gold user would pay more than a brand-new basic user).
+    silver_monthly_price_usd: Decimal = Field(default=Decimal("50"), gt=0)
     gold_active_days: int = Field(default=180, ge=1)
-    gold_monthly_price_usd: Decimal = Field(default=Decimal("50"), gt=0)
+    gold_monthly_price_usd: Decimal = Field(default=Decimal("45"), gt=0)
 
     @model_validator(mode="after")
     def validate_threshold_order(self) -> LoyaltyConfig:
         if self.gold_active_days <= self.silver_active_days:
             msg = "gold_active_days must be greater than silver_active_days"
+            raise ValueError(msg)
+        if self.gold_monthly_price_usd > self.silver_monthly_price_usd:
+            msg = "gold_monthly_price_usd must not exceed silver_monthly_price_usd"
             raise ValueError(msg)
         return self
 

@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 
 from aiogram import Bot, Router
 from aiogram.filters import CommandStart
+from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -83,7 +84,12 @@ async def start(
     i18n: JsonI18n,
     session_factory: async_sessionmaker[AsyncSession],
     bot: Bot,
+    state: FSMContext | None = None,
 ) -> None:
+    # /start is the universal reset: drop any in-flight FSM (e.g. the inline promo prompt)
+    # so a stale state can't swallow the user's next message.
+    if state is not None:
+        await state.clear()
     context = message_context(message, settings)
     lang_code = i18n.resolve_language(context.language_code)
     referral_result: ReferralBindResult | None = None

@@ -58,8 +58,8 @@ def test_quote_bronze_user_applies_duration_discount_and_status_discount() -> No
 @pytest.mark.parametrize(
     ("status", "expected_net", "expected_gross"),
     [
-        (UserStatus.silver, Decimal("185.25"), Decimal("190.98")),
-        (UserStatus.gold, Decimal("142.50"), Decimal("146.91")),
+        (UserStatus.silver, Decimal("142.50"), Decimal("146.91")),
+        (UserStatus.gold, Decimal("128.25"), Decimal("132.22")),
     ],
 )
 def test_quote_fixed_monthly_status_prices_apply_duration_discount(

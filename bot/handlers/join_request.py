@@ -48,15 +48,6 @@ async def active_subscription_for(
     return None
 
 
-async def has_active_subscription(
-    session: AsyncSession,
-    *,
-    tg_id: int,
-    now: datetime,
-) -> bool:
-    return await active_subscription_for(session, tg_id=tg_id, now=now) is not None
-
-
 async def handle_chat_join_request(
     event: ChatJoinRequest,
     settings: Settings,
