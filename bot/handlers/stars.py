@@ -163,6 +163,7 @@ async def _send_access(
             tg_id=result.user_tg_id,
             lang_code=result.lang_code,
             now=now,
+            plan_code=result.plan_code,
         )
     except Exception:
         logger.exception(

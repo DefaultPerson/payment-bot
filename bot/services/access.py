@@ -5,30 +5,41 @@ from datetime import datetime, timedelta
 from html import escape
 from typing import Protocol
 
-from bot.config import Settings
+from bot.config import PlanConfig, ProtectedChatConfig, Settings
 from bot.core.i18n import JsonI18n
-from bot.repos.tariffs import get_plan
+from bot.repos.tariffs import default_plan, get_plan
 
 INVITE_LINK_NAME_LIMIT = 32
+
+
+def _resolve_plan_or_default(settings: Settings, plan_code: str | None) -> PlanConfig | None:
+    """Resolve ``plan_code`` to a plan, falling back to the default plan when it is None or
+    unknown (a retired/renamed code). This is fail-SAFE: an unresolvable plan grants the
+    default plan's access, never blanket access to every chat."""
+    if plan_code is not None:
+        try:
+            return get_plan(settings, plan_code)
+        except LookupError:
+            pass
+    try:
+        return default_plan(settings)
+    except LookupError:
+        return None
 
 
 def allowed_chat_ids_for_plan(settings: Settings, plan_code: str | None) -> set[int]:
     """Chats a subscription on ``plan_code`` may enter.
 
-    A plan with an empty ``chat_ids`` (and an unknown/None plan) opens every configured
-    protected chat — the current single-plan behaviour. A plan that lists chats is
-    restricted to that subset.
+    A plan with an empty ``chat_ids`` opens every configured protected chat (the explicit
+    single-plan convention). A plan that lists chats is restricted to that subset
+    (intersected with the configured protected chats). A None/unknown plan falls back to
+    the default plan rather than opening everything.
     """
     all_chats = {chat.chat_id for chat in settings.access.protected_chats}
-    if plan_code is None:
+    plan = _resolve_plan_or_default(settings, plan_code)
+    if plan is None or not plan.chat_ids:
         return all_chats
-    try:
-        plan = get_plan(settings, plan_code)
-    except LookupError:
-        return all_chats
-    if not plan.chat_ids:
-        return all_chats
-    return set(plan.chat_ids)
+    return {chat_id for chat_id in plan.chat_ids if chat_id in all_chats}
 
 
 class SupportsAccessBot(Protocol):
@@ -76,10 +87,12 @@ async def create_protected_chat_invite_links(
     settings: Settings,
     *,
     now: datetime,
+    chats: list[ProtectedChatConfig] | None = None,
 ) -> list[AccessInvite]:
     expire_date = now + timedelta(seconds=settings.access.invite_link_ttl_seconds)
     invites: list[AccessInvite] = []
-    for chat in settings.access.protected_chats:
+    target_chats = settings.access.protected_chats if chats is None else chats
+    for chat in target_chats:
         # Join-request links (no member_limit — Telegram forbids combining the two).
         # Entry is authorized per joining tg_id by the chat_join_request handler, not by
         # trusting a forwardable link, so a shared link can no longer grant access.
@@ -101,8 +114,23 @@ async def send_access_links(
     tg_id: int,
     lang_code: str,
     now: datetime,
+    plan_code: str | None = None,
 ) -> None:
-    if not settings.access.protected_chats:
+    allowed = allowed_chat_ids_for_plan(settings, plan_code)
+
+    # Reconcile membership to the current plan: kick the user from any protected chat their
+    # plan no longer unlocks (e.g. after switching to a narrower plan). The ban+unban kick
+    # is a no-op for a non-member, and for a plan that opens all chats the disallowed set is
+    # empty — so this is a no-op for the single-plan setup.
+    disallowed = [
+        chat.chat_id for chat in settings.access.protected_chats if chat.chat_id not in allowed
+    ]
+    await _kick_from_chats(bot, settings, tg_id=tg_id, chat_ids=disallowed, now=now)
+
+    allowed_chats = [
+        chat for chat in settings.access.protected_chats if chat.chat_id in allowed
+    ]
+    if not allowed_chats:
         await bot.send_message(
             chat_id=tg_id,
             text=i18n.gettext(
@@ -113,7 +141,7 @@ async def send_access_links(
         )
         return
 
-    invites = await create_protected_chat_invite_links(bot, settings, now=now)
+    invites = await create_protected_chat_invite_links(bot, settings, now=now, chats=allowed_chats)
     links = "\n".join(
         f"{escape(invite.title)}: {escape(invite.invite_link)}" for invite in invites
     )
@@ -134,16 +162,29 @@ async def revoke_protected_chat_access(
     # from EVERY protected chat. Per-plan scoping is intentionally NOT applied here: the
     # ban+unban pair is a harmless no-op for a non-member, and scoping the revoke would
     # orphan chats a user had joined under a previous/broader plan.
+    chat_ids = [chat.chat_id for chat in settings.access.protected_chats]
+    await _kick_from_chats(bot, settings, tg_id=tg_id, chat_ids=chat_ids, now=now)
+
+
+async def _kick_from_chats(
+    bot: SupportsAccessBot,
+    settings: Settings,
+    *,
+    tg_id: int,
+    chat_ids: list[int],
+    now: datetime,
+) -> None:
+    """Temp-ban then unban (a kick that allows a later rejoin) the user from each chat."""
     until_date = now + timedelta(seconds=settings.access.revoke_ban_seconds)
-    for chat in settings.access.protected_chats:
+    for chat_id in chat_ids:
         await bot.ban_chat_member(
-            chat_id=chat.chat_id,
+            chat_id=chat_id,
             user_id=tg_id,
             until_date=until_date,
             revoke_messages=False,
         )
         await bot.unban_chat_member(
-            chat_id=chat.chat_id,
+            chat_id=chat_id,
             user_id=tg_id,
             only_if_banned=True,
         )

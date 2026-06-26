@@ -119,6 +119,7 @@ class PaidInvoiceResult:
     net: Decimal | None = None
     currency: str | None = None
     subscription_expires_at: datetime | None = None
+    plan_code: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -937,6 +938,7 @@ def _paid_result(
         net=invoice.net,
         currency=invoice.currency,
         subscription_expires_at=subscription.expires_at if subscription is not None else None,
+        plan_code=subscription.plan_code if subscription is not None else None,
     )
 
 

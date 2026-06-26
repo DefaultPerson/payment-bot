@@ -186,6 +186,93 @@ async def test_revoke_protected_chat_access_temp_bans_then_unbans() -> None:
     assert bot.unbans[0]["only_if_banned"] is True
 
 
+def _two_plan_settings() -> Settings:
+    # default (first active) plan "base" opens only -1001; "vip" opens only -1002.
+    return Settings(
+        bot={"support_username": "HydraSupport"},
+        access={
+            "invite_link_ttl_seconds": 600,
+            "protected_chats": [
+                {"chat_id": -1001, "title": "Signals"},
+                {"chat_id": -1002, "title": "Research"},
+            ],
+        },
+        tariffs={
+            "plans": [
+                {"code": "base", "chat_ids": [-1001]},
+                {"code": "vip", "chat_ids": [-1002]},
+            ],
+            "items": [
+                {
+                    "code": "base_1m",
+                    "plan_code": "base",
+                    "duration_months": 1,
+                    "base_price_usd": "59",
+                },
+                {
+                    "code": "vip_1m",
+                    "plan_code": "vip",
+                    "duration_months": 1,
+                    "base_price_usd": "99",
+                },
+            ],
+        },
+    )
+
+
+def test_allowed_chats_unknown_or_none_plan_falls_back_to_default_not_all() -> None:
+    from bot.services.access import allowed_chat_ids_for_plan
+
+    settings = _two_plan_settings()
+
+    # None / retired plan code must resolve to the default (base) plan, NOT open every chat.
+    assert allowed_chat_ids_for_plan(settings, None) == {-1001}
+    assert allowed_chat_ids_for_plan(settings, "retired") == {-1001}
+    assert allowed_chat_ids_for_plan(settings, "vip") == {-1002}
+
+
+async def test_send_access_links_reconciles_membership_to_plan() -> None:
+    bot = FakeBot()
+    settings = _two_plan_settings()
+    now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
+
+    await send_access_links(
+        bot,
+        settings,
+        JsonI18n(fallback_language="en"),
+        tg_id=1001,
+        lang_code="en",
+        now=now,
+        plan_code="vip",
+    )
+
+    # vip opens only -1002: kick from -1001 and only offer the -1002 link.
+    assert [call["chat_id"] for call in bot.bans] == [-1001]
+    assert [call["chat_id"] for call in bot.unbans] == [-1001]
+    assert [call["chat_id"] for call in bot.invite_calls] == [-1002]
+    assert "Research: https://t.me/+-1002" in bot.messages[0]["text"]
+    assert "Signals" not in bot.messages[0]["text"]
+
+
+async def test_send_access_links_single_plan_does_not_kick_and_offers_all() -> None:
+    bot = FakeBot()
+    settings = make_settings()  # single default plan, chat_ids=[] -> opens all chats
+    now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
+
+    await send_access_links(
+        bot,
+        settings,
+        JsonI18n(fallback_language="en"),
+        tg_id=1001,
+        lang_code="en",
+        now=now,
+        plan_code="main",
+    )
+
+    assert bot.bans == []
+    assert [call["chat_id"] for call in bot.invite_calls] == [-1001, -1002]
+
+
 def test_access_and_payment_locale_keys_are_available() -> None:
     i18n = JsonI18n(fallback_language="en")
 
