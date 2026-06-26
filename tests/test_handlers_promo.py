@@ -103,7 +103,7 @@ async def test_promo_command_without_code_replies_usage() -> None:
         session_factory=FakeSessionFactory(),
     )
 
-    assert message.answers == [{"text": "Usage: /promo <code>"}]
+    assert message.answers == [{"text": "Usage: /promo &lt;code&gt;"}]
 
 
 async def test_promo_callback_prompts_for_command() -> None:
@@ -118,5 +118,5 @@ async def test_promo_callback_prompts_for_command() -> None:
     await promo_module.promo_callback(callback, i18n=JsonI18n())
 
     assert callback.answers == [
-        {"text": "Send /promo <code> to apply a promo code.", "show_alert": True}
+        {"text": "Send /promo &lt;code&gt; to apply a promo code.", "show_alert": True}
     ]

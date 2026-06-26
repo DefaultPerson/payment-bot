@@ -210,7 +210,7 @@ async def test_grant_with_missing_or_invalid_args_replies_usage(text: str) -> No
         service_channel=FakeServiceChannel(),
     )
 
-    assert message.answers == [{"text": "Usage: /grant <telegram_id> <days>"}]
+    assert message.answers == [{"text": "Usage: /grant &lt;telegram_id&gt; &lt;days&gt;"}]
     assert session_factory.calls == 0
 
 
