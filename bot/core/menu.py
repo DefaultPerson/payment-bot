@@ -10,7 +10,7 @@ from bot.core.i18n import JsonI18n
 
 logger = logging.getLogger(__name__)
 
-USER_COMMANDS = ("start", "profile", "language", "support")
+USER_COMMANDS = ("start", "language")
 ADMIN_COMMANDS = ("grant", "broadcast")
 TELEGRAM_LANGUAGE_CODES = {
     "ua": "uk",

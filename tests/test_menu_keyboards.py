@@ -75,10 +75,14 @@ def keyboard_module():
 
 def test_build_commands_includes_user_commands() -> None:
     commands = menu_module().build_commands(JsonI18n(), "en", is_admin=False)
+    names = command_names(commands)
 
-    assert {"/start", "/profile", "/language", "/support"} <= command_names(commands)
-    assert "/grant" not in command_names(commands)
-    assert "/broadcast" not in command_names(commands)
+    assert {"/start", "/language"} <= names
+    # /profile and /support are reachable via menu buttons, not the command list
+    assert "/profile" not in names
+    assert "/support" not in names
+    assert "/grant" not in names
+    assert "/broadcast" not in names
 
 
 def test_build_commands_includes_admin_commands() -> None:
