@@ -69,7 +69,10 @@
   "refset.forbidden": "Только администраторы могут менять реферальный процент.",
   "refset.success": "Реферальный процент для пользователя {user_id} установлен на {percent}%. Обновлено связей: {updated}.",
   "refset.success.future": "Реферальный процент для пользователя {user_id} установлен на {percent}%. Новые рефералы будут использовать его.",
-  "broadcast.usage": "Использование: /broadcast &lt;all|active|inactive&gt; &lt;текст&gt;",
-  "broadcast.forbidden": "Только администраторы могут делать рассылку.",
-  "broadcast.success": "Рассылка завершена для {segment}: отправлено {successful}/{total}, ошибок: {failed}."
+  "broadcast.choose_segment": "Кому отправить рассылку?",
+  "broadcast.segment.all": "Всем",
+  "broadcast.segment.active": "Активным подписчикам",
+  "broadcast.segment.inactive": "Неактивным",
+  "broadcast.private_only": "Откройте рассылку в личном чате с ботом.",
+  "broadcast.forbidden": "Только администраторы могут делать рассылку."
 }

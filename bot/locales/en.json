@@ -69,7 +69,10 @@
   "refset.forbidden": "Only admins can set referral percent.",
   "refset.success": "Referral percent for user {user_id} set to {percent}%. Updated links: {updated}.",
   "refset.success.future": "Referral percent for user {user_id} set to {percent}%. Future referrals will use it.",
-  "broadcast.usage": "Usage: /broadcast &lt;all|active|inactive&gt; &lt;text&gt;",
-  "broadcast.forbidden": "Only admins can broadcast.",
-  "broadcast.success": "Broadcast finished for {segment}: {successful}/{total} sent, {failed} failed."
+  "broadcast.choose_segment": "Who should receive the broadcast?",
+  "broadcast.segment.all": "Everyone",
+  "broadcast.segment.active": "Active subscribers",
+  "broadcast.segment.inactive": "Inactive users",
+  "broadcast.private_only": "Open the broadcast in a private chat with the bot.",
+  "broadcast.forbidden": "Only admins can broadcast."
 }

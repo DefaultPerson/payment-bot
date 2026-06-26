@@ -62,8 +62,14 @@ Telegram commands currently implemented:
 /referral
 /grant <user_id> <days>   # admins only
 /refset <user_id> <percent>   # admins only
-/broadcast <all|active|inactive> <text>   # admins only
+/broadcast   # admins only — opens the interactive broadcast composer
 ```
+
+`/broadcast` (admins, in a private chat) first asks which segment to target
+(all/active/inactive), then opens the `aiogram-broadcast` interactive composer:
+send the message content (text/media), optionally add inline URL buttons, preview,
+and send now or schedule for later. Scheduled broadcasts use an in-memory APScheduler
+job store and are not persisted across restarts.
 
 ## CryptoBot
 

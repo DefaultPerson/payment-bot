@@ -4,13 +4,18 @@ import asyncio
 import logging
 import signal
 from collections.abc import Callable
+from contextlib import suppress
 from pathlib import Path
 from types import FrameType
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.fsm.storage.redis import RedisStorage
+from aiogram_broadcast import BroadcastScheduler, BroadcastService, RedisBroadcastStorage
+from aiogram_broadcast.ui import BroadcastUIHandlers
 from aiohttp import web
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from bot.config import Settings, load_settings
 from bot.core.db import check_database, create_engine, create_session_factory
@@ -33,6 +38,11 @@ from bot.jobs.xrocket_poller import xrocket_poller_loop
 from bot.keyboards.icons import apply_valid_icon_ids, configured_icon_ids, disable_icons
 from bot.payments.cryptobot import CryptoBotClient
 from bot.payments.xrocket import XRocketClient
+from bot.services.broadcast_ui import (
+    PersistentBroadcastUIMiddleware,
+    create_redis_jobstore,
+    set_scheduled_broadcast_bot,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -274,6 +284,8 @@ async def main() -> None:
     task_runner = TaskRunner()
     engine = None
     redis_client = None
+    fsm_storage = None
+    apscheduler = None
     bot = None
     dispatcher = None
     cryptobot_client = None
@@ -292,7 +304,8 @@ async def main() -> None:
         await resolve_bot_username(bot, settings)
         await configure_menu_icons(bot, settings)
         await configure_event_emoji(bot, settings)
-        dispatcher = Dispatcher()
+        fsm_storage = RedisStorage.from_url(settings.redis_url)
+        dispatcher = Dispatcher(storage=fsm_storage)
         i18n = JsonI18n(
             locales_dir=Path(__file__).resolve().parent / "locales",
             fallback_language=settings.bot.fallback_language,
@@ -307,6 +320,24 @@ async def main() -> None:
         dispatcher["cryptobot_client"] = cryptobot_client
         dispatcher["xrocket_client"] = xrocket_client
         dispatcher["metrics"] = metrics
+        # Broadcast UI flow (aiogram-broadcast): interactive composer for /broadcast.
+        # The send path copies the composed message to the segment ids passed to
+        # open_menu(); the service/storage below are only the constructor deps the UI
+        # needs, not used to pick recipients. Scheduled broadcasts persist in a Redis job
+        # store and run via a module-level job, so they survive a restart.
+        set_scheduled_broadcast_bot(bot)
+        broadcast_service = BroadcastService(bot, RedisBroadcastStorage(redis_client))
+        apscheduler = AsyncIOScheduler(
+            jobstores={"default": create_redis_jobstore(settings.redis_url)}
+        )
+        apscheduler.start()
+        broadcast_scheduler = BroadcastScheduler(broadcast_service, apscheduler)
+        dispatcher.update.middleware.register(
+            PersistentBroadcastUIMiddleware(broadcast_service, broadcast_scheduler)
+        )
+        # Registered before the app router so its FSM-state-gated handlers capture
+        # in-flow composer input first.
+        BroadcastUIHandlers().register(dispatcher)
         dispatcher.include_router(create_router())
         start_background_jobs(
             task_runner=task_runner,
@@ -359,6 +390,11 @@ async def main() -> None:
         if dispatcher is not None:
             await stop_dispatcher(dispatcher)
         await task_runner.stop()
+        if apscheduler is not None:
+            with suppress(Exception):
+                apscheduler.shutdown(wait=False)
+        if fsm_storage is not None:
+            await fsm_storage.close()
         await close_payment_clients(
             cryptobot_client=cryptobot_client,
             xrocket_client=xrocket_client,

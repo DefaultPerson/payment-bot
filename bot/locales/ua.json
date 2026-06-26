@@ -69,7 +69,10 @@
   "refset.forbidden": "Лише адміністратори можуть змінювати реферальний відсоток.",
   "refset.success": "Реферальний відсоток для користувача {user_id} встановлено на {percent}%. Оновлено зв'язків: {updated}.",
   "refset.success.future": "Реферальний відсоток для користувача {user_id} встановлено на {percent}%. Нові реферали використовуватимуть його.",
-  "broadcast.usage": "Використання: /broadcast &lt;all|active|inactive&gt; &lt;текст&gt;",
-  "broadcast.forbidden": "Лише адміністратори можуть робити розсилку.",
-  "broadcast.success": "Розсилку завершено для {segment}: надіслано {successful}/{total}, помилок: {failed}."
+  "broadcast.choose_segment": "Кому надіслати розсилку?",
+  "broadcast.segment.all": "Усім",
+  "broadcast.segment.active": "Активним підписникам",
+  "broadcast.segment.inactive": "Неактивним",
+  "broadcast.private_only": "Відкрийте розсилку в особистому чаті з ботом.",
+  "broadcast.forbidden": "Лише адміністратори можуть робити розсилку."
 }

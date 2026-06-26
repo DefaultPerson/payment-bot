@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from aiogram import Router
+from aiogram import F, Router
 from aiogram.filters import Command
 
 from bot.filters import IsAdmin
@@ -17,6 +17,9 @@ def create_admin_router() -> Router:
     router.message(Command("refset"))(refset_handlers.refset_forbidden)
     router.message(Command("broadcast"), IsAdmin())(broadcast_handlers.broadcast)
     router.message(Command("broadcast"))(broadcast_handlers.broadcast_forbidden)
+    router.callback_query(F.data.startswith(broadcast_handlers.SEGMENT_CALLBACK_PREFIX), IsAdmin())(
+        broadcast_handlers.broadcast_segment_callback
+    )
     return router
 
 
