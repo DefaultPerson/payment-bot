@@ -47,7 +47,7 @@ def test_build_profile_view_reports_inactive_subscription_without_expiration() -
         total_active_days=10,
         subscription_active=False,
         expires_at=None,
-        days_to_next_tier=80,
+        days_to_next_tier=20,
         referral_count=0,
         referral_earned_usd=Decimal("0.00"),
         referral_unpaid_earned_usd=Decimal("0.00"),
@@ -67,21 +67,20 @@ def test_build_profile_view_reports_active_subscription_with_expiration() -> Non
 
     assert view.subscription_active is True
     assert view.expires_at == expires_at
-    assert view.days_to_next_tier == 60
+    assert view.days_to_next_tier == 30
 
 
 @pytest.mark.parametrize(
     ("status", "total_active_days", "expected"),
     [
-        (UserStatus.basic, 0, 90),
-        (UserStatus.basic, 89, 1),
-        (UserStatus.basic, 90, None),
+        # Tiers (default): bronze 30d, silver 90d, gold 150d. Next tier above the current status.
+        (UserStatus.basic, 0, 30),
+        (UserStatus.basic, 29, 1),
         (UserStatus.bronze, 30, 60),
-        (UserStatus.bronze, 90, None),
-        (UserStatus.silver, 90, 90),
-        (UserStatus.silver, 179, 1),
-        (UserStatus.silver, 180, None),
-        (UserStatus.gold, 0, None),
+        (UserStatus.bronze, 89, 1),
+        (UserStatus.silver, 90, 60),
+        (UserStatus.silver, 149, 1),
+        (UserStatus.gold, 150, None),
         (UserStatus.gold, 250, None),
     ],
 )

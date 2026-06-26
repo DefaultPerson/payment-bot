@@ -41,6 +41,7 @@ async def profile_callback(
             context.language_code,
             i18n,
             session_factory,
+            settings,
         )
     except SQLAlchemyError:
         logger.exception("failed to build profile callback response")
@@ -58,6 +59,7 @@ async def _build_profile_response(
     language_code: str | None,
     i18n: JsonI18n,
     session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
 ) -> tuple[str, str]:
     async with session_scope(session_factory) as session:
         user = await ensure_minimal_user(
@@ -73,6 +75,7 @@ async def _build_profile_response(
             subscription,
             now=datetime.now(UTC),
             referral_stats=referral_stats,
+            loyalty=settings.loyalty,
         )
         lang_code = user.lang_code
 

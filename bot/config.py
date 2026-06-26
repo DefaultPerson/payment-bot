@@ -209,22 +209,31 @@ class TariffsConfig(BaseModel):
 
 
 class LoyaltyConfig(BaseModel):
-    bronze_discount_percent: Decimal = Field(default=Decimal("10"), ge=0, lt=100)
-    silver_active_days: int = Field(default=90, ge=1)
-    # Fixed monthly price for the silver/gold tiers. Keep these at or below the cheapest
-    # basic monthly rate (base_price_usd / duration_months) — otherwise loyalty becomes a
-    # penalty (a loyal silver/gold user would pay more than a brand-new basic user).
-    silver_monthly_price_usd: Decimal = Field(default=Decimal("50"), gt=0)
-    gold_active_days: int = Field(default=180, ge=1)
-    gold_monthly_price_usd: Decimal = Field(default=Decimal("45"), gt=0)
+    """Loyalty tiers as percentage discounts off the (duration-discounted) base price.
+
+    Tenure is counted in MONTHS: ``*_active_months`` is the 1-indexed month of tenure the
+    tier starts from (month 1 = the first 30 active days = basic, no loyalty discount).
+    Defaults: bronze 5% from month 2, silver 10% from month 4, gold 15% from month 6.
+    """
+
+    bronze_active_months: int = Field(default=2, ge=2)
+    bronze_discount_percent: Decimal = Field(default=Decimal("5"), ge=0, lt=100)
+    silver_active_months: int = Field(default=4, ge=2)
+    silver_discount_percent: Decimal = Field(default=Decimal("10"), ge=0, lt=100)
+    gold_active_months: int = Field(default=6, ge=2)
+    gold_discount_percent: Decimal = Field(default=Decimal("15"), ge=0, lt=100)
 
     @model_validator(mode="after")
-    def validate_threshold_order(self) -> LoyaltyConfig:
-        if self.gold_active_days <= self.silver_active_days:
-            msg = "gold_active_days must be greater than silver_active_days"
+    def validate_tiers(self) -> LoyaltyConfig:
+        if not (self.bronze_active_months < self.silver_active_months < self.gold_active_months):
+            msg = "loyalty active_months must strictly increase: bronze < silver < gold"
             raise ValueError(msg)
-        if self.gold_monthly_price_usd > self.silver_monthly_price_usd:
-            msg = "gold_monthly_price_usd must not exceed silver_monthly_price_usd"
+        if not (
+            self.bronze_discount_percent
+            <= self.silver_discount_percent
+            <= self.gold_discount_percent
+        ):
+            msg = "loyalty discount percents must be non-decreasing: bronze <= silver <= gold"
             raise ValueError(msg)
         return self
 

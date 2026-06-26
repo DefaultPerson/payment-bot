@@ -7,6 +7,14 @@ from decimal import Decimal
 from bot.core.i18n import JsonI18n
 from bot.models import Subscription, User, UserStatus
 from bot.repos.referrals import ReferralStats
+from bot.services.subscriptions import (
+    BRONZE_ACTIVE_MONTHS,
+    GOLD_ACTIVE_MONTHS,
+    SILVER_ACTIVE_MONTHS,
+    STATUS_RANK,
+    SupportsLoyaltyThresholds,
+    tier_threshold_days,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,6 +36,7 @@ def build_profile_view(
     *,
     now: datetime,
     referral_stats: ReferralStats | None = None,
+    loyalty: SupportsLoyaltyThresholds | None = None,
 ) -> ProfileView:
     total_active_days = user.total_active_days or 0
     status = user.status or UserStatus.basic
@@ -39,7 +48,7 @@ def build_profile_view(
         total_active_days=total_active_days,
         subscription_active=subscription_active,
         expires_at=subscription.expires_at if subscription_active and subscription else None,
-        days_to_next_tier=_days_to_next_tier(status, total_active_days),
+        days_to_next_tier=_days_to_next_tier(status, total_active_days, loyalty),
         referral_count=referral_stats.referral_count if referral_stats is not None else 0,
         referral_earned_usd=(
             referral_stats.earned_usd if referral_stats is not None else Decimal("0.00")
@@ -84,9 +93,25 @@ def format_profile_text(view: ProfileView, i18n: JsonI18n, lang_code: str) -> st
     )
 
 
-def _days_to_next_tier(status: UserStatus, total_active_days: int) -> int | None:
-    if status in {UserStatus.basic, UserStatus.bronze} and total_active_days < 90:
-        return 90 - total_active_days
-    if status is UserStatus.silver and total_active_days < 180:
-        return 180 - total_active_days
+def _days_to_next_tier(
+    status: UserStatus,
+    total_active_days: int,
+    loyalty: SupportsLoyaltyThresholds | None = None,
+) -> int | None:
+    """Active days remaining until the next loyalty tier, or None at the top tier."""
+    if loyalty is not None:
+        tiers = (
+            (UserStatus.bronze, loyalty.bronze_active_months),
+            (UserStatus.silver, loyalty.silver_active_months),
+            (UserStatus.gold, loyalty.gold_active_months),
+        )
+    else:
+        tiers = (
+            (UserStatus.bronze, BRONZE_ACTIVE_MONTHS),
+            (UserStatus.silver, SILVER_ACTIVE_MONTHS),
+            (UserStatus.gold, GOLD_ACTIVE_MONTHS),
+        )
+    for tier, active_months in tiers:
+        if STATUS_RANK[status] < STATUS_RANK[tier]:
+            return max(0, tier_threshold_days(active_months) - total_active_days)
     return None

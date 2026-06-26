@@ -53,11 +53,12 @@ def test_phase2_default_tariffs_are_available() -> None:
         Decimal("177"),
         Decimal("354"),
     ]
-    assert settings.loyalty.bronze_discount_percent == Decimal("10")
-    assert settings.loyalty.silver_active_days == 90
-    assert settings.loyalty.silver_monthly_price_usd == Decimal("50")
-    assert settings.loyalty.gold_active_days == 180
-    assert settings.loyalty.gold_monthly_price_usd == Decimal("45")
+    assert settings.loyalty.bronze_active_months == 2
+    assert settings.loyalty.bronze_discount_percent == Decimal("5")
+    assert settings.loyalty.silver_active_months == 4
+    assert settings.loyalty.silver_discount_percent == Decimal("10")
+    assert settings.loyalty.gold_active_months == 6
+    assert settings.loyalty.gold_discount_percent == Decimal("15")
 
 
 def test_phase3_promo_config_defaults_are_safe_for_tests() -> None:
@@ -163,17 +164,24 @@ def test_phase4_stars_config_rejects_invalid_rate() -> None:
         Settings(stars={"star_usd_rate": Decimal("0")})
 
 
-def test_phase3_loyalty_thresholds_must_be_ordered() -> None:
-    with pytest.raises(ValidationError, match="gold_active_days must be greater"):
-        Settings(loyalty={"silver_active_days": 180, "gold_active_days": 90})
-
-
-def test_phase3_loyalty_gold_price_must_not_exceed_silver() -> None:
-    with pytest.raises(ValidationError, match="gold_monthly_price_usd must not exceed"):
+def test_phase3_loyalty_months_must_strictly_increase() -> None:
+    with pytest.raises(ValidationError, match="active_months must strictly increase"):
         Settings(
             loyalty={
-                "silver_monthly_price_usd": Decimal("40"),
-                "gold_monthly_price_usd": Decimal("50"),
+                "bronze_active_months": 2,
+                "silver_active_months": 6,
+                "gold_active_months": 4,
+            }
+        )
+
+
+def test_phase3_loyalty_discount_percents_must_not_decrease() -> None:
+    with pytest.raises(ValidationError, match="discount percents must be non-decreasing"):
+        Settings(
+            loyalty={
+                "bronze_discount_percent": Decimal("10"),
+                "silver_discount_percent": Decimal("5"),
+                "gold_discount_percent": Decimal("15"),
             }
         )
 

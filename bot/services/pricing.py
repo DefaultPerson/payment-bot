@@ -76,28 +76,21 @@ def quote_tariff(
 
 
 def _net_amount(settings: Settings, tariff: TariffConfig, status: UserStatus) -> Decimal:
-    if status is UserStatus.silver:
-        return _fixed_status_amount(
-            settings.loyalty.silver_monthly_price_usd,
-            tariff,
-        )
-    if status is UserStatus.gold:
-        return _fixed_status_amount(
-            settings.loyalty.gold_monthly_price_usd,
-            tariff,
-        )
-
+    # Duration discount first, then the loyalty-status percentage on top — every tier is a
+    # percentage discount off the base price.
     net = _apply_percent_discount(tariff.base_price_usd, tariff.duration_discount_percent)
+    return _apply_percent_discount(net, _loyalty_discount_percent(settings, status))
+
+
+def _loyalty_discount_percent(settings: Settings, status: UserStatus) -> Decimal:
+    loyalty = settings.loyalty
+    if status is UserStatus.gold:
+        return loyalty.gold_discount_percent
+    if status is UserStatus.silver:
+        return loyalty.silver_discount_percent
     if status is UserStatus.bronze:
-        return _apply_percent_discount(net, settings.loyalty.bronze_discount_percent)
-    return net
-
-
-def _fixed_status_amount(monthly_price: Decimal, tariff: TariffConfig) -> Decimal:
-    return _apply_percent_discount(
-        monthly_price * tariff.duration_months,
-        tariff.duration_discount_percent,
-    )
+        return loyalty.bronze_discount_percent
+    return Decimal("0")
 
 
 def _apply_percent_discount(value: Decimal, percent: Decimal) -> Decimal:

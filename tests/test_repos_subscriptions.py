@@ -136,7 +136,7 @@ async def test_extend_manual_subscription_creates_missing_subscription() -> None
     assert subscription.expires_at == now + timedelta(days=10)
     assert subscription.source is SubscriptionSource.manual
     assert user.total_active_days == 10
-    assert user.status is UserStatus.bronze
+    assert user.status is UserStatus.basic
     assert session.flushed == 2
     assert session.scalar_queries[:2] == [
         (User, "id", True),
@@ -209,7 +209,7 @@ async def test_extend_manual_subscription_extends_expired_subscription_from_now(
     assert updated.started_at == started_at
     assert updated.expires_at == now + timedelta(days=14)
     assert user.total_active_days == 19
-    assert user.status is UserStatus.bronze
+    assert user.status is UserStatus.basic
     assert session.flushed == 1
 
 

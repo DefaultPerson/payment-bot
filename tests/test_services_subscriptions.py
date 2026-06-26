@@ -47,7 +47,8 @@ def test_calculate_extension_rejects_non_positive_days(days: int) -> None:
 @pytest.mark.parametrize(
     ("current", "expected"),
     [
-        (UserStatus.basic, UserStatus.bronze),
+        # A fresh grant (1 active day, month 1) earns no tier — bronze starts at month 2.
+        (UserStatus.basic, UserStatus.basic),
         (UserStatus.bronze, UserStatus.bronze),
         (UserStatus.silver, UserStatus.silver),
         (UserStatus.gold, UserStatus.gold),
@@ -64,9 +65,10 @@ def test_minimum_status_after_grant_never_downgrades_existing_tiers(
     ("current", "total_active_days", "expected"),
     [
         (UserStatus.basic, 0, UserStatus.basic),
-        (UserStatus.basic, 1, UserStatus.bronze),
+        (UserStatus.basic, 29, UserStatus.basic),
+        (UserStatus.basic, 30, UserStatus.bronze),
         (UserStatus.basic, 90, UserStatus.silver),
-        (UserStatus.bronze, 180, UserStatus.gold),
+        (UserStatus.bronze, 150, UserStatus.gold),
         (UserStatus.gold, 10, UserStatus.gold),
     ],
 )
@@ -79,12 +81,14 @@ def test_status_after_total_active_days_promotes_without_downgrading(
 
 
 def test_status_after_total_active_days_uses_configurable_thresholds() -> None:
+    # silver from month 3 (>=60 days), gold from month 5 (>=120 days).
     assert (
         status_after_total_active_days(
             UserStatus.basic,
             60,
-            silver_active_days=60,
-            gold_active_days=120,
+            bronze_active_months=2,
+            silver_active_months=3,
+            gold_active_months=5,
         )
         is UserStatus.silver
     )
@@ -92,8 +96,9 @@ def test_status_after_total_active_days_uses_configurable_thresholds() -> None:
         status_after_total_active_days(
             UserStatus.bronze,
             120,
-            silver_active_days=60,
-            gold_active_days=120,
+            bronze_active_months=2,
+            silver_active_months=3,
+            gold_active_months=5,
         )
         is UserStatus.gold
     )

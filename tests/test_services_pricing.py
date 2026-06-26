@@ -50,19 +50,21 @@ def test_quote_bronze_user_applies_duration_discount_and_status_discount() -> No
 
     quote = quote_tariff(settings, "3m", UserStatus.bronze)
 
-    assert quote.net_usd == Decimal("151.34")
-    assert quote.gross_usd == Decimal("156.02")
-    assert quote.fee_usd == Decimal("4.68")
+    # 3m base 177 * 0.95 (duration) * 0.95 (bronze 5%) = 159.74 net.
+    assert quote.net_usd == Decimal("159.74")
+    assert quote.gross_usd == Decimal("164.68")
+    assert quote.fee_usd == Decimal("4.94")
 
 
 @pytest.mark.parametrize(
     ("status", "expected_net", "expected_gross"),
     [
-        (UserStatus.silver, Decimal("142.50"), Decimal("146.91")),
-        (UserStatus.gold, Decimal("128.25"), Decimal("132.22")),
+        # 3m base 177 * 0.95 (duration) * (1 - loyalty%): silver 10% -> 151.34, gold 15% -> 142.93.
+        (UserStatus.silver, Decimal("151.34"), Decimal("156.02")),
+        (UserStatus.gold, Decimal("142.93"), Decimal("147.35")),
     ],
 )
-def test_quote_fixed_monthly_status_prices_apply_duration_discount(
+def test_quote_silver_gold_apply_percentage_loyalty_discount(
     status: UserStatus,
     expected_net: Decimal,
     expected_gross: Decimal,
@@ -111,10 +113,10 @@ def test_quote_applies_percent_promo_after_loyalty_discounts() -> None:
 
     quote = quote_tariff(settings, "3m", UserStatus.bronze, promo=promo)
 
-    assert quote.net_usd == Decimal("121.07")
-    assert quote.promo_discount_usd == Decimal("30.27")
+    assert quote.net_usd == Decimal("127.79")
+    assert quote.promo_discount_usd == Decimal("31.95")
     assert quote.promo_extra_days == 0
-    assert quote.gross_usd == Decimal("124.81")
+    assert quote.gross_usd == Decimal("131.74")
 
 
 def test_quote_caps_fixed_usd_promo_discount() -> None:
