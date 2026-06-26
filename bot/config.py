@@ -151,6 +151,17 @@ class TariffsConfig(BaseModel):
                 base_price_usd=Decimal("354"),
                 duration_discount_percent=Decimal("10"),
             ),
+            # Cheap end-to-end payment test. test_only -> auto-hidden unless
+            # payments.test_mode is on; stars_amount_override pins the Stars price to 1 XTR.
+            # duration_months >= 2 keeps Stars one-shot (no recurring auto-rebill).
+            TariffConfig(
+                code="test",
+                plan_code="main",
+                duration_months=3,
+                base_price_usd=Decimal("0.50"),
+                test_only=True,
+                stars_amount_override=1,
+            ),
         ],
     )
 
