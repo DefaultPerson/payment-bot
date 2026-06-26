@@ -39,6 +39,7 @@ from bot.keyboards.icons import apply_valid_icon_ids, configured_icon_ids, disab
 from bot.payments.cryptobot import CryptoBotClient
 from bot.payments.xrocket import XRocketClient
 from bot.services.broadcast_ui import (
+    BroadcastCommandExitMiddleware,
     PersistentBroadcastUIMiddleware,
     create_redis_jobstore,
     set_scheduled_broadcast_bot,
@@ -335,10 +336,13 @@ async def main() -> None:
         dispatcher.update.middleware.register(
             PersistentBroadcastUIMiddleware(broadcast_service, broadcast_scheduler)
         )
-        # Registered before the app router so its FSM-state-gated handlers capture
-        # in-flow composer input first.
-        BroadcastUIHandlers().register(dispatcher)
+        # A command always clears the composer's FSM state so it leaves the flow instead of
+        # being swallowed and deleted by the state-gated UI handlers.
+        dispatcher.message.outer_middleware.register(BroadcastCommandExitMiddleware())
         dispatcher.include_router(create_router())
+        # Registered AFTER the app router so bot commands are always handled (not eaten by
+        # the composer); only non-command input falls through to the FSM-state-gated UI.
+        BroadcastUIHandlers().register(dispatcher)
         start_background_jobs(
             task_runner=task_runner,
             session_factory=session_factory,

@@ -112,3 +112,57 @@ async def test_schedule_broadcast_without_scheduler_returns_none() -> None:
     )
 
     assert await manager.schedule_broadcast() is None
+
+
+class _FakeFsmState:
+    def __init__(self, current: str | None) -> None:
+        self._current = current
+        self.cleared = False
+
+    async def get_state(self) -> str | None:
+        return self._current
+
+    async def set_state(self, value: Any) -> None:
+        assert value is None
+        self._current = value
+        self.cleared = True
+
+
+async def _passthrough(event: Any, data: dict[str, Any]) -> str:
+    return "handled"
+
+
+async def test_command_exit_clears_broadcast_state() -> None:
+    state = _FakeFsmState("BroadcastUIState:broadcasts_list")
+    mw = bui.BroadcastCommandExitMiddleware()
+
+    result = await mw(_passthrough, SimpleNamespace(text="/start"), {"state": state})
+
+    assert state.cleared is True
+    assert result == "handled"
+
+
+async def test_command_exit_keeps_non_command_in_flow() -> None:
+    state = _FakeFsmState("BroadcastUIState:send_message")
+    mw = bui.BroadcastCommandExitMiddleware()
+
+    await mw(_passthrough, SimpleNamespace(text="Big sale today"), {"state": state})
+
+    assert state.cleared is False
+
+
+async def test_command_exit_ignores_non_broadcast_state() -> None:
+    state = _FakeFsmState("OtherStates:waiting")
+    mw = bui.BroadcastCommandExitMiddleware()
+
+    await mw(_passthrough, SimpleNamespace(text="/start"), {"state": state})
+
+    assert state.cleared is False
+
+
+async def test_command_exit_passthrough_without_state() -> None:
+    mw = bui.BroadcastCommandExitMiddleware()
+
+    result = await mw(_passthrough, SimpleNamespace(text="/start"), {})
+
+    assert result == "handled"
