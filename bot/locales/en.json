@@ -1,9 +1,7 @@
 {
   "start.text": "Welcome to Hydra Monitors payment bot.\n\nSupport: {support_url}",
   "commands.start": "Open the main menu",
-  "commands.profile": "View your subscription profile",
   "commands.language": "Change interface language",
-  "commands.support": "Contact support",
   "commands.grant": "Grant paid access",
   "commands.broadcast": "Broadcast a message",
   "menu.button.buy": "Buy access",

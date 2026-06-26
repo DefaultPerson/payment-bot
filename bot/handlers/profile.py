@@ -5,15 +5,14 @@ from datetime import UTC, datetime
 
 from aiogram import F, Router
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.filters import Command
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from bot.config import Settings
 from bot.core.db import session_scope
 from bot.core.i18n import JsonI18n
-from bot.handlers.start import callback_context, message_context
+from bot.handlers.start import callback_context
 from bot.keyboards import CB_PROFILE, profile_keyboard
 from bot.repos.referrals import get_referral_stats
 from bot.repos.subscriptions import get_subscription_for_user
@@ -23,31 +22,6 @@ from bot.services.profile import build_profile_view, format_profile_text
 logger = logging.getLogger(__name__)
 
 CALLBACK_ANSWER_TEXT_LIMIT = 200
-
-
-async def profile(
-    message: Message,
-    settings: Settings,
-    i18n: JsonI18n,
-    session_factory: async_sessionmaker[AsyncSession],
-) -> None:
-    context = message_context(message, settings)
-    if context.tg_id is None:
-        await message.answer(i18n.gettext("error.generic", context.language_code))
-        return
-
-    try:
-        text, lang_code = await _build_profile_response(
-            context.tg_id,
-            context.language_code,
-            i18n,
-            session_factory,
-        )
-    except SQLAlchemyError:
-        logger.exception("failed to build profile response")
-        await message.answer(i18n.gettext("error.generic", context.language_code))
-        return
-    await message.answer(text, reply_markup=profile_keyboard(i18n, settings, lang_code))
 
 
 async def profile_callback(
@@ -134,6 +108,5 @@ def _callback_answer_text(text: str) -> str:
 
 def create_profile_router() -> Router:
     router = Router(name="profile")
-    router.message(Command("profile"))(profile)
     router.callback_query(F.data == CB_PROFILE)(profile_callback)
     return router

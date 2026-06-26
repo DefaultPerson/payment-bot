@@ -1,9 +1,7 @@
 {
   "start.text": "Ласкаво просимо до платіжного бота Hydra Monitors.\n\nПідтримка: {support_url}",
   "commands.start": "Відкрити головне меню",
-  "commands.profile": "Переглянути профіль підписки",
   "commands.language": "Змінити мову інтерфейсу",
-  "commands.support": "Зв'язатися з підтримкою",
   "commands.grant": "Надати платний доступ",
   "commands.broadcast": "Надіслати розсилку",
   "menu.button.buy": "Купити доступ",

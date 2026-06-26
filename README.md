@@ -57,9 +57,7 @@ Telegram commands currently implemented:
 
 ```text
 /start
-/profile
 /language
-/support
 /promo <code>
 /referral
 /grant <user_id> <days>   # admins only
