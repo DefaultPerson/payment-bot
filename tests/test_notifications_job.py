@@ -262,6 +262,42 @@ async def test_notify_subscriptions_once_does_not_mark_failed_revoke(monkeypatch
     assert subscription.access_revoked_at is None
 
 
+async def test_revoke_emits_access_revoked_service_event(monkeypatch) -> None:
+    import bot.jobs.notifications as notifications_module
+
+    user = make_user(user_id=1, tg_id=1001)
+    subscription = make_subscription(user_id=1, expires_at=NOW - timedelta(hours=25))
+
+    async def empty(*args: Any, **kwargs: Any) -> list[Subscription]:
+        return []
+
+    async def fake_revoke(*args: Any, **kwargs: Any) -> list[Subscription]:
+        return [subscription]
+
+    monkeypatch.setattr(notifications_module, "get_subscriptions_due_3d_notification", empty)
+    monkeypatch.setattr(notifications_module, "get_subscriptions_due_0d_notification", empty)
+    monkeypatch.setattr(notifications_module, "get_subscriptions_due_post_notification", empty)
+    monkeypatch.setattr(notifications_module, "get_subscriptions_due_access_revoke", fake_revoke)
+
+    service_channel = FakeServiceChannel()
+    result = await notifications_module.notify_subscriptions_once(
+        session_factory=FakeSessionFactory(FakeSession(users=[user], subscriptions=[subscription])),
+        settings=Settings(access={"protected_chats": [{"chat_id": -1001, "title": "Signals"}]}),
+        bot=FakeBot(),
+        i18n=JsonI18n(fallback_language="en"),
+        service_channel=service_channel,
+        now=NOW,
+    )
+
+    assert result.revoked == 1
+    revoke_events = [m for m in service_channel.messages if "Subscription access revoked" in m]
+    assert len(revoke_events) == 1
+    event = revoke_events[0]
+    assert "<code>1001</code>" in event
+    assert "subscription expired" in event
+    assert "expired_at=" in event
+
+
 async def test_notify_subscriptions_once_rolls_back_on_database_error(monkeypatch) -> None:
     import bot.jobs.notifications as notifications_module
 

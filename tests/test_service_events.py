@@ -80,6 +80,16 @@ def test_emoji_html_uses_custom_only_for_validated_ids() -> None:
     assert se.emoji_html("cross") == "❌"  # not in the validated set -> plain glyph
 
 
+def test_new_event_glyphs_use_pack_custom_emoji() -> None:
+    # tag (🏷 promo applied) and no_entry (🚫 access revoked) are real tgiosicons ids,
+    # so they render as custom emoji and take part in startup validation like the rest.
+    for glyph in ("tag", "no_entry"):
+        fallback, custom_id = se.EVENT_EMOJI[glyph]
+        assert custom_id.isdigit()
+        assert custom_id in se.configured_event_emoji_ids()
+        assert se.emoji_html(glyph) == f'<tg-emoji emoji-id="{custom_id}">{fallback}</tg-emoji>'
+
+
 def test_html_is_escaped_in_extra_and_mention() -> None:
     text = se.render_event(
         glyph="cross",

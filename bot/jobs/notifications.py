@@ -15,7 +15,7 @@ from bot.config import Settings
 from bot.core.db import session_scope
 from bot.core.i18n import JsonI18n
 from bot.core.logger import ServiceChannel
-from bot.core.service_events import render_event
+from bot.core.service_events import fmt_dt, render_event, user_mention
 from bot.keyboards import profile_keyboard
 from bot.models import Subscription, User
 from bot.repos.subscriptions import (
@@ -93,6 +93,7 @@ async def notify_subscriptions_once(
                 settings=settings,
                 bot=bot,
                 i18n=i18n,
+                service_channel=service_channel,
                 now=now,
             )
     except SQLAlchemyError:
@@ -109,6 +110,7 @@ async def _notify_subscriptions_in_session(
     settings: Settings,
     bot: SupportsNotificationBot,
     i18n: JsonI18n,
+    service_channel: ServiceChannel,
     now: datetime,
 ) -> NotificationRunResult:
     errors = 0
@@ -173,6 +175,7 @@ async def _notify_subscriptions_in_session(
         ),
         settings=settings,
         bot=bot,
+        service_channel=service_channel,
         now=now,
     )
     errors += revoke_result.errors
@@ -247,6 +250,7 @@ async def _process_revoke_batch(
     *,
     settings: Settings,
     bot: SupportsNotificationBot,
+    service_channel: ServiceChannel,
     now: datetime,
 ) -> _RevokeBatchResult:
     revoked = 0
@@ -268,6 +272,14 @@ async def _process_revoke_batch(
 
         await mark_subscription_access_revoked(session, subscription, revoked_at=now)
         revoked += 1
+        await _notify_access_revoked(
+            service_channel,
+            tg_id=user.tg_id,
+            username=user.username,
+            plan_code=subscription.plan_code,
+            expires_at=subscription.expires_at,
+            now=now,
+        )
     return _RevokeBatchResult(revoked=revoked, errors=errors)
 
 
@@ -304,6 +316,39 @@ async def notification_loop(
 
 async def _load_user(session: AsyncSession, user_id: int) -> User | None:
     return await session.scalar(select(User).where(User.id == user_id))
+
+
+async def _notify_access_revoked(
+    service_channel: ServiceChannel,
+    *,
+    tg_id: int,
+    username: str | None,
+    plan_code: str | None,
+    expires_at: datetime,
+    now: datetime,
+) -> None:
+    """Post a per-user service-channel event when an expired subscription is revoked."""
+    try:
+        await service_channel.send_html(
+            render_event(
+                glyph="no_entry",
+                title="Subscription access revoked",
+                fields=[
+                    ("User", user_mention(tg_id, username)),
+                    ("Reason", "subscription expired"),
+                ],
+                extra={
+                    "plan": plan_code or "—",
+                    "expired_at": fmt_dt(expires_at),
+                    "revoked_at": fmt_dt(now),
+                },
+            )
+        )
+    except Exception:
+        logger.exception(
+            "failed to send subscription revoke event",
+            extra={"tg_id": tg_id},
+        )
 
 
 async def _notify_service_channel(

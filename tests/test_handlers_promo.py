@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any
 
 from bot.config import Settings
 from bot.core.i18n import JsonI18n
 from bot.keyboards import CB_BACK_TARIFFS, CB_PROMO, CB_PROMO_BUY_PREFIX, CB_PROMO_CANCEL
+from bot.models import PromoKind
 from tests.test_handlers_user import (
     FakeCallback,
     FakeChat,
@@ -42,6 +44,19 @@ class FakeState:
 @dataclass(slots=True)
 class FakePromoRecord:
     code: str
+    kind: PromoKind = PromoKind.percent
+    value: Decimal = Decimal("10")
+    uses: int = 0
+    max_uses: int | None = None
+
+
+class FakeServiceChannel:
+    def __init__(self) -> None:
+        self.messages: list[str] = []
+
+    async def send_html(self, text: str) -> bool:
+        self.messages.append(text)
+        return True
 
 
 class FakeMessage:
@@ -107,6 +122,61 @@ async def test_promo_command_stores_pending_promo(monkeypatch) -> None:
             "i18n": i18n,
         }
     ]
+    assert message.answers == [{"text": "Promo code SAVE20 will be applied to your next invoice."}]
+
+
+async def test_promo_command_emits_service_event(monkeypatch) -> None:
+    import bot.handlers.promo as promo_module
+
+    async def fake_apply(session: FakeSession, **kwargs: Any) -> FakePromoRecord:
+        return FakePromoRecord(code="SAVE20", kind=PromoKind.percent, value=Decimal("20"))
+
+    monkeypatch.setattr(promo_module, "apply_promo_code_for_user", fake_apply)
+
+    service_channel = FakeServiceChannel()
+    message = FakeMessage(
+        text="/promo save20",
+        from_user=FakeTelegramUser(id=700, username="neo", language_code="en"),
+    )
+
+    await promo_module.promo_command(
+        message,
+        settings=Settings(),
+        i18n=JsonI18n(),
+        session_factory=FakeSessionFactory(),
+        service_channel=service_channel,
+    )
+
+    assert len(service_channel.messages) == 1
+    event = service_channel.messages[0]
+    assert "Promo code applied" in event
+    assert "@neo // <code>700</code>" in event
+    assert "<code>SAVE20</code>" in event
+    assert "kind=percent" in event
+    assert "value=20%" in event
+
+
+async def test_promo_command_without_service_channel_skips_event(monkeypatch) -> None:
+    import bot.handlers.promo as promo_module
+
+    async def fake_apply(session: FakeSession, **kwargs: Any) -> FakePromoRecord:
+        return FakePromoRecord(code="SAVE20")
+
+    monkeypatch.setattr(promo_module, "apply_promo_code_for_user", fake_apply)
+
+    message = FakeMessage(
+        text="/promo save20",
+        from_user=FakeTelegramUser(id=700, language_code="en"),
+    )
+
+    # No service_channel injected (default None) -> no event, still replies to the user.
+    await promo_module.promo_command(
+        message,
+        settings=Settings(),
+        i18n=JsonI18n(),
+        session_factory=FakeSessionFactory(),
+    )
+
     assert message.answers == [{"text": "Promo code SAVE20 will be applied to your next invoice."}]
 
 

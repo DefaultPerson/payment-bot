@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+from decimal import Decimal
+from html import escape
 
 from aiogram import F, Router
 from aiogram.filters import Command, StateFilter
@@ -13,9 +15,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from bot.config import Settings
 from bot.core.db import session_scope
 from bot.core.i18n import JsonI18n
+from bot.core.logger import ServiceChannel
+from bot.core.service_events import render_event, user_mention
 from bot.handlers.buy import _duration_menu_text, _edit_text_or_answer
 from bot.handlers.start import message_context
 from bot.keyboards import CB_PROMO, CB_PROMO_BUY_PREFIX, CB_PROMO_CANCEL, tariff_keyboard
+from bot.models import Promo, PromoKind
 from bot.repos.promos import PromoUnavailable, apply_promo_code_for_user
 
 logger = logging.getLogger(__name__)
@@ -45,6 +50,7 @@ async def promo_command(
     settings: Settings,
     i18n: JsonI18n,
     session_factory: async_sessionmaker[AsyncSession],
+    service_channel: ServiceChannel | None = None,
 ) -> None:
     del settings
     context = message_context(message)
@@ -72,9 +78,19 @@ async def promo_command(
         await message.answer(i18n.gettext("promo.applied", lang_code, code=applied_code))
     except PromoUnavailable as exc:
         await message.answer(_promo_error_text(i18n, lang_code, exc.reason))
+        return
     except SQLAlchemyError:
         logger.exception("failed to apply promo code")
         await message.answer(i18n.gettext("error.generic", lang_code))
+        return
+
+    if service_channel is not None:
+        await _notify_promo_applied(
+            service_channel,
+            tg_id=context.tg_id,
+            username=context.username,
+            promo=promo,
+        )
 
 
 async def promo_callback(callback: CallbackQuery, i18n: JsonI18n) -> None:
@@ -143,6 +159,7 @@ async def promo_code_message(
     settings: Settings,
     i18n: JsonI18n,
     session_factory: async_sessionmaker[AsyncSession],
+    service_channel: ServiceChannel | None = None,
 ) -> None:
     """Apply the typed promo code and re-render the duration page with a banner."""
     state_data = await state.get_data()
@@ -163,8 +180,10 @@ async def promo_code_message(
             i18n,
             lang_code,
             tg_id=context.tg_id,
+            username=context.username,
             language_code=context.language_code,
             code=code,
+            service_channel=service_channel,
         )
 
     await _render_duration_after_promo(
@@ -185,8 +204,10 @@ async def _apply_inline_promo(
     lang_code: str,
     *,
     tg_id: int,
+    username: str | None,
     language_code: str | None,
     code: str,
+    service_channel: ServiceChannel | None = None,
 ) -> str:
     try:
         async with session_scope(session_factory) as session:
@@ -198,12 +219,17 @@ async def _apply_inline_promo(
                 i18n=i18n,
             )
             applied_code = promo.code
-        return i18n.gettext("promo.applied", lang_code, code=applied_code)
     except PromoUnavailable as exc:
         return _promo_error_text(i18n, lang_code, exc.reason)
     except SQLAlchemyError:
         logger.exception("failed to apply promo code")
         return i18n.gettext("error.generic", lang_code)
+
+    if service_channel is not None:
+        await _notify_promo_applied(
+            service_channel, tg_id=tg_id, username=username, promo=promo
+        )
+    return i18n.gettext("promo.applied", lang_code, code=applied_code)
 
 
 async def _render_duration_after_promo(
@@ -247,6 +273,42 @@ async def _delete_message_safe(message: Message) -> None:
         await delete()
     except Exception:
         logger.debug("could not delete promo code message", exc_info=True)
+
+
+async def _notify_promo_applied(
+    service_channel: ServiceChannel,
+    *,
+    tg_id: int,
+    username: str | None,
+    promo: Promo,
+) -> None:
+    """Post a service-channel event when a user attaches a promo to their account."""
+    try:
+        await service_channel.send_html(
+            render_event(
+                glyph="tag",
+                title="Promo code applied",
+                fields=[
+                    ("User", user_mention(tg_id, username)),
+                    ("Promo", f"<code>{escape(promo.code)}</code>"),
+                ],
+                extra={
+                    "kind": promo.kind.value,
+                    "value": _fmt_promo_value(promo.kind, promo.value),
+                    "uses": f"{promo.uses}/{'∞' if promo.max_uses is None else promo.max_uses}",
+                },
+            )
+        )
+    except Exception:
+        logger.exception("failed to send promo applied event", extra={"tg_id": tg_id})
+
+
+def _fmt_promo_value(kind: PromoKind, value: Decimal) -> str:
+    if kind is PromoKind.percent:
+        return f"{value:g}%"
+    if kind is PromoKind.extra_days:
+        return f"{int(value)} days"
+    return f"{value:.2f} USD"  # fixed_usd
 
 
 def _promo_cancel_keyboard(i18n: JsonI18n, lang_code: str) -> InlineKeyboardMarkup:
