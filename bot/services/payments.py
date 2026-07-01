@@ -51,6 +51,7 @@ from bot.repos.subscriptions import extend_paid_subscription
 from bot.repos.tariffs import ensure_configured_tariff, resolve_plan_code
 from bot.services.pricing import TariffQuote, quote_tariff, tariff_duration_days
 from bot.services.referrals import record_referral_earning
+from bot.services.subscriptions import effective_status
 
 logger = logging.getLogger(__name__)
 
@@ -251,10 +252,17 @@ async def create_stars_invoice_for_user(
             now=now,
             lock_user=True,
         )
+        subscription = await _load_subscription_for_user(session, locked_user.id)
         quote = quote_tariff(
             settings,
             tariff_code,
-            locked_user.status,
+            effective_status(
+                locked_user.status,
+                locked_user.total_active_days,
+                subscription.expires_at if subscription is not None else None,
+                now,
+                settings.loyalty,
+            ),
             promo=promo_snapshot_from_row(promo) if promo is not None else None,
         )
         stars = quote_stars_invoice(settings, quote)
@@ -760,10 +768,17 @@ async def _prepare_local_invoice(
         now=now,
         lock_user=True,
     )
+    subscription = await _load_subscription_for_user(session, locked_user.id)
     quote = quote_tariff(
         settings,
         tariff_code,
-        locked_user.status,
+        effective_status(
+            locked_user.status,
+            locked_user.total_active_days,
+            subscription.expires_at if subscription is not None else None,
+            now,
+            settings.loyalty,
+        ),
         promo=promo_snapshot_from_row(promo) if promo is not None else None,
         fee_percent=fee_percent,
     )

@@ -138,3 +138,38 @@ def status_after_total_active_days_for_policy(
         silver_active_months=loyalty.silver_active_months,
         gold_active_months=loyalty.gold_active_months,
     )
+
+
+def consumed_coverage_days(
+    total_active_days: int | None,
+    expires_at: datetime | None,
+    now: datetime,
+) -> int:
+    """Coverage days the user has actually LIVED THROUGH as a subscriber.
+
+    ``total_active_days`` counts purchased/granted days ever; subtracting the days still
+    remaining on the subscription yields the days that have actually elapsed under coverage.
+    Buying more time never grants tenure up front, because a purchase raises both
+    ``total_active_days`` and the remaining days by the same amount, leaving this unchanged.
+    Idle (uncovered) time accrues nothing: ``remaining`` is 0 and ``total_active_days`` is
+    frozen, so a lapse cannot farm tenure. ``max(0, …)`` guards promo ``extra_days``, which
+    extend expiry without crediting ``total_active_days``.
+    """
+    return max(0, (total_active_days or 0) - _remaining_days(now, expires_at))
+
+
+def effective_status(
+    current: UserStatus | None,
+    total_active_days: int | None,
+    expires_at: datetime | None,
+    now: datetime,
+    loyalty: SupportsLoyaltyThresholds | None,
+) -> UserStatus:
+    """Loyalty status from lived coverage (``consumed_coverage_days``), ratcheted.
+
+    Pure read helper: derives the tier a user has EARNED by real elapsed coverage without
+    persisting it, so quote/profile paths always price at the current tier while the stored
+    high-water status is only bumped on the locked write path (``_extend_subscription``).
+    """
+    consumed = consumed_coverage_days(total_active_days, expires_at, now)
+    return status_after_total_active_days_for_policy(current or UserStatus.basic, consumed, loyalty)

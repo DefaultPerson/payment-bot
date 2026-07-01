@@ -34,7 +34,12 @@ class FakeServiceChannel:
 
 def _make_user() -> SimpleNamespace:
     return SimpleNamespace(
-        id=7, tg_id=700, lang_code="en", status=UserStatus.basic, username="bob"
+        id=7,
+        tg_id=700,
+        lang_code="en",
+        status=UserStatus.basic,
+        username="bob",
+        total_active_days=0,
     )
 
 

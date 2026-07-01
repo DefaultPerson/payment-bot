@@ -67,7 +67,10 @@ def test_build_profile_view_reports_active_subscription_with_expiration() -> Non
 
     assert view.subscription_active is True
     assert view.expires_at == expires_at
-    assert view.days_to_next_tier == 30
+    # Lived coverage: 120 purchased days minus 10 still remaining = 110 consumed, so 40 more
+    # to the gold threshold (150). The 10 days still ahead do not count as tenure yet.
+    assert view.total_active_days == 110
+    assert view.days_to_next_tier == 40
 
 
 @pytest.mark.parametrize(

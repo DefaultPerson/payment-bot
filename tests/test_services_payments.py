@@ -745,7 +745,8 @@ async def test_process_paid_invoice_extends_subscription_once() -> None:
     assert subscription.source is SubscriptionSource.cryptobot
     assert subscription.last_invoice_id == invoice.id
     assert user.total_active_days == 30
-    assert user.status is UserStatus.bronze
+    # No instant tier from one 1m buy: consumed = 30 - 30 remaining = 0 -> basic.
+    assert user.status is UserStatus.basic
     assert invoice.status is InvoiceStatus.paid
     assert invoice.paid_at == now
     assert invoice.provider_payload == {"invoice_id": "provider-1"}

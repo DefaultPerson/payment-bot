@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlalchemy as sa
+
 from alembic import op
 
 # Chained after the free-trial migration (0008) so the two parallel branches form a single

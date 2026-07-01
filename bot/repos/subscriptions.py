@@ -15,6 +15,7 @@ from bot.services.subscriptions import (
     SupportsLoyaltyThresholds,
     calculate_extension,
     calculate_plan_change_expiry,
+    consumed_coverage_days,
     status_after_total_active_days_for_policy,
     subscription_active_at,
 )
@@ -335,9 +336,13 @@ async def _extend_subscription(
             subscription.last_invoice_id = last_invoice_id
 
     locked_user.total_active_days = (locked_user.total_active_days or 0) + days
+    # Tier is driven by LIVED coverage, not purchased days: the just-added time also raised
+    # the remaining days, so consumed is unchanged by this purchase and only rises as real
+    # covered time elapses. Ratchets the stored high-water status (never downgrades here).
+    consumed = consumed_coverage_days(locked_user.total_active_days, new_expires_at, now)
     locked_user.status = status_after_total_active_days_for_policy(
         locked_user.status or UserStatus.basic,
-        locked_user.total_active_days,
+        consumed,
         loyalty,
     )
     locked_user.updated_at = now

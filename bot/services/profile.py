@@ -13,6 +13,8 @@ from bot.services.subscriptions import (
     SILVER_ACTIVE_MONTHS,
     STATUS_RANK,
     SupportsLoyaltyThresholds,
+    consumed_coverage_days,
+    effective_status,
     tier_threshold_days,
 )
 
@@ -38,17 +40,22 @@ def build_profile_view(
     referral_stats: ReferralStats | None = None,
     loyalty: SupportsLoyaltyThresholds | None = None,
 ) -> ProfileView:
-    total_active_days = user.total_active_days or 0
-    status = user.status or UserStatus.basic
-    subscription_active = subscription is not None and subscription.expires_at > now
+    expires_at = subscription.expires_at if subscription is not None else None
+    subscription_active = expires_at is not None and expires_at > now
+    # Loyalty is driven by LIVED coverage, so the status, the shown day count and the
+    # next-tier countdown are all the same quantity (consumed), never the purchased total.
+    consumed = consumed_coverage_days(user.total_active_days, expires_at, now)
+    status = effective_status(
+        user.status, user.total_active_days, expires_at, now, loyalty
+    )
 
     return ProfileView(
         tg_id=user.tg_id,
         status=status,
-        total_active_days=total_active_days,
+        total_active_days=consumed,
         subscription_active=subscription_active,
-        expires_at=subscription.expires_at if subscription_active and subscription else None,
-        days_to_next_tier=_days_to_next_tier(status, total_active_days, loyalty),
+        expires_at=expires_at if subscription_active else None,
+        days_to_next_tier=_days_to_next_tier(status, consumed, loyalty),
         referral_count=referral_stats.referral_count if referral_stats is not None else 0,
         referral_earned_usd=(
             referral_stats.earned_usd if referral_stats is not None else Decimal("0.00")
@@ -95,10 +102,10 @@ def format_profile_text(view: ProfileView, i18n: JsonI18n, lang_code: str) -> st
 
 def _days_to_next_tier(
     status: UserStatus,
-    total_active_days: int,
+    progress_days: int,
     loyalty: SupportsLoyaltyThresholds | None = None,
 ) -> int | None:
-    """Active days remaining until the next loyalty tier, or None at the top tier."""
+    """Lived-coverage days remaining until the next loyalty tier, or None at the top tier."""
     if loyalty is not None:
         tiers = (
             (UserStatus.bronze, loyalty.bronze_active_months),
@@ -113,5 +120,5 @@ def _days_to_next_tier(
         )
     for tier, active_months in tiers:
         if STATUS_RANK[status] < STATUS_RANK[tier]:
-            return max(0, tier_threshold_days(active_months) - total_active_days)
+            return max(0, tier_threshold_days(active_months) - progress_days)
     return None

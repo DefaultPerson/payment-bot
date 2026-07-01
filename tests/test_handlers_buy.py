@@ -34,6 +34,7 @@ class FakeUserRecord:
     tg_id: int
     lang_code: str
     status: UserStatus = UserStatus.basic
+    total_active_days: int = 0
 
 
 @dataclass(slots=True)

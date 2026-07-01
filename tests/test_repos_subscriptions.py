@@ -280,8 +280,11 @@ async def test_extend_manual_subscription_recalculates_loyalty_tier() -> None:
 
     await extend_manual_subscription(session, user=user, days=100, now=now)
 
+    # 80 prior days were already lived (no remaining coverage); the 100 just granted are all
+    # still ahead, so consumed = 180 - 100 = 80 -> bronze. The grant confers tenure only as
+    # its days actually elapse, exactly like a purchase.
     assert user.total_active_days == 180
-    assert user.status is UserStatus.gold
+    assert user.status is UserStatus.bronze
 
 
 async def test_extend_paid_subscription_sets_source_and_last_invoice() -> None:
@@ -305,7 +308,8 @@ async def test_extend_paid_subscription_sets_source_and_last_invoice() -> None:
     assert subscription.source is SubscriptionSource.cryptobot
     assert subscription.last_invoice_id == 99
     assert user.total_active_days == 30
-    assert user.status is UserStatus.bronze
+    # A first 1m purchase grants no instant tier: consumed = 30 - 30 remaining = 0 -> basic.
+    assert user.status is UserStatus.basic
     assert session.flushed == 1
     assert session.scalar_queries[:2] == [
         (User, "id", True),

@@ -89,6 +89,11 @@ class FakeSession:
     async def rollback(self) -> None:
         self.rollbacks += 1
 
+    async def scalar(self, *args: object, **kwargs: object) -> None:
+        # No subscription row in these fake-session unit tests; loyalty helpers read it as
+        # "no active coverage" (effective status falls back to the stored/basic tier).
+        return None
+
 
 class FakeSessionContext:
     def __init__(self, session: FakeSession) -> None:

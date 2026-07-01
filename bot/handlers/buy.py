@@ -40,7 +40,7 @@ from bot.repos.referrals import (
     get_referral_stats,
     spend_referral_balance,
 )
-from bot.repos.subscriptions import extend_manual_subscription
+from bot.repos.subscriptions import extend_manual_subscription, get_subscription_for_user
 from bot.repos.tariffs import get_plan, get_tariff, resolve_plan_code
 from bot.repos.users import ensure_minimal_user
 from bot.services.access import send_access_links
@@ -51,6 +51,7 @@ from bot.services.payments import (
     create_xrocket_invoice_for_user,
 )
 from bot.services.pricing import TariffQuote, quote_tariff, tariff_duration_days
+from bot.services.subscriptions import effective_status
 
 logger = logging.getLogger(__name__)
 
@@ -189,13 +190,22 @@ async def tariff_callback(
                 i18n=i18n,
                 language_code=context.language_code,
             )
+            now = datetime.now(UTC)
             promo = await get_pending_promo_snapshot_for_user(
                 session,
                 user=user,
                 tariff_code=tariff_code,
-                now=datetime.now(UTC),
+                now=now,
             )
-            quote = quote_tariff(settings, tariff_code, user.status, promo=promo)
+            subscription = await get_subscription_for_user(session, user.id)
+            status = effective_status(
+                user.status,
+                user.total_active_days,
+                subscription.expires_at if subscription is not None else None,
+                now,
+                settings.loyalty,
+            )
+            quote = quote_tariff(settings, tariff_code, status, promo=promo)
             lang_code = user.lang_code
             referral_stats = await get_referral_stats(session, referrer_id=user.id)
             show_referral_pay = referral_stats.available_usd >= quote.net_usd
@@ -561,7 +571,15 @@ async def referral_pay_callback(
             lang_code = user.lang_code
             username = user.username
             tariff = get_tariff(settings, tariff_code)
-            price = quote_tariff(settings, tariff_code, user.status).net_usd
+            current_subscription = await get_subscription_for_user(session, user.id)
+            status = effective_status(
+                user.status,
+                user.total_active_days,
+                current_subscription.expires_at if current_subscription is not None else None,
+                now,
+                settings.loyalty,
+            )
+            price = quote_tariff(settings, tariff_code, status).net_usd
             plan_code = resolve_plan_code(settings, tariff_code)
             remaining = await spend_referral_balance(session, user=user, amount=price)
             subscription = await extend_manual_subscription(
