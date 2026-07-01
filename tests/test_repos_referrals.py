@@ -4,15 +4,18 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
+import pytest
 from sqlalchemy.dialects import postgresql
 
 from bot.models import Referral, ReferralEarning, User, UserStatus
 from bot.repos.referrals import (
+    InsufficientReferralBalance,
     create_referral,
     create_referral_earning_once,
     get_referral_by_referee_id,
     get_referral_stats,
     set_custom_percent_for_referrer,
+    spend_referral_balance,
 )
 
 NOW = datetime(2026, 6, 18, 12, 0, tzinfo=UTC)
@@ -100,6 +103,11 @@ class FakeReferralSession:
                 ),
                 None,
             )
+
+        if entity is User:
+            user_id = _param(params, "id")
+            user = next((candidate for candidate in self.users if candidate.id == user_id), None)
+            return user.referral_spent_usd if user is not None else None
 
         msg = f"unsupported scalar query for {entity}"
         raise AssertionError(msg)
@@ -302,3 +310,62 @@ async def test_set_custom_percent_for_referrer_updates_existing_referrals() -> N
 
 def _param(params: dict[str, Any], prefix: str) -> Any:
     return next((value for key, value in params.items() if key.startswith(prefix)), None)
+
+
+async def test_spend_referral_balance_debits_and_reduces_available(session_factory: Any) -> None:
+    async with session_factory() as session:
+        referrer = User(tg_id=1001, lang_code="en")
+        referee = User(tg_id=1002, lang_code="en")
+        session.add_all([referrer, referee])
+        await session.flush()
+        session.add_all(
+            [
+                ReferralEarning(
+                    referrer_id=referrer.id,
+                    referee_id=referee.id,
+                    invoice_id=1,
+                    amount_usd=Decimal("20.00"),
+                    created_at=NOW,
+                ),
+                ReferralEarning(
+                    referrer_id=referrer.id,
+                    referee_id=referee.id,
+                    invoice_id=2,
+                    amount_usd=Decimal("5.00"),
+                    created_at=NOW,
+                ),
+            ]
+        )
+        await session.flush()
+
+        remaining = await spend_referral_balance(session, user=referrer, amount=Decimal("15.00"))
+
+        assert remaining == Decimal("10.00")
+        assert referrer.referral_spent_usd == Decimal("15.00")
+        stats = await get_referral_stats(session, referrer_id=referrer.id)
+        assert stats.spent_usd == Decimal("15.00")
+        assert stats.available_usd == Decimal("10.00")
+
+
+async def test_spend_referral_balance_rejects_when_short(session_factory: Any) -> None:
+    async with session_factory() as session:
+        referrer = User(tg_id=2001, lang_code="en")
+        referee = User(tg_id=2002, lang_code="en")
+        session.add_all([referrer, referee])
+        await session.flush()
+        session.add(
+            ReferralEarning(
+                referrer_id=referrer.id,
+                referee_id=referee.id,
+                invoice_id=3,
+                amount_usd=Decimal("5.00"),
+                created_at=NOW,
+            )
+        )
+        await session.flush()
+
+        with pytest.raises(InsufficientReferralBalance) as excinfo:
+            await spend_referral_balance(session, user=referrer, amount=Decimal("10.00"))
+
+        assert excinfo.value.available == Decimal("5.00")
+        assert (referrer.referral_spent_usd or Decimal("0.00")) == Decimal("0.00")

@@ -171,9 +171,16 @@ async def test_tariff_callback_edits_quote_detail(monkeypatch) -> None:
     async def fake_pending_promo(*args: Any, **kwargs: Any) -> None:
         return None
 
+    async def fake_referral_stats(*args: Any, **kwargs: Any) -> Any:
+        return SimpleNamespace(available_usd=Decimal("0"))
+
+    def fake_detail_keyboard(*args: Any, **kwargs: Any) -> str:
+        return "detail-keyboard"
+
     monkeypatch.setattr(buy_module, "ensure_minimal_user", fake_ensure_minimal_user)
     monkeypatch.setattr(buy_module, "get_pending_promo_snapshot_for_user", fake_pending_promo)
-    monkeypatch.setattr(buy_module, "tariff_detail_keyboard", lambda *args: "detail-keyboard")
+    monkeypatch.setattr(buy_module, "get_referral_stats", fake_referral_stats)
+    monkeypatch.setattr(buy_module, "tariff_detail_keyboard", fake_detail_keyboard)
 
     callback_message = FakeMessage(chat=FakeChat(id=700))
     callback = FakeCallback(

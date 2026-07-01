@@ -25,6 +25,7 @@ CB_CRYPTOBOT_PREFIX = "pay:cryptobot:"
 CB_STARS_PREFIX = "pay:stars:"
 CB_XROCKET_PREFIX = "pay:xrocket:"
 CB_TRIBUTE_PREFIX = "pay:tribute:"
+CB_REFERRAL_PAY_PREFIX = "pay:referral:"
 CB_PROMO_BUY_PREFIX = "promo_buy:"
 CB_PROMO_CANCEL = "promo_cancel"
 CB_TRIAL_START = "trial:start"
@@ -298,6 +299,8 @@ def tariff_detail_keyboard(
     tariff_code: str,
     lang_code: str,
     settings: Settings,
+    *,
+    show_referral_pay: bool = False,
 ) -> InlineKeyboardMarkup:
     rows = [
         [
@@ -335,6 +338,18 @@ def tariff_detail_keyboard(
                     i18n.gettext("buy.pay.tribute", lang_code),
                     icon_key="buy.pay.tribute",
                     callback_data=f"{CB_TRIBUTE_PREFIX}{tariff_code}",
+                )
+            ]
+        )
+    # Shown only when the caller has verified the user's referral balance covers the price
+    # (see buy.tariff_callback); the handler re-checks under a row lock before granting.
+    if show_referral_pay:
+        rows.append(
+            [
+                _button(
+                    i18n.gettext("buy.pay.referral_balance", lang_code),
+                    icon_key="buy.pay.referral_balance",
+                    callback_data=f"{CB_REFERRAL_PAY_PREFIX}{tariff_code}",
                 )
             ]
         )

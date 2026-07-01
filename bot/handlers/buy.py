@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
+from decimal import Decimal
 
-from aiogram import F, Router
+from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import CallbackQuery, LabeledPrice
 from sqlalchemy.exc import SQLAlchemyError
@@ -12,6 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from bot.config import Settings
 from bot.core.db import session_scope
 from bot.core.i18n import JsonI18n
+from bot.core.logger import ServiceChannel
+from bot.core.service_events import fmt_amount, fmt_dt, money, render_event, user_mention
 from bot.handlers.start import callback_context
 from bot.keyboards import (
     CB_BACK_DURATION_PREFIX,
@@ -19,6 +22,7 @@ from bot.keyboards import (
     CB_BUY,
     CB_CRYPTOBOT_PREFIX,
     CB_PLAN_PREFIX,
+    CB_REFERRAL_PAY_PREFIX,
     CB_STARS_PREFIX,
     CB_TARIFF_PREFIX,
     CB_TRIBUTE_PREFIX,
@@ -31,15 +35,22 @@ from bot.keyboards import (
 from bot.payments.cryptobot import CryptoBotAPIError, CryptoBotClient
 from bot.payments.xrocket import XRocketAPIError, XRocketClient
 from bot.repos.promos import PromoUnavailable, get_pending_promo_snapshot_for_user
-from bot.repos.tariffs import get_plan
+from bot.repos.referrals import (
+    InsufficientReferralBalance,
+    get_referral_stats,
+    spend_referral_balance,
+)
+from bot.repos.subscriptions import extend_manual_subscription
+from bot.repos.tariffs import get_plan, get_tariff, resolve_plan_code
 from bot.repos.users import ensure_minimal_user
+from bot.services.access import send_access_links
 from bot.services.payments import (
     cancel_unusable_invoice,
     create_cryptobot_invoice_for_user,
     create_stars_invoice_for_user,
     create_xrocket_invoice_for_user,
 )
-from bot.services.pricing import TariffQuote, quote_tariff
+from bot.services.pricing import TariffQuote, quote_tariff, tariff_duration_days
 
 logger = logging.getLogger(__name__)
 
@@ -186,6 +197,8 @@ async def tariff_callback(
             )
             quote = quote_tariff(settings, tariff_code, user.status, promo=promo)
             lang_code = user.lang_code
+            referral_stats = await get_referral_stats(session, referrer_id=user.id)
+            show_referral_pay = referral_stats.available_usd >= quote.net_usd
     except SQLAlchemyError:
         logger.exception("failed to resolve tariff callback user")
         await callback.answer(i18n.gettext("error.generic", lang_code), show_alert=True)
@@ -201,7 +214,13 @@ async def tariff_callback(
     await _edit_text_or_answer(
         callback,
         _format_quote_text(i18n, settings, lang_code, quote),
-        reply_markup=tariff_detail_keyboard(i18n, tariff_code, lang_code, settings),
+        reply_markup=tariff_detail_keyboard(
+            i18n,
+            tariff_code,
+            lang_code,
+            settings,
+            show_referral_pay=show_referral_pay,
+        ),
     )
 
 
@@ -503,6 +522,150 @@ async def tribute_invoice_callback(
     )
 
 
+async def referral_pay_callback(
+    callback: CallbackQuery,
+    settings: Settings,
+    i18n: JsonI18n,
+    session_factory: async_sessionmaker[AsyncSession],
+    bot: Bot,
+    service_channel: ServiceChannel,
+) -> None:
+    """Grant a subscription paid entirely from the user's referral balance.
+
+    Unlike the provider callbacks, there is no external payment round-trip: the balance is
+    debited and the subscription granted atomically here, then access links + a service-channel
+    event are sent. The balance is re-checked under a row lock (``spend_referral_balance``), so a
+    stale/oversold button falls back to an ``InsufficientReferralBalance`` alert.
+    """
+    context = callback_context(callback, settings)
+    tariff_code = _parse_prefixed_callback(getattr(callback, "data", None), CB_REFERRAL_PAY_PREFIX)
+    if tariff_code is None or context.tg_id is None:
+        await callback.answer(
+            i18n.gettext("error.generic", context.language_code),
+            show_alert=True,
+        )
+        return
+
+    now = datetime.now(UTC)
+    lang_code = i18n.resolve_language(context.language_code)
+    price = Decimal("0.00")
+    try:
+        async with session_scope(session_factory) as session:
+            user = await ensure_minimal_user(
+                session,
+                tg_id=context.tg_id,
+                i18n=i18n,
+                language_code=context.language_code,
+            )
+            lang_code = user.lang_code
+            username = user.username
+            tariff = get_tariff(settings, tariff_code)
+            price = quote_tariff(settings, tariff_code, user.status).net_usd
+            plan_code = resolve_plan_code(settings, tariff_code)
+            remaining = await spend_referral_balance(session, user=user, amount=price)
+            subscription = await extend_manual_subscription(
+                session,
+                user=user,
+                days=tariff_duration_days(tariff.duration_months),
+                now=now,
+                loyalty=settings.loyalty,
+                plan_code=plan_code,
+            )
+            expires_at = subscription.expires_at
+    except InsufficientReferralBalance as exc:
+        await callback.answer(
+            i18n.gettext(
+                "buy.referral.insufficient",
+                lang_code,
+                available=f"{exc.available:.2f}",
+                price=f"{price:.2f}",
+            ),
+            show_alert=True,
+        )
+        return
+    except LookupError:
+        logger.info("invalid referral pay callback data: %r", getattr(callback, "data", None))
+        await callback.answer(i18n.gettext("error.generic", lang_code), show_alert=True)
+        return
+    except SQLAlchemyError:
+        logger.exception("failed to process referral-balance purchase")
+        await callback.answer(i18n.gettext("error.generic", lang_code), show_alert=True)
+        return
+
+    await _notify_referral_purchase(
+        service_channel,
+        tg_id=context.tg_id,
+        username=username,
+        tariff_code=tariff_code,
+        net=price,
+        plan_code=plan_code,
+        remaining=remaining,
+        expires_at=expires_at,
+    )
+
+    try:
+        await send_access_links(
+            bot,
+            settings,
+            i18n,
+            tg_id=context.tg_id,
+            lang_code=lang_code,
+            now=now,
+            plan_code=plan_code,
+        )
+    except Exception:
+        logger.exception(
+            "failed to send referral purchase access links",
+            extra={"tg_id": context.tg_id},
+        )
+
+    await _edit_text_or_answer(
+        callback,
+        i18n.gettext("buy.referral.success", lang_code, expires_at=_format_expiry(expires_at)),
+    )
+
+
+async def _notify_referral_purchase(
+    service_channel: ServiceChannel,
+    *,
+    tg_id: int,
+    username: str | None,
+    tariff_code: str,
+    net: Decimal,
+    plan_code: str | None,
+    remaining: Decimal,
+    expires_at: datetime,
+) -> None:
+    try:
+        await service_channel.send_html(
+            render_event(
+                glyph="check",
+                title="Referral balance purchase",
+                fields=[
+                    ("User", user_mention(tg_id, username)),
+                    ("Paid", money(net, "USD")),
+                ],
+                extra={
+                    "tariff": tariff_code,
+                    "plan": plan_code or "—",
+                    "net": f"{fmt_amount(net)} USD",
+                    "paid_from": "referral_balance",
+                    "remaining_balance": f"{fmt_amount(remaining)} USD",
+                    "expires_at": fmt_dt(expires_at),
+                },
+            )
+        )
+    except Exception:
+        logger.exception(
+            "failed to send referral purchase event",
+            extra={"tg_id": tg_id},
+        )
+
+
+def _format_expiry(expires_at: datetime) -> str:
+    return expires_at.strftime("%Y-%m-%d %H:%M")
+
+
 async def _resolve_user_language(
     tg_id: int | None,
     language_code: str | None,
@@ -625,4 +788,5 @@ def create_buy_router() -> Router:
     router.callback_query(F.data.startswith(CB_STARS_PREFIX))(stars_invoice_callback)
     router.callback_query(F.data.startswith(CB_XROCKET_PREFIX))(xrocket_invoice_callback)
     router.callback_query(F.data.startswith(CB_TRIBUTE_PREFIX))(tribute_invoice_callback)
+    router.callback_query(F.data.startswith(CB_REFERRAL_PAY_PREFIX))(referral_pay_callback)
     return router

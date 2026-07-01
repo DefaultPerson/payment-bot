@@ -109,7 +109,7 @@ def _format_referral_text(
         invite_link=invite_link,
         referral_count=stats.referral_count,
         referral_earned_usd=_money(stats.earned_usd),
-        referral_unpaid_earned_usd=_money(stats.unpaid_earned_usd),
+        referral_unpaid_earned_usd=_money(stats.available_usd),
         min_withdraw_usd=_money(settings.referral.min_withdraw_usd),
     )
 

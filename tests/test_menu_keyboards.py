@@ -326,6 +326,19 @@ def test_tariff_detail_keyboard_contains_xrocket_payment_action_only_when_enable
     assert "Pay with xRocket" in keyboard_texts(enabled)
 
 
+def test_tariff_detail_keyboard_shows_referral_pay_only_when_flagged() -> None:
+    keyboards = keyboard_module()
+
+    hidden = keyboards.tariff_detail_keyboard(JsonI18n(), "1m", "en", Settings())
+    shown = keyboards.tariff_detail_keyboard(
+        JsonI18n(), "1m", "en", Settings(), show_referral_pay=True
+    )
+
+    assert f"{keyboards.CB_REFERRAL_PAY_PREFIX}1m" not in keyboard_callback_data(hidden)
+    assert f"{keyboards.CB_REFERRAL_PAY_PREFIX}1m" in keyboard_callback_data(shown)
+    assert "Pay with referral balance" in keyboard_texts(shown)
+
+
 def test_payment_keyboard_points_to_provider_url_and_support() -> None:
     keyboards = keyboard_module()
     settings = Settings(bot={"support_username": "HydraSupport"})

@@ -106,6 +106,11 @@ class User(Base):
         index=True,
     )
     referral_percent: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
+    # Running total of referral earnings the user has spent on subscriptions (USD). The
+    # spendable/withdrawable balance is derived: Σ unpaid referral_earnings − this column.
+    referral_spent_usd: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, server_default="0",
+    )
     pending_promo_id: Mapped[int | None] = mapped_column(
         ForeignKey("promos.id", ondelete="SET NULL"),
         index=True,

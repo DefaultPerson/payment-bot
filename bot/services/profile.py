@@ -54,7 +54,7 @@ def build_profile_view(
             referral_stats.earned_usd if referral_stats is not None else Decimal("0.00")
         ),
         referral_unpaid_earned_usd=(
-            referral_stats.unpaid_earned_usd if referral_stats is not None else Decimal("0.00")
+            referral_stats.available_usd if referral_stats is not None else Decimal("0.00")
         ),
     )
 

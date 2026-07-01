@@ -16,6 +16,20 @@ class ReferralStats:
     referral_count: int
     earned_usd: Decimal
     unpaid_earned_usd: Decimal
+    spent_usd: Decimal = Decimal("0.00")
+
+    @property
+    def available_usd(self) -> Decimal:
+        """Balance the user can still spend or withdraw: unpaid earnings minus spends."""
+        return self.unpaid_earned_usd - self.spent_usd
+
+
+class InsufficientReferralBalance(Exception):
+    """Raised when a referral-balance purchase exceeds the available balance."""
+
+    def __init__(self, available: Decimal) -> None:
+        self.available = available
+        super().__init__(f"insufficient referral balance: available={available}")
 
 
 async def get_referral_by_referee_id(
@@ -59,10 +73,14 @@ async def get_referral_stats(
         (earning.amount_usd for earning in earnings if not earning.paid_out),
         Decimal("0.00"),
     )
+    spent_usd = await session.scalar(
+        select(User.referral_spent_usd).where(User.id == referrer_id),
+    )
     return ReferralStats(
         referral_count=len(referrals),
         earned_usd=earned_usd,
         unpaid_earned_usd=unpaid_earned_usd,
+        spent_usd=spent_usd or Decimal("0.00"),
     )
 
 
@@ -149,3 +167,41 @@ async def set_custom_percent_for_referrer(
         referral.custom_percent = percent
     await session.flush()
     return len(referrals)
+
+
+async def spend_referral_balance(
+    session: AsyncSession,
+    *,
+    user: User,
+    amount: Decimal,
+) -> Decimal:
+    """Debit ``amount`` USD from ``user``'s referral balance; return the remaining balance.
+
+    Locks the user row ``FOR UPDATE`` so concurrent taps can't double-spend, then checks the
+    derived balance (Σ unpaid earnings − already spent). Raises ``InsufficientReferralBalance``
+    (carrying the currently available amount) when the balance is short.
+    """
+    if user.id is None:
+        msg = "user must be persisted to spend referral balance"
+        raise ValueError(msg)
+
+    locked = await session.scalar(
+        select(User).where(User.id == user.id).with_for_update(),
+    )
+    if locked is None:
+        msg = f"user {user.id} was not found"
+        raise LookupError(msg)
+
+    earnings = await get_referral_earnings_for_referrer(session, user.id)
+    unpaid = sum(
+        (earning.amount_usd for earning in earnings if not earning.paid_out),
+        Decimal("0.00"),
+    )
+    spent = locked.referral_spent_usd or Decimal("0.00")
+    available = unpaid - spent
+    if available < amount:
+        raise InsufficientReferralBalance(available)
+
+    locked.referral_spent_usd = spent + amount
+    await session.flush()
+    return available - amount
