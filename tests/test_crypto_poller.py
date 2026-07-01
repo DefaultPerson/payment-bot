@@ -242,7 +242,7 @@ async def test_poll_once_fetches_active_invoices_in_batches_and_processes_paid(
     assert result.expired == 0
     assert result.errors == 0
     assert processed == ["provider-2"]
-    assert provider_events == ["provider-1", "provider-2"]
+    assert provider_events == ["provider-2"]  # active invoices are not recorded, only settled
     assert metrics.provider_polls == [("cryptobot", "success"), ("cryptobot", "success")]
     assert metrics.payments == [("cryptobot", "paid", Decimal("73.30"))]
     assert "commit" in session_factory.events
@@ -300,7 +300,8 @@ async def test_poll_once_marks_expired_local_invoices_after_provider_poll(
 
     assert result.polled == 1
     assert result.expired == 2
-    assert events == ["load-active", "record-event", "mark-expired"]
+    # active (unpaid) invoice → no provider event written, only the load + expiry sweep
+    assert events == ["load-active", "mark-expired"]
 
 
 @pytest.mark.asyncio

@@ -117,6 +117,13 @@ async def poll_cryptobot_once(
         provider_invoices = provider_batch.invoices
         polled += len(provider_invoices)
         for provider_invoice in provider_invoices:
+            # Record a provider event only for a SETTLED invoice, not on every poll of a
+            # still-active one. The poller re-lists active invoices each ~30s cycle, so
+            # recording before this filter wrote an unbounded, duplicate row per invoice per
+            # tick (provider_events has no unique index and is never pruned).
+            if provider_invoice.status != "paid":
+                continue
+
             event_recorded = await _record_provider_invoice_event(
                 session_factory,
                 provider_invoice=provider_invoice,
@@ -124,11 +131,8 @@ async def poll_cryptobot_once(
             )
             if not event_recorded:
                 errors += 1
-                if metrics is not None and provider_invoice.status == "paid":
+                if metrics is not None:
                     metrics.record_payment(provider="cryptobot", status="error")
-                continue
-
-            if provider_invoice.status != "paid":
                 continue
 
             paid_result = await _process_provider_paid_invoice(

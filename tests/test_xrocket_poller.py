@@ -237,8 +237,8 @@ async def test_poll_once_fetches_active_invoices_individually_and_processes_paid
     assert result.errors == 0
     assert client.calls == ["provider-1", "provider-2"]
     assert processed == ["provider-2"]
+    # active invoices are not recorded, only settled ones
     assert provider_events == [
-        (InvoiceProvider.xrocket, "provider-1"),
         (InvoiceProvider.xrocket, "provider-2"),
     ]
     assert metrics.provider_polls == [("xrocket", "success"), ("xrocket", "success")]
@@ -365,7 +365,8 @@ async def test_poll_once_marks_expired_xrocket_invoices_after_provider_poll(
 
     assert result.polled == 1
     assert result.expired == 2
-    assert events == ["load-active", "record-event", "mark-expired"]
+    # active (unpaid) invoice → no provider event written, only the load + expiry sweep
+    assert events == ["load-active", "mark-expired"]
 
 
 @pytest.mark.asyncio
