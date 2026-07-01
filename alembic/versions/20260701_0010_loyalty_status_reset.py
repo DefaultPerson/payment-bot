@@ -24,11 +24,14 @@ BRONZE_DAYS = (2 - 1) * DAYS_PER_MONTH
 SILVER_DAYS = (4 - 1) * DAYS_PER_MONTH
 GOLD_DAYS = (6 - 1) * DAYS_PER_MONTH
 
-user_status = sa.Enum("basic", "bronze", "silver", "gold", name="user_status", create_type=False)
+# Read side is typed so timestamptz round-trips as an aware datetime on both asyncpg (prod)
+# and SQLite (tests). The write side does NOT type the status column as the ``user_status``
+# enum: an enum-typed bind param makes asyncpg resolve the type at prepare time and fail with
+# "type user_status does not exist", so status is written as a bare SQL string literal that
+# Postgres coerces to the enum in assignment context (SQLite stores it as plain text).
 users = sa.table(
     "users",
     sa.column("id", sa.Integer),
-    sa.column("status", user_status),
     sa.column("total_active_days", sa.Integer),
 )
 subscriptions = sa.table(
@@ -36,6 +39,8 @@ subscriptions = sa.table(
     sa.column("user_id", sa.Integer),
     sa.column("expires_at", sa.DateTime(timezone=True)),
 )
+
+_TIERS = ("basic", "bronze", "silver", "gold")
 
 
 def _tier_for_days(consumed: int) -> str:
@@ -67,8 +72,11 @@ def upgrade() -> None:
     ).all()
     for user_id, total_active_days, expires_at in rows:
         consumed = max(0, (total_active_days or 0) - _remaining_days(expires_at, now))
+        tier = _tier_for_days(consumed)
+        assert tier in _TIERS  # noqa: S101 — guards the literal interpolated below
         bind.execute(
-            users.update().where(users.c.id == user_id).values(status=_tier_for_days(consumed))
+            sa.text(f"UPDATE users SET status = '{tier}' WHERE id = :id"),
+            {"id": int(user_id)},
         )
 
 
