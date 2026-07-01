@@ -755,6 +755,54 @@ async def test_process_paid_invoice_extends_subscription_once() -> None:
     assert session.committed == 0
 
 
+async def test_process_paid_invoice_prorates_on_plan_upgrade() -> None:
+    session = FakeAsyncSession()
+    now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
+    user = make_user()
+    tariff = make_tariff(duration_months=1)  # DB tariff code "1m"
+    invoice = make_invoice()
+    existing = make_subscription(expires_at=now + timedelta(days=300))
+    existing.plan_code = "main"
+    existing.source = SubscriptionSource.cryptobot
+    session.users.append(user)
+    session.tariffs.append(tariff)
+    session.invoices.append(invoice)
+    session.subscriptions.append(existing)
+
+    # Item "1m" belongs to the pricier, broader "pro" plan; the user currently holds "main".
+    settings = Settings(
+        access={
+            "protected_chats": [
+                {"chat_id": -1001, "title": "Main"},
+                {"chat_id": -1002, "title": "Pro"},
+            ]
+        },
+        tariffs={
+            "plans": [
+                {"code": "main", "chat_ids": [-1001]},
+                {"code": "pro", "chat_ids": [-1001, -1002]},
+            ],
+            "items": [
+                {"code": "main_1m", "plan_code": "main", "duration_months": 1,
+                 "base_price_usd": "30"},
+                {"code": "1m", "plan_code": "pro", "duration_months": 1, "base_price_usd": "60"},
+            ],
+        },
+    )
+
+    result = await process_paid_cryptobot_invoice(
+        session,
+        provider_invoice=make_provider_invoice(raw={"invoice_id": "provider-1"}),
+        now=now,
+        settings=settings,
+    )
+
+    subscription = result.subscription
+    # Upgrade main->pro (main $1/day, pro $2/day): carry 300*(1/2)=150 + 30 purchased = 180.
+    assert subscription.plan_code == "pro"
+    assert subscription.expires_at == now + timedelta(days=180)
+
+
 async def test_process_paid_xrocket_invoice_extends_subscription_once() -> None:
     from bot.services.payments import process_paid_xrocket_invoice
 

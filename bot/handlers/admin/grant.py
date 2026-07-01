@@ -18,7 +18,6 @@ from bot.handlers.admin._nav import callback_language, edit_or_answer, message_l
 from bot.handlers.admin.states import AdminGrantState
 from bot.keyboards.admin import back_keyboard, cancel_keyboard
 from bot.repos.subscriptions import extend_manual_subscription
-from bot.repos.tariffs import default_plan
 from bot.repos.users import ensure_minimal_user
 
 logger = logging.getLogger(__name__)
@@ -71,13 +70,16 @@ async def perform_grant(
     now = datetime.now(UTC)
     async with session_scope(session_factory) as session:
         user = await ensure_minimal_user(session, tg_id=target_tg_id, i18n=i18n)
+        # Preserve the user's current plan on a manual grant — passing None keeps an existing
+        # subscription's plan_code (avoids silently downgrading a PRO user to the default
+        # plan). A brand-new granted subscription gets NULL, which resolves to default access.
         subscription = await extend_manual_subscription(
             session,
             user=user,
             days=days,
             now=now,
             loyalty=settings.loyalty,
-            plan_code=default_plan(settings).code,
+            plan_code=None,
         )
         expires_at = subscription.expires_at
         target_username = user.username

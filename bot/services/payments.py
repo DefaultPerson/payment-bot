@@ -342,6 +342,7 @@ async def process_paid_cryptobot_invoice(
         bonus_days=invoice.promo_extra_days or 0,
         loyalty=settings.loyalty if settings is not None else None,
         plan_code=resolve_plan_code(settings, tariff.code) if settings is not None else None,
+        settings=settings,
     )
     paid_amounts = _paid_amounts_from_payload(provider_invoice.raw)
     await mark_invoice_paid(
@@ -420,6 +421,7 @@ async def process_paid_xrocket_invoice(
         bonus_days=invoice.promo_extra_days or 0,
         loyalty=settings.loyalty if settings is not None else None,
         plan_code=resolve_plan_code(settings, tariff.code) if settings is not None else None,
+        settings=settings,
     )
     await mark_invoice_paid(
         session,
@@ -521,6 +523,7 @@ async def process_paid_tribute_invoice(
         bonus_days=0,
         loyalty=settings.loyalty,
         plan_code=resolve_plan_code(settings, tariff.code),
+        settings=settings,
     )
     await mark_invoice_paid(session, invoice, paid_at=now, raw_payload=provider_payload)
     await _record_paid_referral_earning(
@@ -638,6 +641,7 @@ async def process_paid_stars_invoice(
         bonus_days=invoice.promo_extra_days or 0,
         loyalty=settings.loyalty if settings is not None else None,
         plan_code=resolve_plan_code(settings, tariff.code) if settings is not None else None,
+        settings=settings,
     )
     if _stars_subscription_period_from_invoice(invoice) is not None:
         subscription.stars_subscription_active = True
@@ -712,6 +716,7 @@ async def _process_paid_stars_recurring_invoice(
         bonus_days=0,
         loyalty=settings.loyalty if settings is not None else None,
         plan_code=resolve_plan_code(settings, tariff.code) if settings is not None else None,
+        settings=settings,
     )
     subscription.stars_subscription_active = True
     await _record_paid_referral_earning(

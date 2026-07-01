@@ -1,13 +1,17 @@
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 
 import pytest
 
 from bot.models import UserStatus
 from bot.services.subscriptions import (
     calculate_extension,
+    calculate_plan_change_expiry,
     minimum_status_after_grant,
     status_after_total_active_days,
 )
+
+NOW = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
 
 
 def test_calculate_extension_starts_from_now_without_current_subscription() -> None:
@@ -42,6 +46,81 @@ def test_calculate_extension_rejects_non_positive_days(days: int) -> None:
 
     with pytest.raises(ValueError, match="days must be positive"):
         calculate_extension(now=now, current_expires_at=None, days=days)
+
+
+def test_plan_change_upgrade_prorates_carried_days_by_value() -> None:
+    # 300 remaining days, old $1/day, new $2/day -> carry 300*(1/2)=150, + 30 purchased.
+    expiry = calculate_plan_change_expiry(
+        now=NOW,
+        current_expires_at=NOW + timedelta(days=300),
+        purchased_days=30,
+        is_upgrade=True,
+        old_rate=Decimal("1"),
+        new_rate=Decimal("2"),
+    )
+    assert expiry == NOW + timedelta(days=150 + 30)
+
+
+def test_plan_change_upgrade_never_grows_carry_when_new_is_cheaper() -> None:
+    # Upgrade flagged (e.g. by access breadth) but the new plan is cheaper: clamp keeps the
+    # full remaining time, never grows it.
+    expiry = calculate_plan_change_expiry(
+        now=NOW,
+        current_expires_at=NOW + timedelta(days=100),
+        purchased_days=30,
+        is_upgrade=True,
+        old_rate=Decimal("2"),
+        new_rate=Decimal("1"),
+    )
+    assert expiry == NOW + timedelta(days=100 + 30)
+
+
+def test_plan_change_non_upgrade_carries_full_remaining() -> None:
+    expiry = calculate_plan_change_expiry(
+        now=NOW,
+        current_expires_at=NOW + timedelta(days=100),
+        purchased_days=30,
+        is_upgrade=False,
+        old_rate=Decimal("1"),
+        new_rate=Decimal("2"),
+    )
+    assert expiry == NOW + timedelta(days=100 + 30)
+
+
+def test_plan_change_expired_subscription_has_no_carry() -> None:
+    expiry = calculate_plan_change_expiry(
+        now=NOW,
+        current_expires_at=NOW - timedelta(days=5),
+        purchased_days=30,
+        is_upgrade=True,
+        old_rate=Decimal("1"),
+        new_rate=Decimal("2"),
+    )
+    assert expiry == NOW + timedelta(days=30)
+
+
+def test_plan_change_unknown_rates_carry_full_remaining() -> None:
+    expiry = calculate_plan_change_expiry(
+        now=NOW,
+        current_expires_at=NOW + timedelta(days=100),
+        purchased_days=30,
+        is_upgrade=True,
+        old_rate=None,
+        new_rate=None,
+    )
+    assert expiry == NOW + timedelta(days=100 + 30)
+
+
+def test_plan_change_rejects_non_positive_purchased_days() -> None:
+    with pytest.raises(ValueError, match="purchased_days must be positive"):
+        calculate_plan_change_expiry(
+            now=NOW,
+            current_expires_at=None,
+            purchased_days=0,
+            is_upgrade=False,
+            old_rate=None,
+            new_rate=None,
+        )
 
 
 @pytest.mark.parametrize(

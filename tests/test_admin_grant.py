@@ -206,6 +206,36 @@ async def test_grant_input_extends_subscription_notifies_and_replies(monkeypatch
     assert state.current is None
 
 
+async def test_grant_preserves_current_plan(monkeypatch) -> None:
+    import bot.handlers.admin.grant as grant_module
+
+    captured: dict[str, Any] = {}
+    user = FakeUserRecord(id=7, tg_id=123, lang_code="en")
+
+    async def fake_ensure(session: Any, *, tg_id: int, i18n: JsonI18n) -> FakeUserRecord:
+        return user
+
+    async def fake_extend(session: Any, *, user, days, now, loyalty, plan_code=None):
+        captured["plan_code"] = plan_code
+        return FakeSubscription(expires_at=datetime(2026, 6, 27, 12, 30, tzinfo=UTC))
+
+    monkeypatch.setattr(grant_module, "ensure_minimal_user", fake_ensure)
+    monkeypatch.setattr(grant_module, "extend_manual_subscription", fake_extend)
+
+    await grant_module.grant_input(
+        FakeMessage(text="123 10", from_user=FakeTelegramUser(100, "en")),
+        settings=Settings(admin_ids=[100]),
+        i18n=JsonI18n(),
+        session_factory=FakeSessionFactory(),
+        service_channel=FakeServiceChannel(),
+        state=FakeState(),
+    )
+
+    # Grant must NOT force a plan (None => _extend_subscription preserves the user's current
+    # plan instead of silently downgrading a PRO user to the default plan).
+    assert captured["plan_code"] is None
+
+
 async def test_grant_input_invalid_args_reprompts_without_db(monkeypatch) -> None:
     import bot.handlers.admin.grant as grant_module
 

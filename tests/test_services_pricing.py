@@ -6,7 +6,51 @@ import pytest
 
 from bot.config import Settings
 from bot.models import PromoKind, UserStatus
-from bot.services.pricing import PromoSnapshot, TariffQuote, quote_tariff, tariff_duration_days
+from bot.services.pricing import (
+    PromoSnapshot,
+    TariffQuote,
+    plan_daily_rate,
+    quote_tariff,
+    tariff_duration_days,
+)
+
+
+def _rate_settings() -> Settings:
+    return Settings(
+        tariffs={
+            "plans": [
+                {"code": "main", "chat_ids": [-1001]},
+                {"code": "pro", "chat_ids": [-1001, -1002]},
+                {"code": "empty", "chat_ids": [-1003]},
+            ],
+            "items": [
+                {"code": "main_1m", "plan_code": "main", "duration_months": 1,
+                 "base_price_usd": "30"},
+                {"code": "main_3m", "plan_code": "main", "duration_months": 3,
+                 "base_price_usd": "60"},
+                {"code": "pro_1m", "plan_code": "pro", "duration_months": 1,
+                 "base_price_usd": "60"},
+            ],
+        },
+    )
+
+
+def test_plan_daily_rate_uses_shortest_active_item() -> None:
+    settings = _rate_settings()
+    # main: shortest item is 1m $30 -> $1/day (ignores the cheaper-per-day 3m item).
+    assert plan_daily_rate(settings, "main") == Decimal("1")
+    assert plan_daily_rate(settings, "pro") == Decimal("2")  # 60 / 30
+
+
+def test_plan_daily_rate_none_plan_uses_default() -> None:
+    # default plan = first active plan ("main").
+    assert plan_daily_rate(_rate_settings(), None) == Decimal("1")
+
+
+def test_plan_daily_rate_returns_none_without_active_item() -> None:
+    settings = _rate_settings()
+    assert plan_daily_rate(settings, "empty") is None
+    assert plan_daily_rate(settings, "nonexistent") is None
 
 
 def test_tariff_duration_days_uses_30_day_months() -> None:

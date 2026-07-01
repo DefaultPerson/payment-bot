@@ -5,7 +5,7 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from bot.config import Settings, TariffConfig
 from bot.models import PromoKind, UserStatus
-from bot.repos.tariffs import get_tariff
+from bot.repos.tariffs import default_plan, get_plan_tariffs, get_tariff
 
 USD_CENTS = Decimal("0.01")
 DAYS_PER_MONTH = 30
@@ -41,6 +41,28 @@ def money(value: Decimal) -> Decimal:
 
 def tariff_duration_days(months: int) -> int:
     return months * DAYS_PER_MONTH
+
+
+def plan_daily_rate(settings: Settings, plan_code: str | None) -> Decimal | None:
+    """List price per day for a plan, or ``None`` if it has no active priced item.
+
+    Uses the plan's SHORTEST active item's undiscounted ``base_price_usd`` divided by its
+    duration in days — a deterministic list rate that compares two plans on the same basis
+    (ignoring duration discounts). ``plan_code=None`` is treated as the default plan.
+    """
+    if plan_code is None:
+        try:
+            plan_code = default_plan(settings).code
+        except LookupError:
+            return None
+    items = get_plan_tariffs(settings, plan_code)
+    if not items:
+        return None
+    item = min(items, key=lambda tariff: tariff.duration_months)
+    days = tariff_duration_days(item.duration_months)
+    if days <= 0:
+        return None
+    return item.base_price_usd / Decimal(days)
 
 
 def quote_tariff(

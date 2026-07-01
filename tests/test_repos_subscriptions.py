@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from bot.config import Settings
 from bot.models import Subscription, SubscriptionSource, User, UserStatus
 from bot.repos.subscriptions import (
     count_active_subscriptions,
@@ -11,6 +12,30 @@ from bot.repos.subscriptions import (
     get_subscription_for_user,
     start_trial_subscription,
 )
+
+
+def _two_plan_settings() -> Settings:
+    # main opens only -1001 at $1/day; pro opens -1001 + -1002 (superset) at $2/day.
+    return Settings(
+        access={
+            "protected_chats": [
+                {"chat_id": -1001, "title": "Main"},
+                {"chat_id": -1002, "title": "Pro"},
+            ]
+        },
+        tariffs={
+            "plans": [
+                {"code": "main", "chat_ids": [-1001]},
+                {"code": "pro", "chat_ids": [-1001, -1002]},
+            ],
+            "items": [
+                {"code": "main_1m", "plan_code": "main", "duration_months": 1,
+                 "base_price_usd": "30"},
+                {"code": "pro_1m", "plan_code": "pro", "duration_months": 1,
+                 "base_price_usd": "60"},
+            ],
+        },
+    )
 
 
 class FakeAsyncSession:
@@ -357,6 +382,120 @@ async def test_extend_paid_subscription_extends_from_future_and_preserves_higher
     assert user.total_active_days == 35
     assert user.status is UserStatus.gold
     assert session.flushed == 1
+
+
+async def test_paid_upgrade_to_pricier_plan_prorates_carried_days() -> None:
+    session = FakeAsyncSession()
+    user = make_user(user_id=20)
+    now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
+    existing = make_subscription(
+        user_id=user.id,
+        started_at=now - timedelta(days=10),
+        expires_at=now + timedelta(days=300),
+    )
+    existing.plan_code = "main"
+    session.add(user)
+    session.add(existing)
+
+    updated = await extend_paid_subscription(
+        session,
+        user=user,
+        days=30,
+        source=SubscriptionSource.cryptobot,
+        last_invoice_id=1,
+        now=now,
+        plan_code="pro",
+        settings=_two_plan_settings(),
+    )
+
+    # main $1/day, pro $2/day -> carry 300*(1/2)=150 + 30 purchased = 180 days, now on pro.
+    assert updated.plan_code == "pro"
+    assert updated.expires_at == now + timedelta(days=180)
+
+
+async def test_paid_downgrade_carries_full_remaining() -> None:
+    session = FakeAsyncSession()
+    user = make_user(user_id=21)
+    now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
+    existing = make_subscription(
+        user_id=user.id,
+        started_at=now - timedelta(days=10),
+        expires_at=now + timedelta(days=100),
+    )
+    existing.plan_code = "pro"
+    session.add(user)
+    session.add(existing)
+
+    updated = await extend_paid_subscription(
+        session,
+        user=user,
+        days=30,
+        source=SubscriptionSource.cryptobot,
+        last_invoice_id=2,
+        now=now,
+        plan_code="main",
+        settings=_two_plan_settings(),
+    )
+
+    # pro -> main is neither broader access nor pricier -> full carry, no proration.
+    assert updated.plan_code == "main"
+    assert updated.expires_at == now + timedelta(days=130)
+
+
+async def test_paid_same_plan_renewal_is_not_prorated() -> None:
+    session = FakeAsyncSession()
+    user = make_user(user_id=22)
+    now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
+    existing = make_subscription(
+        user_id=user.id,
+        started_at=now - timedelta(days=10),
+        expires_at=now + timedelta(days=300),
+    )
+    existing.plan_code = "pro"
+    session.add(user)
+    session.add(existing)
+
+    updated = await extend_paid_subscription(
+        session,
+        user=user,
+        days=30,
+        source=SubscriptionSource.cryptobot,
+        last_invoice_id=3,
+        now=now,
+        plan_code="pro",
+        settings=_two_plan_settings(),
+    )
+
+    # Same plan -> full stack (no proration branch).
+    assert updated.expires_at == now + timedelta(days=330)
+
+
+async def test_paid_plan_change_without_settings_is_not_prorated() -> None:
+    session = FakeAsyncSession()
+    user = make_user(user_id=23)
+    now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
+    existing = make_subscription(
+        user_id=user.id,
+        started_at=now - timedelta(days=10),
+        expires_at=now + timedelta(days=300),
+    )
+    existing.plan_code = "main"
+    session.add(user)
+    session.add(existing)
+
+    updated = await extend_paid_subscription(
+        session,
+        user=user,
+        days=30,
+        source=SubscriptionSource.cryptobot,
+        last_invoice_id=4,
+        now=now,
+        plan_code="pro",
+    )
+
+    # No settings passed -> proration disabled -> full stack (regression guard).
+    assert updated.plan_code == "pro"
+    assert updated.expires_at == now + timedelta(days=330)
 
 
 async def test_count_active_subscriptions_counts_future_expirations_only() -> None:

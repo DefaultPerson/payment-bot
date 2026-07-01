@@ -7,10 +7,14 @@ from typing import Literal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bot.config import Settings
 from bot.models import Subscription, SubscriptionSource, User, UserStatus
+from bot.services.access import allowed_chat_ids_for_plan
+from bot.services.pricing import plan_daily_rate
 from bot.services.subscriptions import (
     SupportsLoyaltyThresholds,
     calculate_extension,
+    calculate_plan_change_expiry,
     status_after_total_active_days_for_policy,
     subscription_active_at,
 )
@@ -197,6 +201,7 @@ async def extend_paid_subscription(
     bonus_days: int = 0,
     loyalty: SupportsLoyaltyThresholds | None = None,
     plan_code: str | None = None,
+    settings: Settings | None = None,
 ) -> Subscription:
     return await _extend_subscription(
         session,
@@ -209,6 +214,7 @@ async def extend_paid_subscription(
         update_paid_fields=True,
         loyalty=loyalty,
         plan_code=plan_code,
+        settings=settings,
     )
 
 
@@ -272,6 +278,7 @@ async def _extend_subscription(
     update_paid_fields: bool,
     loyalty: SupportsLoyaltyThresholds | None,
     plan_code: str | None = None,
+    settings: Settings | None = None,
 ) -> Subscription:
     if bonus_days < 0:
         msg = "bonus_days must not be negative"
@@ -300,6 +307,22 @@ async def _extend_subscription(
         )
         session.add(subscription)
     else:
+        # A plan CHANGE must not grant the carried-over days at the new plan for free: on an
+        # upgrade, prorate the remaining time by value. Only kicks in when settings are
+        # supplied (paid paths) and the plan actually changes.
+        if (
+            settings is not None
+            and plan_code is not None
+            and subscription.plan_code != plan_code
+        ):
+            new_expires_at = _plan_change_expiry(
+                settings,
+                now=now,
+                current_expires_at=current_expires_at,
+                purchased_days=days + bonus_days,
+                old_plan_code=subscription.plan_code,
+                new_plan_code=plan_code,
+            )
         subscription.expires_at = new_expires_at
         _reset_notification_markers(subscription)
         subscription.updated_at = now
@@ -328,6 +351,38 @@ def _reset_notification_markers(subscription: Subscription) -> None:
     subscription.notified_0d_at = None
     subscription.notified_post_at = None
     subscription.access_revoked_at = None
+
+
+def _plan_change_expiry(
+    settings: Settings,
+    *,
+    now: datetime,
+    current_expires_at: datetime | None,
+    purchased_days: int,
+    old_plan_code: str | None,
+    new_plan_code: str,
+) -> datetime:
+    """Expiry for an extension that switches plan, prorating the carry on an upgrade.
+
+    An "upgrade" is either broader access (the new plan opens chats the old did not) OR a
+    higher price. The day math (value ratio, clamped to never grow) lives in
+    :func:`calculate_plan_change_expiry`.
+    """
+    old_rate = plan_daily_rate(settings, old_plan_code)
+    new_rate = plan_daily_rate(settings, new_plan_code)
+    old_chats = allowed_chat_ids_for_plan(settings, old_plan_code)
+    new_chats = allowed_chat_ids_for_plan(settings, new_plan_code)
+    is_upgrade = new_chats > old_chats or (
+        old_rate is not None and new_rate is not None and new_rate > old_rate
+    )
+    return calculate_plan_change_expiry(
+        now=now,
+        current_expires_at=current_expires_at,
+        purchased_days=purchased_days,
+        is_upgrade=is_upgrade,
+        old_rate=old_rate,
+        new_rate=new_rate,
+    )
 
 
 async def _lock_user_for_update(session: AsyncSession, user: User) -> User:
