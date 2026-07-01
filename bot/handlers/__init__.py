@@ -11,6 +11,7 @@ from bot.handlers.service_cleanup import create_service_cleanup_router
 from bot.handlers.stars import create_stars_router
 from bot.handlers.start import create_start_router
 from bot.handlers.support import create_support_router
+from bot.handlers.trial import create_trial_router
 
 
 def create_router() -> Router:
@@ -20,6 +21,7 @@ def create_router() -> Router:
     router.include_router(create_profile_router())
     router.include_router(create_language_router())
     router.include_router(create_buy_router())
+    router.include_router(create_trial_router())
     router.include_router(create_promo_router())
     router.include_router(create_referral_router())
     router.include_router(create_stars_router())

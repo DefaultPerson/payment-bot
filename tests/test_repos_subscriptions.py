@@ -9,6 +9,7 @@ from bot.repos.subscriptions import (
     extend_manual_subscription,
     extend_paid_subscription,
     get_subscription_for_user,
+    start_trial_subscription,
 )
 
 
@@ -372,3 +373,92 @@ async def test_count_active_subscriptions_counts_future_expirations_only() -> No
     count = await count_active_subscriptions(session, now=now)
 
     assert count == 1
+
+
+async def test_start_trial_subscription_creates_grant_and_marks_used() -> None:
+    session = FakeAsyncSession()
+    user = make_user()
+    session.add(user)
+    await session.flush()
+    now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
+
+    activation = await start_trial_subscription(
+        session, user=user, days=3, plan_code="main", now=now
+    )
+
+    assert activation.status == "activated"
+    assert activation.subscription is not None
+    assert activation.subscription.source is SubscriptionSource.trial
+    assert activation.subscription.plan_code == "main"
+    assert activation.subscription.expires_at == now + timedelta(days=3)
+    assert activation.subscription.last_invoice_id is None
+    assert user.trial_used_at == now
+    assert user.total_active_days == 3
+
+
+async def test_start_trial_subscription_is_one_time() -> None:
+    session = FakeAsyncSession()
+    user = make_user()
+    session.add(user)
+    await session.flush()
+    now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
+
+    first = await start_trial_subscription(session, user=user, days=3, plan_code="main", now=now)
+    assert first.status == "activated"
+
+    later = now + timedelta(days=90)
+    second = await start_trial_subscription(session, user=user, days=3, plan_code="main", now=later)
+
+    assert second.status == "already_used"
+    assert second.subscription is None
+    # Still exactly one subscription, expiry unchanged from the first grant.
+    assert len(session.subscriptions) == 1
+    assert session.subscriptions[0].expires_at == now + timedelta(days=3)
+
+
+async def test_start_trial_subscription_blocked_by_active_subscription() -> None:
+    session = FakeAsyncSession()
+    user = make_user(user_id=5)
+    now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
+    session.add(user)
+    session.add(
+        make_subscription(
+            user_id=user.id,
+            started_at=now - timedelta(days=1),
+            expires_at=now + timedelta(days=10),
+        )
+    )
+
+    activation = await start_trial_subscription(
+        session, user=user, days=3, plan_code="main", now=now
+    )
+
+    assert activation.status == "has_active"
+    assert activation.subscription is None
+    assert user.trial_used_at is None
+
+
+async def test_start_trial_subscription_reuses_lapsed_row_as_trial() -> None:
+    session = FakeAsyncSession()
+    user = make_user(user_id=6, total_active_days=30)
+    now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
+    lapsed = make_subscription(
+        user_id=user.id,
+        started_at=now - timedelta(days=40),
+        expires_at=now - timedelta(days=5),
+    )
+    lapsed.source = SubscriptionSource.cryptobot
+    lapsed.last_invoice_id = 999
+    session.add(user)
+    session.add(lapsed)
+
+    activation = await start_trial_subscription(
+        session, user=user, days=3, plan_code="main", now=now
+    )
+
+    assert activation.status == "activated"
+    assert activation.subscription is lapsed
+    assert lapsed.source is SubscriptionSource.trial  # provenance overwritten
+    assert lapsed.last_invoice_id is None
+    assert lapsed.expires_at == now + timedelta(days=3)  # from now, not stacked
+    assert user.trial_used_at == now

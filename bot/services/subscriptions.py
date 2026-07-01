@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
 from bot.models import UserStatus
@@ -31,6 +31,19 @@ def tier_threshold_days(active_months: int) -> int:
     The Nth month of tenure begins after (N-1) completed 30-day months.
     """
     return max(0, (active_months - 1) * DAYS_PER_MONTH)
+
+
+def subscription_active_at(expires_at: datetime | None, now: datetime) -> bool:
+    """Whether a subscription with ``expires_at`` is still active at ``now``.
+
+    Normalizes tz so a naive value (e.g. a SQLite round-trip of a timestamptz column) still
+    compares safely against an aware ``now``; production (asyncpg) already returns aware.
+    """
+    if expires_at is None:
+        return False
+    aware_expires_at = expires_at if expires_at.tzinfo else expires_at.replace(tzinfo=UTC)
+    aware_now = now if now.tzinfo else now.replace(tzinfo=UTC)
+    return aware_expires_at > aware_now
 
 
 def calculate_extension(

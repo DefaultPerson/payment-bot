@@ -41,6 +41,7 @@ class SubscriptionSource(str, enum.Enum):  # noqa: UP042
     stars = "stars"
     xrocket = "xrocket"
     tribute = "tribute"
+    trial = "trial"
 
 
 class InvoiceProvider(str, enum.Enum):  # noqa: UP042
@@ -125,6 +126,9 @@ class User(Base):
         DateTime(timezone=True),
         index=True,
     )
+    # Set once when the user starts the one-time free trial; the durable "trial used" gate
+    # (survives later paid purchases that overwrite subscription.source, and trial expiry).
+    trial_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Tariff(Base):

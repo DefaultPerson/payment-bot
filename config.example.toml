@@ -63,6 +63,16 @@ webhook_path = "/webhooks/tribute"
 # tariff_code = "test"
 # payment_link = "https://t.me/tribute/app?startapp=..."
 
+# One-time free trial (no payment). When enabled, an eligible user (never used a trial and
+# without an active subscription) can start a single trial from the main menu. tariff_code
+# selects the plan/chats the trial unlocks (default the cheapest real tariff); duration_days
+# is the trial length. Keep tariff_code pointing at a real tariff — test-only tariffs are
+# hidden outside test_mode.
+[trial]
+enabled = false
+tariff_code = "1m"
+duration_days = 3
+
 # Loyalty: percentage discounts off the (duration-discounted) base, by months of tenure.
 # *_active_months = the month of tenure the tier starts from (month 1 = first 30 active
 # days = basic, no discount). Defaults: bronze 5% from month 2, silver 10% from month 4,

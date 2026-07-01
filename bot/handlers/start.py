@@ -23,6 +23,7 @@ from bot.services.referrals import (
     bind_referral_from_start,
     parse_referral_payload,
 )
+from bot.services.trial import is_trial_available
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +94,7 @@ async def start(
     context = message_context(message, settings)
     lang_code = i18n.resolve_language(context.language_code)
     referral_result: ReferralBindResult | None = None
+    trial_available = False
 
     if context.tg_id is not None:
         try:
@@ -116,6 +118,9 @@ async def start(
                         now=datetime.now(UTC),
                         allow_referrer_change=settings.referral.allow_referrer_change,
                     )
+                trial_available = await is_trial_available(
+                    session, user=user, settings=settings, now=datetime.now(UTC)
+                )
         except SQLAlchemyError:
             logger.exception("failed to upsert user on start")
             await message.answer(i18n.gettext("error.generic", lang_code))
@@ -131,14 +136,15 @@ async def start(
                 is_admin=context.is_admin,
             )
 
+    text = _start_text_with_referral_feedback(i18n, settings, lang_code, referral_result)
+    if trial_available:
+        cta = i18n.gettext("start.trial.cta", lang_code, days=settings.trial.duration_days)
+        text = f"{text}\n\n{cta}"
     await message.answer(
-        _start_text_with_referral_feedback(
-            i18n,
-            settings,
-            lang_code,
-            referral_result,
+        text,
+        reply_markup=main_menu_keyboard(
+            i18n, lang_code, is_admin=context.is_admin, show_trial=trial_available
         ),
-        reply_markup=main_menu_keyboard(i18n, lang_code, is_admin=context.is_admin),
     )
 
 

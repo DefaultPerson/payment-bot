@@ -27,6 +27,9 @@ CB_XROCKET_PREFIX = "pay:xrocket:"
 CB_TRIBUTE_PREFIX = "pay:tribute:"
 CB_PROMO_BUY_PREFIX = "promo_buy:"
 CB_PROMO_CANCEL = "promo_cancel"
+CB_TRIAL_START = "trial:start"
+CB_TRIAL_CONFIRM = "trial:confirm"
+CB_TRIAL_CANCEL = "trial:cancel"
 CB_BACK_TARIFFS = "back:tariffs"
 CB_BACK_DURATION_PREFIX = "back:dur:"
 
@@ -49,7 +52,13 @@ def _button(
     )
 
 
-def main_menu_keyboard(i18n: JsonI18n, lang_code: str, *, is_admin: bool) -> InlineKeyboardMarkup:
+def main_menu_keyboard(
+    i18n: JsonI18n,
+    lang_code: str,
+    *,
+    is_admin: bool,
+    show_trial: bool = False,
+) -> InlineKeyboardMarkup:
     rows = [
         [
             _button(
@@ -58,6 +67,18 @@ def main_menu_keyboard(i18n: JsonI18n, lang_code: str, *, is_admin: bool) -> Inl
                 callback_data=CB_BUY,
             )
         ],
+    ]
+    if show_trial:
+        rows.append(
+            [
+                _button(
+                    i18n.gettext("menu.button.trial", lang_code),
+                    icon_key="menu.button.trial",
+                    callback_data=CB_TRIAL_START,
+                )
+            ]
+        )
+    rows += [
         [
             _button(
                 i18n.gettext("menu.button.profile", lang_code),
@@ -101,6 +122,27 @@ def main_menu_keyboard(i18n: JsonI18n, lang_code: str, *, is_admin: bool) -> Inl
             ]
         )
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def trial_confirm_keyboard(i18n: JsonI18n, lang_code: str) -> InlineKeyboardMarkup:
+    """Confirm/cancel dialog shown before starting the one-time free trial."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                _button(
+                    i18n.gettext("trial.confirm.button", lang_code),
+                    icon_key="menu.button.trial",
+                    callback_data=CB_TRIAL_CONFIRM,
+                )
+            ],
+            [
+                _button(
+                    i18n.gettext("trial.cancel.button", lang_code),
+                    callback_data=CB_TRIAL_CANCEL,
+                )
+            ],
+        ]
+    )
 
 
 def language_keyboard(i18n: JsonI18n, lang_code: str) -> InlineKeyboardMarkup:

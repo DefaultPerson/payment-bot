@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 
 from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramBadRequest
@@ -16,6 +17,7 @@ from bot.core.menu import set_user_commands
 from bot.handlers.start import build_start_text, callback_context, message_context
 from bot.keyboards import CB_LANGUAGE, LANG_PREFIX, language_keyboard, main_menu_keyboard
 from bot.repos.users import ensure_minimal_user, update_user_language, upsert_user_from_telegram
+from bot.services.trial import is_trial_available
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +83,7 @@ async def language_callback(
         )
         return
 
+    trial_available = False
     try:
         async with session_scope(session_factory) as session:
             await ensure_minimal_user(
@@ -91,6 +94,9 @@ async def language_callback(
             )
             user = await update_user_language(session, tg_id=context.tg_id, lang_code=lang_code)
             persisted_lang_code = user.lang_code
+            trial_available = await is_trial_available(
+                session, user=user, settings=settings, now=datetime.now(UTC)
+            )
     except SQLAlchemyError:
         logger.exception("failed to update language")
         await callback.answer(i18n.gettext("error.generic", context.language_code), show_alert=True)
@@ -120,6 +126,7 @@ async def language_callback(
             i18n,
             persisted_lang_code,
             is_admin=context.is_admin,
+            show_trial=trial_available,
         ),
     )
 

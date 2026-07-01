@@ -226,6 +226,7 @@ async def test_start_calls_user_upsert_commands_and_answers_main_menu(monkeypatc
         {
             "args": (i18n, "en"),
             "is_admin": True,
+            "show_trial": False,
         }
     ]
     assert len(message.answers) == 1

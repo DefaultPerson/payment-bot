@@ -68,6 +68,7 @@ def test_phase1_enum_values_are_stable() -> None:
     assert UserStatus.basic.value == "basic"
     assert UserStatus.bronze.value == "bronze"
     assert SubscriptionSource.manual.value == "manual"
+    assert SubscriptionSource.trial.value == "trial"
     assert InvoiceProvider.cryptobot.value == "cryptobot"
     assert InvoiceStatus.active.value == "active"
     assert PromoKind.extra_days.value == "extra_days"

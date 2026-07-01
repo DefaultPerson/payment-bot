@@ -16,6 +16,7 @@ from __future__ import annotations
 # i18n text key -> custom_emoji_id (trailing comment is the plain emoji it depicts).
 MENU_ICONS: dict[str, str] = {
     "menu.button.buy": "5778421276024509124",  # 💰
+    "menu.button.trial": "5773677501825945508",  # 🎁 free trial (shared with referral gift)
     "menu.button.profile": "6032994772321309200",  # 👤
     "menu.button.language": "5776233299424843260",  # 🌐
     "menu.button.referral": "5773677501825945508",  # 🎁

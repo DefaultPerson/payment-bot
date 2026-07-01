@@ -142,6 +142,21 @@ class TributeConfig(BaseModel):
         return None
 
 
+class TrialConfig(BaseModel):
+    """One-time free trial (no payment).
+
+    When ``enabled``, an eligible user can start a single trial that grants the plan/chats of
+    ``tariff_code`` for ``duration_days`` days. ``tariff_code`` only picks the plan/access
+    scope (default the cheapest real tariff); the length comes from ``duration_days``, not the
+    tariff's own duration. Test-only tariffs are hidden outside test_mode, so the default
+    points at a real, always-present code (``1m``).
+    """
+
+    enabled: bool = False
+    tariff_code: str = Field(default="1m", min_length=1)
+    duration_days: int = Field(default=3, ge=1)
+
+
 class PaymentsConfig(BaseModel):
     """Master switch: route live providers to their TEST networks.
 
@@ -421,6 +436,7 @@ class Settings(BaseSettings):
     access: AccessConfig = Field(default_factory=AccessConfig)
     payments: PaymentsConfig = Field(default_factory=PaymentsConfig)
     tribute: TributeConfig = Field(default_factory=TributeConfig)
+    trial: TrialConfig = Field(default_factory=TrialConfig)
 
     @classmethod
     def settings_customise_sources(
@@ -574,6 +590,13 @@ class Settings(BaseSettings):
                 raise ValueError(msg)
             if not self.tribute.products:
                 msg = "tribute.products must not be empty when tribute is enabled"
+                raise ValueError(msg)
+        if self.trial.enabled:
+            # test_only tariffs are already filtered out above unless test_mode is on, so this
+            # also rejects a trial pointing at a hidden test tariff in production.
+            active_codes = {tariff.code for tariff in self.tariffs.items if tariff.active}
+            if self.trial.tariff_code not in active_codes:
+                msg = f"trial.tariff_code must reference an active tariff: {self.trial.tariff_code}"
                 raise ValueError(msg)
 
 

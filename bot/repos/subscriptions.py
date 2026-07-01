@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timedelta
+from typing import Literal
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,7 +12,16 @@ from bot.services.subscriptions import (
     SupportsLoyaltyThresholds,
     calculate_extension,
     status_after_total_active_days_for_policy,
+    subscription_active_at,
 )
+
+TrialStatus = Literal["activated", "already_used", "has_active"]
+
+
+@dataclass(frozen=True, slots=True)
+class TrialActivation:
+    status: TrialStatus
+    subscription: Subscription | None
 
 
 async def get_subscription_for_user(
@@ -199,6 +210,54 @@ async def extend_paid_subscription(
         loyalty=loyalty,
         plan_code=plan_code,
     )
+
+
+async def start_trial_subscription(
+    session: AsyncSession,
+    *,
+    user: User,
+    days: int,
+    plan_code: str | None,
+    now: datetime,
+    loyalty: SupportsLoyaltyThresholds | None = None,
+) -> TrialActivation:
+    """Atomically start a one-time free trial, gated by ``User.trial_used_at``.
+
+    Runs under the same ``FOR UPDATE`` user lock as the extension, so the "trial used" check
+    and mark are race-free. Returns ``already_used`` if the user has ever started a trial, or
+    ``has_active`` if they currently hold an active subscription; neither mutates state.
+    """
+    if days <= 0:
+        msg = "trial days must be positive"
+        raise ValueError(msg)
+
+    locked_user = await _lock_user_for_update(session, user)
+    if locked_user.trial_used_at is not None:
+        return TrialActivation(status="already_used", subscription=None)
+
+    subscription = await _get_subscription_for_user_for_update(session, locked_user.id)
+    if subscription is not None and subscription_active_at(subscription.expires_at, now):
+        return TrialActivation(status="has_active", subscription=None)
+
+    granted = await _extend_subscription(
+        session,
+        user=locked_user,
+        days=days,
+        bonus_days=0,
+        source=SubscriptionSource.trial,
+        last_invoice_id=None,
+        now=now,
+        update_paid_fields=False,
+        loyalty=loyalty,
+        plan_code=plan_code,
+    )
+    # Stamp trial provenance even when reusing a lapsed subscription row (whose source/invoice
+    # link _extend_subscription leaves untouched under update_paid_fields=False).
+    granted.source = SubscriptionSource.trial
+    granted.last_invoice_id = None
+    locked_user.trial_used_at = now
+    await session.flush()
+    return TrialActivation(status="activated", subscription=granted)
 
 
 async def _extend_subscription(

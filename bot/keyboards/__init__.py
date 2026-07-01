@@ -16,6 +16,9 @@ from bot.keyboards.menu import (
     CB_STARS_PREFIX,
     CB_SUPPORT,
     CB_TARIFF_PREFIX,
+    CB_TRIAL_CANCEL,
+    CB_TRIAL_CONFIRM,
+    CB_TRIAL_START,
     CB_TRIBUTE_PREFIX,
     CB_XROCKET_PREFIX,
     LANG_PREFIX,
@@ -27,6 +30,7 @@ from bot.keyboards.menu import (
     support_keyboard,
     tariff_detail_keyboard,
     tariff_keyboard,
+    trial_confirm_keyboard,
 )
 
 __all__ = [
@@ -47,6 +51,9 @@ __all__ = [
     "CB_SUPPORT",
     "CB_STARS_PREFIX",
     "CB_TARIFF_PREFIX",
+    "CB_TRIAL_CANCEL",
+    "CB_TRIAL_CONFIRM",
+    "CB_TRIAL_START",
     "CB_TRIBUTE_PREFIX",
     "CB_XROCKET_PREFIX",
     "LANG_PREFIX",
@@ -58,4 +65,5 @@ __all__ = [
     "support_keyboard",
     "tariff_detail_keyboard",
     "tariff_keyboard",
+    "trial_confirm_keyboard",
 ]
