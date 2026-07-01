@@ -34,7 +34,7 @@ def test_phase2_cryptobot_config_defaults_are_safe_for_tests() -> None:
 def test_phase2_default_tariffs_are_available() -> None:
     settings = Settings()
 
-    assert [plan.code for plan in settings.tariffs.plans] == ["main"]
+    assert [plan.code for plan in settings.tariffs.plans] == ["main", "pro"]
     assert settings.tariffs.default_plan_code == "main"
     assert [tariff.code for tariff in settings.tariffs.items] == [
         "1m",

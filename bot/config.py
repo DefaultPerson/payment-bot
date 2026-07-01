@@ -131,7 +131,14 @@ class TariffConfig(BaseModel):
 
 class TariffsConfig(BaseModel):
     plans: list[PlanConfig] = Field(
-        default_factory=lambda: [PlanConfig(code="main", title="Hydra Monitors")],
+        # Defaults stay generic (empty chat_ids = "opens every protected chat"). Per-channel
+        # scoping (main = base channel only; pro = base + exclusive PRO channel) is a
+        # deployment concern delivered via config.toml locally and the TARIFFS__PLANS env
+        # override in prod — never hardcode infra channel ids into these code defaults.
+        default_factory=lambda: [
+            PlanConfig(code="main", title="Hydra Monitors"),
+            PlanConfig(code="pro", title="HMonitors PRO"),
+        ],
     )
     items: list[TariffConfig] = Field(
         default_factory=lambda: [
@@ -161,6 +168,16 @@ class TariffsConfig(BaseModel):
             TariffConfig(
                 code="test",
                 plan_code="main",
+                duration_months=3,
+                base_price_usd=Decimal("1.00"),
+                test_only=True,
+                stars_amount_override=1,
+            ),
+            # Same cheap E2E probe for the PRO plan/channel. No real PRO tariff exists yet,
+            # so outside test_mode the PRO product shows an empty duration menu until priced.
+            TariffConfig(
+                code="pro_test",
+                plan_code="pro",
                 duration_months=3,
                 base_price_usd=Decimal("1.00"),
                 test_only=True,

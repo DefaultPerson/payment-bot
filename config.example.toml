@@ -86,13 +86,23 @@ metrics_snapshot_interval_seconds = 60
 
 # Tariff plans (products). Each plan groups its duration variants below (matched by
 # plan_code) and declares which chats it unlocks. chat_ids = [] means the plan opens
-# every chat listed in [access].protected_chats (the current single-plan behaviour);
-# listing ids restricts the plan to that subset.
+# every chat listed in [access].protected_chats; listing ids restricts the plan to that
+# subset. To sell several products, list ids explicitly per plan — e.g. a base plan that
+# opens only its channel and a premium "bundle" plan that opens the base + an exclusive
+# channel (see `pro` below). In prod (no config.toml shipped) deliver the same plans via
+# the TARIFFS__PLANS env override; keep code defaults generic (empty chat_ids).
 [[tariffs.plans]]
 code = "main"
 title = "Hydra Monitors"
 description = ""
-chat_ids = []
+chat_ids = [-1001234567890]           # base channel only
+active = true
+
+[[tariffs.plans]]
+code = "pro"
+title = "HMonitors PRO"
+description = ""
+chat_ids = [-1001234567890, -1009876543210]   # premium bundle: base + exclusive PRO channel
 active = true
 
 # Duration variants. base_price_usd is the pre-discount total for the whole duration;
@@ -125,4 +135,14 @@ active = true
 [access]
 invite_link_ttl_seconds = 86400
 revoke_ban_seconds = 60
-protected_chats = []
+
+# Every chat the bot manages. A plan can only open chats listed here (its chat_ids are
+# intersected with this set). The bot must be an admin in each with invite-link,
+# join-request-approval and ban rights.
+[[access.protected_chats]]
+chat_id = -1001234567890
+title = "Hydra Monitors"
+
+[[access.protected_chats]]
+chat_id = -1009876543210
+title = "HMonitors PRO"

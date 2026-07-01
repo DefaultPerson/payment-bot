@@ -27,7 +27,7 @@ EVENT_EMOJI: dict[str, tuple[str, str]] = {
     "play": ("▶️", "5773626993010546707"),  # ▶️ notification run
     "cross": ("❌", "5774077015388852135"),  # ❌ declined (2nd variation)
     "check": ("✅", "5774022692642492953"),  # ✅ approved / success
-    "tag": ("\U0001f3f7️", "5888620056551625531"),  # 🏷 promo code applied (pack promo icon)
+    "tag": ("\U0001f3f7", "5888620056551625531"),  # 🏷 promo code applied (pack promo icon)
     "no_entry": ("\U0001f6ab", "5938215362473496448"),  # 🚫 subscription expired / access revoked
 }
 

@@ -90,6 +90,14 @@ def test_new_event_glyphs_use_pack_custom_emoji() -> None:
         assert se.emoji_html(glyph) == f'<tg-emoji emoji-id="{custom_id}">{fallback}</tg-emoji>'
 
 
+def test_new_glyph_fallbacks_match_pack_sticker_exactly() -> None:
+    # The fallback MUST be byte-for-byte the sticker's own emoji (getCustomEmojiStickers),
+    # incl. no stray VS16 (U+FE0F): a length mismatch makes Telegram drop the custom emoji
+    # and render the plain glyph. 🏷 is U+1F3F7 with NO variation selector; 🚫 is U+1F6AB.
+    assert se.EVENT_EMOJI["tag"][0] == "\U0001f3f7"
+    assert se.EVENT_EMOJI["no_entry"][0] == "\U0001f6ab"
+
+
 def test_html_is_escaped_in_extra_and_mention() -> None:
     text = se.render_event(
         glyph="cross",
