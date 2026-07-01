@@ -227,6 +227,7 @@ async def test_stars_invoice_callback_sends_telegram_stars_invoice(monkeypatch) 
         user: FakeUserRecord,
         tariff_code: str,
         now: datetime,
+        i18n: JsonI18n,
     ) -> FakeCreatedStarsInvoice:
         service_calls.append(
             {
@@ -235,6 +236,7 @@ async def test_stars_invoice_callback_sends_telegram_stars_invoice(monkeypatch) 
                 "user": user,
                 "tariff_code": tariff_code,
                 "now": now,
+                "i18n": i18n,
             }
         )
         return FakeCreatedStarsInvoice(
@@ -300,8 +302,9 @@ async def test_stars_invoice_callback_cancels_local_invoice_when_telegram_send_f
         user: FakeUserRecord,
         tariff_code: str,
         now: datetime,
+        i18n: JsonI18n,
     ) -> FakeCreatedStarsInvoice:
-        del session_factory_arg, settings, user, tariff_code, now
+        del session_factory_arg, settings, user, tariff_code, now, i18n
         return FakeCreatedStarsInvoice(
             invoice=SimpleNamespace(id=42),
             quote=object(),

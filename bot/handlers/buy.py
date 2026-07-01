@@ -348,6 +348,7 @@ async def stars_invoice_callback(
             user,
             tariff_code,
             datetime.now(UTC),
+            i18n,
         )
         invoice_kwargs = {
             "title": created.title,

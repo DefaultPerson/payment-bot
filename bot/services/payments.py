@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from bot.config import Settings
 from bot.core.db import session_scope
+from bot.core.i18n import JsonI18n
 from bot.models import (
     Invoice,
     InvoiceProvider,
@@ -240,6 +241,7 @@ async def create_stars_invoice_for_user(
     user: User,
     tariff_code: str,
     now: datetime,
+    i18n: JsonI18n,
 ) -> CreatedStarsInvoice:
     async with session_scope(session_factory) as session:
         locked_user, promo = await get_pending_promo_for_user(
@@ -291,7 +293,11 @@ async def create_stars_invoice_for_user(
             stars=stars,
             payload=payload,
             title="Hydra Monitors",
-            description=_invoice_description(quote),
+            description=i18n.gettext(
+                "stars.invoice.description",
+                locked_user.lang_code,
+                months=quote.tariff.duration_months,
+            ),
         )
 
 

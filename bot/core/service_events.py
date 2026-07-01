@@ -25,7 +25,6 @@ EVENT_EMOJI: dict[str, tuple[str, str]] = {
     "fast_up": ("⏫", "5938437708635443119"),  # ⏫ manual grant
     "loud": ("\U0001f4e2", "6021418126061605425"),  # 📢 broadcast
     "play": ("▶️", "5773626993010546707"),  # ▶️ notification run
-    "cross": ("❌", "5774077015388852135"),  # ❌ declined (2nd variation)
     "check": ("✅", "5774022692642492953"),  # ✅ approved / success
     "tag": ("\U0001f3f7", "5888620056551625531"),  # 🏷 promo code applied (pack promo icon)
     "no_entry": ("\U0001f6ab", "5938215362473496448"),  # 🚫 subscription expired / access revoked

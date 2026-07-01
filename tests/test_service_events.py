@@ -77,7 +77,7 @@ def test_emoji_html_falls_back_to_plain_unicode_when_disabled() -> None:
 def test_emoji_html_uses_custom_only_for_validated_ids() -> None:
     se.apply_valid_event_emoji({se.EVENT_EMOJI["coin"][1]})
     assert se.emoji_html("coin").startswith("<tg-emoji")
-    assert se.emoji_html("cross") == "❌"  # not in the validated set -> plain glyph
+    assert se.emoji_html("star") == "⭐️"  # not in the validated set -> plain glyph
 
 
 def test_new_event_glyphs_use_pack_custom_emoji() -> None:
@@ -100,8 +100,8 @@ def test_new_glyph_fallbacks_match_pack_sticker_exactly() -> None:
 
 def test_html_is_escaped_in_extra_and_mention() -> None:
     text = se.render_event(
-        glyph="cross",
-        title="Join request declined",
+        glyph="no_entry",
+        title="Subscription access revoked",
         fields=[("User", se.user_mention(7, "a<b>d"))],
         extra={"note": "x & y <z>"},
     )
