@@ -90,6 +90,8 @@ def create_http_app(
     state: HealthState,
     *,
     registry: CollectorRegistry,
+    tribute_webhook: tuple[str, Callable[[web.Request], Awaitable[web.StreamResponse]]]
+    | None = None,
 ) -> web.Application:
     app = web.Application()
     app[HEALTH_DEPENDENCIES] = dependencies
@@ -97,4 +99,7 @@ def create_http_app(
     app[METRICS_REGISTRY] = registry
     app.router.add_get("/health", _health)
     app.router.add_get("/metrics", _metrics)
+    if tribute_webhook is not None:
+        path, handler = tribute_webhook
+        app.router.add_post(path, handler)
     return app

@@ -34,6 +34,7 @@
   "buy.pay.cryptobot": "Pay with CryptoBot",
   "buy.pay.stars": "Pay with Telegram Stars",
   "buy.pay.xrocket": "Pay with xRocket",
+  "buy.pay.tribute": "Pay with Tribute (card)",
   "buy.invoice.created": "Invoice created. Use the payment button below to complete your purchase.",
   "buy.invoice.failed": "Could not create invoice. Please try again or contact support.",
   "promo.prompt": "Send /promo &lt;code&gt; to apply a promo code.",

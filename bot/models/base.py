@@ -40,6 +40,7 @@ class SubscriptionSource(str, enum.Enum):  # noqa: UP042
     cryptobot = "cryptobot"
     stars = "stars"
     xrocket = "xrocket"
+    tribute = "tribute"
 
 
 class InvoiceProvider(str, enum.Enum):  # noqa: UP042
@@ -47,6 +48,7 @@ class InvoiceProvider(str, enum.Enum):  # noqa: UP042
     stars = "stars"
     xrocket = "xrocket"
     manual = "manual"
+    tribute = "tribute"
 
 
 class InvoiceStatus(str, enum.Enum):  # noqa: UP042

@@ -30,6 +30,7 @@ from bot.core.service_events import (
     disable_event_emoji,
 )
 from bot.handlers import create_router
+from bot.handlers.tribute_webhook import TributeWebhookDeps, create_tribute_webhook_handler
 from bot.jobs.crypto_poller import crypto_poller_loop
 from bot.jobs.maintenance import invoice_cleanup_loop, metrics_snapshot_loop
 from bot.jobs.notifications import notification_loop
@@ -370,6 +371,21 @@ async def main() -> None:
         )
 
         bot_identity = BotIdentityCache(bot, ttl_seconds=settings.http.bot_cache_seconds)
+        tribute_webhook = None
+        if settings.tribute.enabled and settings.tribute.token is not None:
+            tribute_webhook = (
+                settings.tribute.webhook_path,
+                create_tribute_webhook_handler(
+                    TributeWebhookDeps(
+                        session_factory=session_factory,
+                        settings=settings,
+                        bot=bot,
+                        i18n=i18n,
+                        service_channel=service_channel,
+                        metrics=metrics,
+                    )
+                ),
+            )
         http_app = create_http_app(
             HealthDependencies(
                 check_db=lambda: check_database(engine),
@@ -378,6 +394,7 @@ async def main() -> None:
             ),
             health_state,
             registry=metrics.registry,
+            tribute_webhook=tribute_webhook,
         )
         http_runner = await start_http_server(
             http_app,

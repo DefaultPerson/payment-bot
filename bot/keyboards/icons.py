@@ -30,6 +30,7 @@ MENU_ICONS: dict[str, str] = {
     "buy.pay.cryptobot": "5778613750688911681",  # 🪙
     "buy.pay.stars": "6028338546736107668",  # ⭐️
     "buy.pay.xrocket": "5776023601941582822",  # 💎
+    "buy.pay.tribute": "5778421276024509124",  # 💰
 }
 
 # Active subset after startup validation. Defaults to all configured icons so unit tests

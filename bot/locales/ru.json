@@ -34,6 +34,7 @@
   "buy.pay.cryptobot": "Оплатить через CryptoBot",
   "buy.pay.stars": "Оплатить Telegram Stars",
   "buy.pay.xrocket": "Оплатить через xRocket",
+  "buy.pay.tribute": "Оплатить картой (Tribute)",
   "buy.invoice.created": "Счет создан. Используйте кнопку оплаты ниже, чтобы завершить покупку.",
   "buy.invoice.failed": "Не удалось создать счет. Попробуйте еще раз или напишите в поддержку.",
   "promo.prompt": "Отправьте /promo &lt;код&gt;, чтобы применить промокод.",

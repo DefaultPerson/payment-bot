@@ -24,6 +24,7 @@ CB_TARIFF_PREFIX = "tariff:"
 CB_CRYPTOBOT_PREFIX = "pay:cryptobot:"
 CB_STARS_PREFIX = "pay:stars:"
 CB_XROCKET_PREFIX = "pay:xrocket:"
+CB_TRIBUTE_PREFIX = "pay:tribute:"
 CB_PROMO_BUY_PREFIX = "promo_buy:"
 CB_PROMO_CANCEL = "promo_cancel"
 CB_BACK_TARIFFS = "back:tariffs"
@@ -282,6 +283,16 @@ def tariff_detail_keyboard(
                     i18n.gettext("buy.pay.xrocket", lang_code),
                     icon_key="buy.pay.xrocket",
                     callback_data=f"{CB_XROCKET_PREFIX}{tariff_code}",
+                )
+            ]
+        )
+    if settings.tribute.enabled and settings.tribute.link_for_tariff(tariff_code) is not None:
+        rows.append(
+            [
+                _button(
+                    i18n.gettext("buy.pay.tribute", lang_code),
+                    icon_key="buy.pay.tribute",
+                    callback_data=f"{CB_TRIBUTE_PREFIX}{tariff_code}",
                 )
             ]
         )

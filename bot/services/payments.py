@@ -23,6 +23,7 @@ from bot.models import (
 )
 from bot.payments.cryptobot import CryptoBotAPIError, CryptoBotInvoice
 from bot.payments.stars import STARS_CURRENCY, StarsInvoiceQuote, quote_stars_invoice
+from bot.payments.tribute import TributeDigitalProductEvent
 from bot.payments.xrocket import XRocketAPIError, XRocketInvoice
 from bot.repos.invoices import (
     create_paid_stars_recurring_invoice,
@@ -426,6 +427,102 @@ async def process_paid_xrocket_invoice(
         paid_at=now,
         raw_payload=provider_invoice.raw,
     )
+    await _record_paid_referral_earning(
+        session,
+        invoice=invoice,
+        user=user,
+        now=now,
+        settings=settings,
+    )
+    return _paid_result(
+        processed=True,
+        invoice=invoice,
+        subscription=subscription,
+        user=user,
+        tariff=tariff,
+    )
+
+
+async def process_paid_tribute_invoice(
+    session: AsyncSession,
+    *,
+    event: TributeDigitalProductEvent,
+    tariff_code: str,
+    user: User,
+    now: datetime,
+    settings: Settings,
+) -> PaidInvoiceResult:
+    """Record a paid Tribute purchase and grant access.
+
+    Unlike the polling providers, Tribute has no pre-created pending invoice (no create API,
+    no echoed payload): the paid invoice is created here from the webhook event. Idempotency
+    is keyed by ``purchase_id`` (the unique ``(provider, provider_invoice_id)`` index). Tribute
+    charges a fixed price in EUR/RUB; USD accounting/referral use the mapped tariff's price
+    (loyalty/promo do not apply to a Tribute payment).
+    """
+    provider_invoice_id = str(event.purchase_id)
+    existing = await lock_provider_invoice_by_provider_id(
+        session,
+        provider=InvoiceProvider.tribute,
+        provider_invoice_id=provider_invoice_id,
+    )
+    if existing is not None:
+        tariff = (
+            await _load_paid_invoice_tariff(session, existing.tariff_id)
+            if existing.tariff_id is not None
+            else None
+        )
+        subscription = await _load_subscription_for_user(session, user.id)
+        return _paid_result(
+            processed=False,
+            invoice=existing,
+            subscription=subscription,
+            user=user,
+            tariff=tariff,
+        )
+
+    tariff = await ensure_configured_tariff(session, settings, tariff_code)
+    quote = quote_tariff(settings, tariff_code, user.status, fee_percent=Decimal("0"))
+    provider_payload: dict[str, Any] = {
+        "tribute_amount": event.amount,
+        "tribute_currency": event.currency,
+        "transaction_id": event.transaction_id,
+        "product_id": event.product_id,
+        "telegram_username": event.telegram_username,
+        "event": event.raw,
+    }
+    invoice = await create_pending_provider_invoice(
+        session,
+        provider=InvoiceProvider.tribute,
+        user=user,
+        tariff_id=tariff.id,
+        quote=quote,
+        currency=event.currency or "EUR",
+        expires_at=now,
+        payload=f"tribute:{provider_invoice_id}",
+    )
+    invoice = await mark_invoice_provider_created(
+        session,
+        invoice,
+        provider_invoice_id=provider_invoice_id,
+        raw_payload=provider_payload,
+    )
+    if invoice.id is None:
+        msg = "invoice must have an id before payment processing"
+        raise ValueError(msg)
+
+    subscription = await extend_paid_subscription(
+        session,
+        user=user,
+        days=tariff_duration_days(tariff.duration_months),
+        source=SubscriptionSource.tribute,
+        last_invoice_id=invoice.id,
+        now=now,
+        bonus_days=0,
+        loyalty=settings.loyalty,
+        plan_code=resolve_plan_code(settings, tariff.code),
+    )
+    await mark_invoice_paid(session, invoice, paid_at=now, raw_payload=provider_payload)
     await _record_paid_referral_earning(
         session,
         invoice=invoice,

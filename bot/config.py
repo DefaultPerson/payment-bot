@@ -92,6 +92,54 @@ class XRocketConfig(BaseModel):
         return _blank_secret_to_none(value)
 
 
+class TributeProductConfig(BaseModel):
+    """Maps a Tribute digital product to a local tariff.
+
+    Tribute has no create-product API, so products are created manually in the Tribute
+    dashboard. ``product_id`` is echoed back in the ``new_digital_product`` webhook (used
+    to resolve the tariff); ``payment_link`` is the checkout URL opened by the pay button.
+    """
+
+    product_id: int = Field(ge=1)
+    tariff_code: str = Field(min_length=1)
+    payment_link: str = Field(min_length=1)
+
+
+class TributeConfig(BaseModel):
+    """Tribute payment method (cards / crypto on Tribute's side, one-time purchases only).
+
+    Settlement arrives via the ``new_digital_product`` webhook, HMAC-SHA256 signed with the
+    API key. No sandbox exists, so the test path uses a real (cheap) product mapped to the
+    ``test_only`` tariff. Tribute prices are fixed in the dashboard, so loyalty/promo do not
+    apply to them.
+    """
+
+    enabled: bool = False
+    token: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices("token", "TRIBUTE_API_KEY"),
+    )
+    webhook_path: str = "/webhooks/tribute"
+    products: list[TributeProductConfig] = Field(default_factory=list)
+
+    @field_validator("token", mode="before")
+    @classmethod
+    def blank_token_is_none(cls, value: Any) -> Any:
+        return _blank_secret_to_none(value)
+
+    def tariff_for_product(self, product_id: int) -> str | None:
+        for product in self.products:
+            if product.product_id == product_id:
+                return product.tariff_code
+        return None
+
+    def link_for_tariff(self, tariff_code: str) -> str | None:
+        for product in self.products:
+            if product.tariff_code == tariff_code:
+                return product.payment_link
+        return None
+
+
 class PaymentsConfig(BaseModel):
     """Master switch: route live providers to their TEST networks.
 
@@ -349,6 +397,11 @@ class Settings(BaseSettings):
         validation_alias="XROCKET_TESTNET_TOKEN",
         exclude=True,
     )
+    tribute_token: SecretStr | None = Field(
+        default=None,
+        validation_alias="TRIBUTE_API_KEY",
+        exclude=True,
+    )
 
     bot: BotConfig = Field(default_factory=BotConfig)
     service_channel: ServiceChannelConfig = Field(default_factory=ServiceChannelConfig)
@@ -365,6 +418,7 @@ class Settings(BaseSettings):
     observability: ObservabilityConfig = Field(default_factory=ObservabilityConfig)
     access: AccessConfig = Field(default_factory=AccessConfig)
     payments: PaymentsConfig = Field(default_factory=PaymentsConfig)
+    tribute: TributeConfig = Field(default_factory=TributeConfig)
 
     @classmethod
     def settings_customise_sources(
@@ -417,6 +471,11 @@ class Settings(BaseSettings):
     def blank_testnet_token_is_none(cls, value: Any) -> Any:
         return _blank_secret_to_none(value)
 
+    @field_validator("tribute_token", mode="before")
+    @classmethod
+    def blank_tribute_token_is_none(cls, value: Any) -> Any:
+        return _blank_secret_to_none(value)
+
     @model_validator(mode="after")
     def apply_flat_aliases_and_validate_provider_tokens(self) -> Settings:
         if self.service_channel_id is not None:
@@ -427,11 +486,14 @@ class Settings(BaseSettings):
             self.cryptobot.token = self.cryptobot_token
         if self.xrocket_token is not None:
             self.xrocket.token = self.xrocket_token
+        if self.tribute_token is not None:
+            self.tribute.token = self.tribute_token
         if self.payments.test_mode:
             self._apply_payments_test_mode()
         self._filter_test_only_tariffs()
         self._validate_cryptobot_token()
         self._validate_xrocket_token()
+        self._validate_tribute_token()
         return self
 
     def _apply_payments_test_mode(self) -> None:
@@ -462,6 +524,13 @@ class Settings(BaseSettings):
             token = self.xrocket.token.get_secret_value()
             if not token.strip():
                 msg = "XROCKET_TOKEN must not be empty when set"
+                raise ValueError(msg)
+
+    def _validate_tribute_token(self) -> None:
+        if self.tribute.token is not None:
+            token = self.tribute.token.get_secret_value()
+            if not token.strip():
+                msg = "TRIBUTE_API_KEY must not be empty when set"
                 raise ValueError(msg)
 
     def _validate_test_mode_tokens(self) -> None:
@@ -496,6 +565,14 @@ class Settings(BaseSettings):
             self._validate_test_mode_tokens()
         self._validate_cryptobot_token()
         self._validate_xrocket_token()
+        self._validate_tribute_token()
+        if self.tribute.enabled:
+            if self.tribute.token is None:
+                msg = "TRIBUTE_API_KEY must be set when tribute is enabled"
+                raise ValueError(msg)
+            if not self.tribute.products:
+                msg = "tribute.products must not be empty when tribute is enabled"
+                raise ValueError(msg)
 
 
 def load_settings(

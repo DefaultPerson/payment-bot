@@ -47,6 +47,22 @@ invoice_expires_seconds = 3600
 poll_interval_seconds = 30
 poll_batch_size = 50
 
+[tribute]
+enabled = false
+# Webhook path served by the bot's HTTP server. In production bind HTTP to 0.0.0.0 and route
+# <fqdn><webhook_path> to it (Traefik/Coolify). Set the same URL in the Tribute dashboard and
+# provide TRIBUTE_API_KEY (.env) — it authenticates the API and verifies the trbt-signature
+# HMAC on every webhook.
+webhook_path = "/webhooks/tribute"
+# Tribute has no create-product API and no sandbox: create products manually in the Tribute
+# dashboard, then map each product_id -> local tariff here. In test_mode map a real cheap
+# (e.g. €1) product to the "test" tariff. Tribute prices are fixed there, so loyalty/promo do
+# not apply to Tribute payments.
+# [[tribute.products]]
+# product_id = 12345
+# tariff_code = "test"
+# payment_link = "https://t.me/tribute/app?startapp=..."
+
 # Loyalty: percentage discounts off the (duration-discounted) base, by months of tenure.
 # *_active_months = the month of tenure the tier starts from (month 1 = first 30 active
 # days = basic, no discount). Defaults: bronze 5% from month 2, silver 10% from month 4,

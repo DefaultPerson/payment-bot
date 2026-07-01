@@ -21,6 +21,7 @@ from bot.keyboards import (
     CB_PLAN_PREFIX,
     CB_STARS_PREFIX,
     CB_TARIFF_PREFIX,
+    CB_TRIBUTE_PREFIX,
     CB_XROCKET_PREFIX,
     payment_keyboard,
     plan_keyboard,
@@ -452,6 +453,56 @@ async def xrocket_invoice_callback(
     )
 
 
+async def tribute_invoice_callback(
+    callback: CallbackQuery,
+    settings: Settings,
+    i18n: JsonI18n,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    context = callback_context(callback, settings)
+    tariff_code = _parse_prefixed_callback(getattr(callback, "data", None), CB_TRIBUTE_PREFIX)
+    if tariff_code is None or context.tg_id is None:
+        await callback.answer(
+            i18n.gettext("error.generic", context.language_code),
+            show_alert=True,
+        )
+        return
+
+    # Tribute has no create-invoice API: the checkout link is a static, per-tariff URL
+    # configured in settings; settlement arrives later via the Tribute webhook.
+    pay_url = settings.tribute.link_for_tariff(tariff_code) if settings.tribute.enabled else None
+    if pay_url is None:
+        await callback.answer(
+            i18n.gettext("buy.invoice.failed", context.language_code),
+            show_alert=True,
+        )
+        return
+
+    try:
+        lang_code = await _resolve_user_language(
+            context.tg_id,
+            context.language_code,
+            i18n,
+            session_factory,
+        )
+    except SQLAlchemyError:
+        logger.exception("failed to resolve Tribute invoice user")
+        await callback.answer(i18n.gettext("error.generic", context.language_code), show_alert=True)
+        return
+
+    await _edit_text_or_answer(
+        callback,
+        _invoice_created_text(i18n, lang_code, pay_url),
+        reply_markup=payment_keyboard(
+            i18n,
+            settings,
+            lang_code,
+            pay_url,
+            payment_key="buy.pay.tribute",
+        ),
+    )
+
+
 async def _resolve_user_language(
     tg_id: int | None,
     language_code: str | None,
@@ -573,4 +624,5 @@ def create_buy_router() -> Router:
     router.callback_query(F.data.startswith(CB_CRYPTOBOT_PREFIX))(cryptobot_invoice_callback)
     router.callback_query(F.data.startswith(CB_STARS_PREFIX))(stars_invoice_callback)
     router.callback_query(F.data.startswith(CB_XROCKET_PREFIX))(xrocket_invoice_callback)
+    router.callback_query(F.data.startswith(CB_TRIBUTE_PREFIX))(tribute_invoice_callback)
     return router

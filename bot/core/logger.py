@@ -74,6 +74,7 @@ def collect_secret_values(settings: Settings) -> tuple[str, ...]:
         settings.xrocket.token,
         settings.cryptobot_testnet_token,
         settings.xrocket_testnet_token,
+        settings.tribute.token,
     ):
         if token is not None:
             candidates.append(token.get_secret_value())
