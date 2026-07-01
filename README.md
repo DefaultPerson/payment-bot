@@ -140,8 +140,13 @@ Run the bot:
 docker compose up --build
 ```
 
-Health endpoint inside the container listens on `127.0.0.1:8080`.
-No payment webhook endpoints are exposed.
+The HTTP server inside the container listens on `127.0.0.1:8080` (override the bind
+with `HTTP__HOST`). It serves `/health`, `/metrics`, and — for each enabled provider —
+a signed inbound webhook: `/webhooks/cryptobot`, `/webhooks/xrocket`, and
+`/webhooks/tribute`. Every webhook verifies the provider's signature and returns
+`401` on a missing or bad one; the pollers stay on as a fallback so a missed webhook
+still settles. To receive webhooks from outside the container, bind to all interfaces
+with `HTTP__HOST=0.0.0.0` and route the public endpoint (e.g. Traefik) to port `8080`.
 
 ## Testing payments
 

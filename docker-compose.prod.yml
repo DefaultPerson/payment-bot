@@ -11,7 +11,7 @@
 #
 # Provide every value below as a Coolify Environment Variable (mark tokens as
 # secrets). Business config (tariffs, chats, loyalty, ...) comes either from a
-# Coolify File Mount at /app/config.toml or from env overrides — see DEPLOY-COOLIFY.md.
+# Coolify File Mount at /app/config.toml or from env overrides.
 
 services:
   bot:
