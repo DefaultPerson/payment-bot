@@ -61,6 +61,7 @@ class CryptoBotConfig(BaseModel):
     invoice_expires_seconds: int = Field(default=3600, ge=1, le=2_678_400)
     poll_interval_seconds: int = Field(default=30, ge=1)
     poll_batch_size: int = Field(default=50, ge=1, le=100)
+    webhook_path: str = "/webhooks/cryptobot"  # Crypto Pay webhook (poller stays as fallback)
 
     @field_validator("token", mode="before")
     @classmethod
@@ -85,6 +86,7 @@ class XRocketConfig(BaseModel):
     invoice_expires_seconds: int = Field(default=3600, ge=1, le=86_400)
     poll_interval_seconds: int = Field(default=30, ge=1)
     poll_batch_size: int = Field(default=50, ge=1, le=100)
+    webhook_path: str = "/webhooks/xrocket"  # inbound xRocket webhook (poller stays as fallback)
 
     @field_validator("token", mode="before")
     @classmethod

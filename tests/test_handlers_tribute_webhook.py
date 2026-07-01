@@ -73,7 +73,7 @@ def _build_app(
         HealthDependencies(check_db=lambda: True, check_redis=lambda: True, check_bot=lambda: True),
         HealthState(),
         registry=create_metrics_registry(),
-        tribute_webhook=(PATH, create_tribute_webhook_handler(deps)),
+        webhooks=[(PATH, create_tribute_webhook_handler(deps))],
     )
 
 

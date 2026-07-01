@@ -1,10 +1,18 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
+from collections.abc import Mapping
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, Protocol
 
 from aiohttp import ClientSession
+
+# Crypto Pay signs webhooks with an HMAC-SHA256 of the raw body, keyed by SHA256(API token),
+# in the ``crypto-pay-api-signature`` header. A paid invoice arrives as an ``invoice_paid`` update.
+WEBHOOK_SIGNATURE_HEADER = "crypto-pay-api-signature"
+WEBHOOK_PAID_UPDATE = "invoice_paid"
 
 
 class SupportsPost(Protocol):
@@ -111,3 +119,25 @@ def _invoice_from_payload(payload: dict[str, Any]) -> CryptoBotInvoice:
         pay_url=payload.get("bot_invoice_url") or payload.get("pay_url"),
         raw=payload,
     )
+
+
+def verify_webhook_signature(token: str, body: bytes, signature: str | None) -> bool:
+    """Constant-time check of ``crypto-pay-api-signature`` (HMAC-SHA256, key = SHA256(token))."""
+    if not signature:
+        return False
+    secret = hashlib.sha256(token.encode()).digest()
+    expected = hmac.new(secret, body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, signature)
+
+
+def invoice_from_webhook_update(update: Mapping[str, Any]) -> CryptoBotInvoice | None:
+    """Parse a Crypto Pay webhook; return the invoice only for a paid-invoice update."""
+    if update.get("update_type") != WEBHOOK_PAID_UPDATE:
+        return None
+    payload = update.get("payload")
+    if not isinstance(payload, Mapping):
+        return None
+    try:
+        return _invoice_from_payload(dict(payload))
+    except (KeyError, TypeError, ValueError):
+        return None

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
@@ -7,6 +10,11 @@ from typing import Any, Protocol
 
 from aiorocket2 import xRocketAPIError as SDKXRocketAPIError
 from aiorocket2 import xRocketClient as SDKXRocketClient
+
+# xRocket signs webhooks with an HMAC-SHA256 of the raw body, keyed by SHA256(app token), in the
+# ``Rocket-Pay-Signature`` header. A paid tg-invoice arrives as an ``invoicePay`` event.
+WEBHOOK_SIGNATURE_HEADER = "Rocket-Pay-Signature"
+WEBHOOK_PAID_TYPE = "invoicePay"
 
 
 class SupportsXRocketSDKClient(Protocol):
@@ -165,3 +173,35 @@ def _api_error_from_sdk(exc: SDKXRocketAPIError) -> XRocketAPIError:
     status = getattr(exc, "status", None)
     message = str(getattr(exc, "message", None) or exc)
     return XRocketAPIError(message, payload=payload, status=status)
+
+
+def verify_webhook_signature(token: str, body: bytes, signature: str | None) -> bool:
+    """Constant-time check of ``Rocket-Pay-Signature`` (HMAC-SHA256, key = SHA256(token))."""
+    if not signature:
+        return False
+    secret = hashlib.sha256(token.encode()).digest()
+    expected = hmac.new(secret, body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, signature)
+
+
+def invoice_from_webhook(body: Mapping[str, Any]) -> XRocketInvoice | None:
+    """Parse an xRocket tg-invoice webhook; return the invoice only for an ``invoicePay`` event."""
+    if body.get("type") != WEBHOOK_PAID_TYPE:
+        return None
+    data = body.get("data")
+    if not isinstance(data, Mapping):
+        return None
+    invoice_id = data.get("id")
+    if invoice_id is None:
+        return None
+    return XRocketInvoice(
+        invoice_id=str(invoice_id),
+        status=str(data.get("status") or ""),
+        amount=Decimal(str(data.get("amount", 0))),
+        currency=data.get("currency"),
+        payload=data.get("payload"),
+        pay_url=data.get("link"),
+        created_at=None,
+        paid_at=None,
+        raw=dict(data),
+    )

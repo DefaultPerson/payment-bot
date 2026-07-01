@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import inspect
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -90,7 +90,7 @@ def create_http_app(
     state: HealthState,
     *,
     registry: CollectorRegistry,
-    tribute_webhook: tuple[str, Callable[[web.Request], Awaitable[web.StreamResponse]]]
+    webhooks: Iterable[tuple[str, Callable[[web.Request], Awaitable[web.StreamResponse]]]]
     | None = None,
 ) -> web.Application:
     app = web.Application()
@@ -99,7 +99,6 @@ def create_http_app(
     app[METRICS_REGISTRY] = registry
     app.router.add_get("/health", _health)
     app.router.add_get("/metrics", _metrics)
-    if tribute_webhook is not None:
-        path, handler = tribute_webhook
+    for path, handler in webhooks or ():
         app.router.add_post(path, handler)
     return app

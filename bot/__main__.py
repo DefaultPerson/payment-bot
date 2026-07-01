@@ -16,6 +16,7 @@ from aiogram_broadcast import BroadcastScheduler, BroadcastService, RedisBroadca
 from aiogram_broadcast.ui import BroadcastUIHandlers
 from aiohttp import web
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from bot.config import Settings, load_settings
 from bot.core.db import check_database, create_engine, create_session_factory
@@ -30,6 +31,11 @@ from bot.core.service_events import (
     disable_event_emoji,
 )
 from bot.handlers import create_router
+from bot.handlers.provider_webhooks import (
+    ProviderWebhookDeps,
+    make_cryptobot_webhook_handler,
+    make_xrocket_webhook_handler,
+)
 from bot.handlers.tribute_webhook import TributeWebhookDeps, create_tribute_webhook_handler
 from bot.jobs.crypto_poller import crypto_poller_loop
 from bot.jobs.maintenance import invoice_cleanup_loop, metrics_snapshot_loop
@@ -194,6 +200,54 @@ def build_xrocket_client(settings: Settings) -> XRocketClient | None:
         testnet=settings.xrocket.testnet,
         base_url=settings.xrocket.base_url,
     )
+
+
+def _build_payment_webhooks(
+    *,
+    settings: Settings,
+    session_factory: async_sessionmaker[AsyncSession],
+    bot: Bot,
+    i18n: JsonI18n,
+    service_channel: ServiceChannel,
+    metrics: PaymentBotMetrics,
+    cryptobot_client: CryptoBotClient | None,
+    xrocket_client: XRocketClient | None,
+) -> list[tuple[str, Callable[..., object]]]:
+    """Inbound webhook routes for enabled providers. Pollers stay as a fallback."""
+    webhooks: list[tuple[str, Callable[..., object]]] = []
+    if settings.tribute.enabled and settings.tribute.token is not None:
+        webhooks.append(
+            (
+                settings.tribute.webhook_path,
+                create_tribute_webhook_handler(
+                    TributeWebhookDeps(
+                        session_factory=session_factory,
+                        settings=settings,
+                        bot=bot,
+                        i18n=i18n,
+                        service_channel=service_channel,
+                        metrics=metrics,
+                    )
+                ),
+            )
+        )
+    provider_deps = ProviderWebhookDeps(
+        session_factory=session_factory,
+        settings=settings,
+        bot=bot,
+        i18n=i18n,
+        service_channel=service_channel,
+        metrics=metrics,
+    )
+    if cryptobot_client is not None:
+        webhooks.append(
+            (settings.cryptobot.webhook_path, make_cryptobot_webhook_handler(provider_deps))
+        )
+    if xrocket_client is not None:
+        webhooks.append(
+            (settings.xrocket.webhook_path, make_xrocket_webhook_handler(provider_deps))
+        )
+    return webhooks
 
 
 async def close_payment_clients(
@@ -371,21 +425,16 @@ async def main() -> None:
         )
 
         bot_identity = BotIdentityCache(bot, ttl_seconds=settings.http.bot_cache_seconds)
-        tribute_webhook = None
-        if settings.tribute.enabled and settings.tribute.token is not None:
-            tribute_webhook = (
-                settings.tribute.webhook_path,
-                create_tribute_webhook_handler(
-                    TributeWebhookDeps(
-                        session_factory=session_factory,
-                        settings=settings,
-                        bot=bot,
-                        i18n=i18n,
-                        service_channel=service_channel,
-                        metrics=metrics,
-                    )
-                ),
-            )
+        webhooks = _build_payment_webhooks(
+            settings=settings,
+            session_factory=session_factory,
+            bot=bot,
+            i18n=i18n,
+            service_channel=service_channel,
+            metrics=metrics,
+            cryptobot_client=cryptobot_client,
+            xrocket_client=xrocket_client,
+        )
         http_app = create_http_app(
             HealthDependencies(
                 check_db=lambda: check_database(engine),
@@ -394,7 +443,7 @@ async def main() -> None:
             ),
             health_state,
             registry=metrics.registry,
-            tribute_webhook=tribute_webhook,
+            webhooks=webhooks,
         )
         http_runner = await start_http_server(
             http_app,
