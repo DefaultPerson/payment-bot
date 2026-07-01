@@ -34,5 +34,8 @@ services:
       # config.toml is supplied via a Coolify File Mount at this path; if absent,
       # built-in defaults apply and config must be set via *__ env overrides instead.
       CONFIG_PATH: "${CONFIG_PATH:-/app/config.toml}"
+    # aiohttp server (health/metrics + provider webhooks like Tribute). Expose the port so
+    # Traefik/Coolify targets 8080; set HTTP__HOST=0.0.0.0 in Coolify so it binds publicly.
+    expose:
+      - "8080"
     # Health is provided by the Dockerfile HEALTHCHECK (hits 127.0.0.1:8080/health).
-    # This is a worker (long polling) — no domain / no published ports required.
