@@ -10,11 +10,13 @@ from bot.services.access import AccessInvite, create_protected_chat_invite_links
 
 
 class FakeBot:
-    def __init__(self) -> None:
+    def __init__(self, *, fail_approve: bool = False) -> None:
         self.invite_calls: list[dict[str, Any]] = []
         self.messages: list[dict[str, Any]] = []
         self.bans: list[dict[str, Any]] = []
         self.unbans: list[dict[str, Any]] = []
+        self.approvals: list[dict[str, Any]] = []
+        self.fail_approve = fail_approve
 
     async def create_chat_invite_link(self, **kwargs: Any) -> SimpleNamespace:
         self.invite_calls.append(kwargs)
@@ -28,6 +30,12 @@ class FakeBot:
 
     async def unban_chat_member(self, **kwargs: Any) -> None:
         self.unbans.append(kwargs)
+
+    async def approve_chat_join_request(self, **kwargs: Any) -> None:
+        # Telegram raises when there is no pending request / the user is already a member.
+        if self.fail_approve:
+            raise RuntimeError("no pending join request")
+        self.approvals.append(kwargs)
 
 
 def make_settings() -> Settings:
@@ -252,6 +260,49 @@ async def test_send_access_links_reconciles_membership_to_plan() -> None:
     assert [call["chat_id"] for call in bot.invite_calls] == [-1002]
     assert "Research: https://t.me/+-1002" in bot.messages[0]["text"]
     assert "Signals" not in bot.messages[0]["text"]
+
+
+async def test_approve_pending_join_requests_approves_only_plan_chats() -> None:
+    from bot.services.access import approve_pending_join_requests
+
+    bot = FakeBot()
+    settings = _two_plan_settings()
+
+    await approve_pending_join_requests(bot, settings, tg_id=1001, plan_code="vip")
+
+    # vip unlocks only -1002 -> approve any pending request there, addressed by tg_id.
+    assert bot.approvals == [{"chat_id": -1002, "user_id": 1001}]
+
+
+async def test_approve_pending_join_requests_swallows_missing_request() -> None:
+    from bot.services.access import approve_pending_join_requests
+
+    bot = FakeBot(fail_approve=True)
+    settings = make_settings()
+
+    # No pending request (Telegram raises) must not propagate.
+    await approve_pending_join_requests(bot, settings, tg_id=1001, plan_code="main")
+
+    assert bot.approvals == []
+
+
+async def test_send_access_links_approves_pending_for_allowed_chats() -> None:
+    bot = FakeBot()
+    settings = _two_plan_settings()
+    now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
+
+    await send_access_links(
+        bot,
+        settings,
+        JsonI18n(fallback_language="en"),
+        tg_id=1001,
+        lang_code="en",
+        now=now,
+        plan_code="vip",
+    )
+
+    # A user who requested before paying is admitted on payment for their plan's chats.
+    assert bot.approvals == [{"chat_id": -1002, "user_id": 1001}]
 
 
 async def test_send_access_links_single_plan_does_not_kick_and_offers_all() -> None:

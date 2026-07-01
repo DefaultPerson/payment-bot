@@ -11,8 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from bot.config import Settings
 from bot.core.db import session_scope
-from bot.core.logger import ServiceChannel
-from bot.core.service_events import render_event, user_mention
 from bot.models import Subscription
 from bot.repos.subscriptions import get_subscription_for_user
 from bot.repos.users import get_user_by_tg_id
@@ -23,8 +21,6 @@ logger = logging.getLogger(__name__)
 
 class SupportsJoinRequestBot(Protocol):
     async def approve_chat_join_request(self, *, chat_id: int, user_id: int) -> object: ...
-
-    async def decline_chat_join_request(self, *, chat_id: int, user_id: int) -> object: ...
 
 
 async def active_subscription_for(
@@ -53,7 +49,6 @@ async def handle_chat_join_request(
     settings: Settings,
     session_factory: async_sessionmaker[AsyncSession],
     bot: SupportsJoinRequestBot,
-    service_channel: ServiceChannel,
     now: datetime | None = None,
 ) -> None:
     now = now or datetime.now(UTC)
@@ -86,55 +81,31 @@ async def handle_chat_join_request(
         settings, plan_code
     )
 
+    if not approved:
+        # No access to this chat: LEAVE THE REQUEST PENDING — never decline. The moment the
+        # user gains access, send_access_links / perform_grant call
+        # approve_pending_join_requests for their tg_id, admitting this pending request. This
+        # lets a backlog of requests sit untouched until each user pays, and avoids spamming
+        # declined users / the service channel.
+        logger.info(
+            "join request left pending (no access)",
+            extra={"chat_id": chat_id, "tg_id": tg_id},
+        )
+        return
+
     try:
-        if approved:
-            await bot.approve_chat_join_request(chat_id=chat_id, user_id=tg_id)
-        else:
-            await bot.decline_chat_join_request(chat_id=chat_id, user_id=tg_id)
+        await bot.approve_chat_join_request(chat_id=chat_id, user_id=tg_id)
     except Exception:
         logger.exception(
-            "failed to answer chat join request",
-            extra={"chat_id": chat_id, "tg_id": tg_id, "approved": approved},
+            "failed to approve chat join request",
+            extra={"chat_id": chat_id, "tg_id": tg_id},
         )
         return
 
     logger.info(
-        "chat join request handled",
-        extra={"chat_id": chat_id, "tg_id": tg_id, "approved": approved},
+        "chat join request approved",
+        extra={"chat_id": chat_id, "tg_id": tg_id},
     )
-    if not approved:
-        await _notify_declined(
-            service_channel,
-            chat_id=chat_id,
-            tg_id=tg_id,
-            username=event.from_user.username,
-        )
-
-
-async def _notify_declined(
-    service_channel: ServiceChannel,
-    *,
-    chat_id: int,
-    tg_id: int,
-    username: str | None = None,
-) -> None:
-    try:
-        await service_channel.send_html(
-            render_event(
-                glyph="cross",
-                title="Join request declined",
-                fields=[
-                    ("User", user_mention(tg_id, username)),
-                    ("Reason", "no active subscription"),
-                ],
-                extra={"chat_id": chat_id},
-            )
-        )
-    except Exception:
-        logger.exception(
-            "failed to send join request decline event",
-            extra={"chat_id": chat_id, "tg_id": tg_id},
-        )
 
 
 def create_join_request_router() -> Router:

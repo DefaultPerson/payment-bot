@@ -81,6 +81,7 @@ class FakeUserRecord:
 @dataclass(slots=True)
 class FakeSubscription:
     expires_at: datetime
+    plan_code: str | None = None
 
 
 class FakeServiceChannel:
@@ -94,6 +95,14 @@ class FakeServiceChannel:
         if self.error is not None:
             raise self.error
         return self.result
+
+
+class FakeBot:
+    def __init__(self) -> None:
+        self.approvals: list[dict[str, Any]] = []
+
+    async def approve_chat_join_request(self, **kwargs: Any) -> None:
+        self.approvals.append(kwargs)
 
 
 def _patch_grant(monkeypatch, *, user: FakeUserRecord, subscription: FakeSubscription) -> None:
@@ -195,6 +204,7 @@ async def test_grant_input_extends_subscription_notifies_and_replies(monkeypatch
         i18n=JsonI18n(),
         session_factory=session_factory,
         service_channel=service_channel,
+        bot=FakeBot(),
         state=state,
     )
 
@@ -228,12 +238,40 @@ async def test_grant_preserves_current_plan(monkeypatch) -> None:
         i18n=JsonI18n(),
         session_factory=FakeSessionFactory(),
         service_channel=FakeServiceChannel(),
+        bot=FakeBot(),
         state=FakeState(),
     )
 
     # Grant must NOT force a plan (None => _extend_subscription preserves the user's current
     # plan instead of silently downgrading a PRO user to the default plan).
     assert captured["plan_code"] is None
+
+
+async def test_grant_approves_pending_join_requests(monkeypatch) -> None:
+    import bot.handlers.admin.grant as grant_module
+
+    user = FakeUserRecord(id=7, tg_id=123, lang_code="en")
+    subscription = FakeSubscription(expires_at=datetime(2026, 6, 27, 12, 30, tzinfo=UTC))
+    _patch_grant(monkeypatch, user=user, subscription=subscription)
+
+    bot = FakeBot()
+    settings = Settings(
+        admin_ids=[100],
+        access={"protected_chats": [{"chat_id": -1001, "title": "Signals"}]},
+    )
+
+    await grant_module.grant_input(
+        FakeMessage(text="123 10", from_user=FakeTelegramUser(100, "en")),
+        settings=settings,
+        i18n=JsonI18n(),
+        session_factory=FakeSessionFactory(),
+        service_channel=FakeServiceChannel(),
+        bot=bot,
+        state=FakeState(),
+    )
+
+    # A manually-granted user who already had a pending request is admitted (by tg_id).
+    assert bot.approvals == [{"chat_id": -1001, "user_id": 123}]
 
 
 async def test_grant_input_invalid_args_reprompts_without_db(monkeypatch) -> None:
@@ -249,6 +287,7 @@ async def test_grant_input_invalid_args_reprompts_without_db(monkeypatch) -> Non
         i18n=JsonI18n(),
         session_factory=session_factory,
         service_channel=FakeServiceChannel(),
+        bot=FakeBot(),
         state=state,
     )
 
@@ -275,6 +314,7 @@ async def test_grant_input_service_channel_failure_still_replies(monkeypatch) ->
         i18n=JsonI18n(),
         session_factory=FakeSessionFactory(),
         service_channel=FakeServiceChannel(error=RuntimeError("down")),
+        bot=FakeBot(),
         state=state,
     )
 
@@ -301,6 +341,7 @@ async def test_grant_input_surfaces_database_errors(monkeypatch) -> None:
         i18n=JsonI18n(),
         session_factory=session_factory,
         service_channel=service_channel,
+        bot=FakeBot(),
         state=state,
     )
 

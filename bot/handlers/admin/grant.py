@@ -4,6 +4,7 @@ import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from aiogram import Bot
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 from sqlalchemy.exc import SQLAlchemyError
@@ -19,6 +20,7 @@ from bot.handlers.admin.states import AdminGrantState
 from bot.keyboards.admin import back_keyboard, cancel_keyboard
 from bot.repos.subscriptions import extend_manual_subscription
 from bot.repos.users import ensure_minimal_user
+from bot.services.access import approve_pending_join_requests
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +63,7 @@ async def perform_grant(
     i18n: JsonI18n,
     session_factory: async_sessionmaker[AsyncSession],
     service_channel: ServiceChannel,
+    bot: Bot,
 ) -> GrantResult:
     """Extend a user's subscription by ``days`` and notify the service channel.
 
@@ -83,6 +86,7 @@ async def perform_grant(
         )
         expires_at = subscription.expires_at
         target_username = user.username
+        granted_plan_code = subscription.plan_code
 
     await _notify_service_channel(
         service_channel,
@@ -91,6 +95,12 @@ async def perform_grant(
         target_username=target_username,
         days=days,
         expires_at=expires_at,
+    )
+    # Admit any request the granted user already had pending (they may have requested before
+    # the grant), scoped to the chats their preserved plan unlocks. No-op without a pending
+    # request.
+    await approve_pending_join_requests(
+        bot, settings, tg_id=target_tg_id, plan_code=granted_plan_code
     )
     return GrantResult(
         target_tg_id=target_tg_id,
@@ -125,6 +135,7 @@ async def grant_input(
     i18n: JsonI18n,
     session_factory: async_sessionmaker[AsyncSession],
     service_channel: ServiceChannel,
+    bot: Bot,
     state: FSMContext,
 ) -> None:
     lang = message_language(message, i18n)
@@ -150,6 +161,7 @@ async def grant_input(
             i18n=i18n,
             session_factory=session_factory,
             service_channel=service_channel,
+            bot=bot,
         )
     except SQLAlchemyError:
         logger.exception("failed to apply manual grant")

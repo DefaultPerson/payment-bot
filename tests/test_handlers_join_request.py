@@ -79,18 +79,9 @@ class FakeBot:
         self.approvals.append(kwargs)
 
     async def decline_chat_join_request(self, **kwargs: Any) -> None:
-        if self.fail:
-            raise RuntimeError("telegram error")
+        # The handler must NEVER decline any more. Recorded so the `declines == []`
+        # assertions below catch a regression that re-introduces a decline.
         self.declines.append(kwargs)
-
-
-class FakeServiceChannel:
-    def __init__(self) -> None:
-        self.messages: list[str] = []
-
-    async def send_html(self, text: str) -> bool:
-        self.messages.append(text)
-        return True
 
 
 def make_settings() -> Settings:
@@ -163,7 +154,6 @@ async def test_plan_approves_join_only_for_its_chats() -> None:
             )
         ),
         bot,
-        FakeServiceChannel(),
         now=NOW,
     )
 
@@ -171,7 +161,7 @@ async def test_plan_approves_join_only_for_its_chats() -> None:
     assert bot.declines == []
 
 
-async def test_plan_declines_join_for_chat_outside_plan() -> None:
+async def test_plan_leaves_pending_for_chat_outside_plan() -> None:
     settings = _plan_restricted_settings()
     bot = FakeBot()
 
@@ -185,22 +175,23 @@ async def test_plan_declines_join_for_chat_outside_plan() -> None:
             )
         ),
         bot,
-        FakeServiceChannel(),
         now=NOW,
     )
 
+    # Plan does not unlock this chat -> leave the request pending, never decline.
     assert bot.approvals == []
-    assert bot.declines == [{"chat_id": -1001, "user_id": 1001}]
+    assert bot.declines == []
 
 
-async def _run(session: FakeSession, *, chat_id: int = -1001, tg_id: int = 1001) -> FakeBot:
-    bot = FakeBot()
+async def _run(
+    session: FakeSession, *, chat_id: int = -1001, tg_id: int = 1001, fail: bool = False
+) -> FakeBot:
+    bot = FakeBot(fail=fail)
     await handle_chat_join_request(
         make_event(chat_id=chat_id, tg_id=tg_id),
         make_settings(),
         FakeSessionFactory(session),
         bot,
-        FakeServiceChannel(),
         now=NOW,
     )
     return bot
@@ -215,31 +206,31 @@ async def test_approves_join_request_for_active_subscriber() -> None:
     assert bot.declines == []
 
 
-async def test_declines_join_request_without_subscription() -> None:
+async def test_leaves_pending_without_subscription() -> None:
     session = FakeSession(user=make_user(), subscription=None)
 
     bot = await _run(session)
 
     assert bot.approvals == []
-    assert bot.declines == [{"chat_id": -1001, "user_id": 1001}]
+    assert bot.declines == []
 
 
-async def test_declines_join_request_with_expired_subscription() -> None:
+async def test_leaves_pending_with_expired_subscription() -> None:
     session = FakeSession(user=make_user(), subscription=make_subscription(expires_at=PAST))
 
     bot = await _run(session)
 
     assert bot.approvals == []
-    assert bot.declines == [{"chat_id": -1001, "user_id": 1001}]
+    assert bot.declines == []
 
 
-async def test_declines_join_request_for_unknown_user() -> None:
+async def test_leaves_pending_for_unknown_user() -> None:
     session = FakeSession(user=None, subscription=None)
 
     bot = await _run(session)
 
     assert bot.approvals == []
-    assert bot.declines == [{"chat_id": -1001, "user_id": 1001}]
+    assert bot.declines == []
 
 
 async def test_ignores_join_request_for_unmanaged_chat() -> None:
@@ -261,40 +252,14 @@ async def test_leaves_request_pending_on_db_error() -> None:
     assert bot.declines == []
 
 
-async def test_decline_emits_service_channel_event() -> None:
-    session = FakeSession(user=make_user(), subscription=None)
-    bot = FakeBot()
-    service_channel = FakeServiceChannel()
-
-    await handle_chat_join_request(
-        make_event(chat_id=-1001, tg_id=1001),
-        make_settings(),
-        FakeSessionFactory(session),
-        bot,
-        service_channel,
-        now=NOW,
-    )
-
-    assert len(service_channel.messages) == 1
-    assert "Join request declined" in service_channel.messages[0]
-    assert "<code>1001</code>" in service_channel.messages[0]
-
-
-async def test_approve_does_not_emit_service_channel_event() -> None:
+async def test_approve_failure_is_swallowed() -> None:
     session = FakeSession(user=make_user(), subscription=make_subscription(expires_at=FUTURE))
-    bot = FakeBot()
-    service_channel = FakeServiceChannel()
 
-    await handle_chat_join_request(
-        make_event(chat_id=-1001, tg_id=1001),
-        make_settings(),
-        FakeSessionFactory(session),
-        bot,
-        service_channel,
-        now=NOW,
-    )
+    # approve_chat_join_request raises -> the handler logs and returns without propagating.
+    bot = await _run(session, fail=True)
 
-    assert service_channel.messages == []
+    assert bot.approvals == []
+    assert bot.declines == []
 
 
 def test_router_subscribes_to_chat_join_request_updates() -> None:

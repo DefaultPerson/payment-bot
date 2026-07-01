@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from html import escape
@@ -8,6 +9,8 @@ from typing import Protocol
 from bot.config import PlanConfig, ProtectedChatConfig, Settings
 from bot.core.i18n import JsonI18n
 from bot.repos.tariffs import default_plan, get_plan
+
+logger = logging.getLogger(__name__)
 
 INVITE_LINK_NAME_LIMIT = 32
 
@@ -53,6 +56,8 @@ class SupportsAccessBot(Protocol):
     ) -> object: ...
 
     async def send_message(self, *, chat_id: int, text: str) -> object: ...
+
+    async def approve_chat_join_request(self, *, chat_id: int, user_id: int) -> object: ...
 
     async def ban_chat_member(
         self,
@@ -106,6 +111,31 @@ async def create_protected_chat_invite_links(
     return invites
 
 
+async def approve_pending_join_requests(
+    bot: SupportsAccessBot,
+    settings: Settings,
+    *,
+    tg_id: int,
+    plan_code: str | None = None,
+) -> None:
+    """Approve any join request the user already has pending in the chats their plan unlocks.
+
+    Addressed directly by ``tg_id`` — the Bot API has no way to *list* pending requests, and
+    none is needed here. Best-effort: if the user has no pending request in a chat (or is
+    already a member), Telegram raises and we ignore it. This is what admits a user who
+    requested to join BEFORE gaining access — e.g. a backlog of pending requests is cleared
+    per-user the moment each one pays or is granted, without ever declining anyone.
+    """
+    for chat_id in allowed_chat_ids_for_plan(settings, plan_code):
+        try:
+            await bot.approve_chat_join_request(chat_id=chat_id, user_id=tg_id)
+        except Exception:
+            logger.debug(
+                "no pending join request to approve",
+                extra={"chat_id": chat_id, "tg_id": tg_id},
+            )
+
+
 async def send_access_links(
     bot: SupportsAccessBot,
     settings: Settings,
@@ -126,6 +156,10 @@ async def send_access_links(
         chat.chat_id for chat in settings.access.protected_chats if chat.chat_id not in allowed
     ]
     await _kick_from_chats(bot, settings, tg_id=tg_id, chat_ids=disallowed, now=now)
+
+    # Admit any request the user already had pending in their plan's chats (they may have
+    # requested before paying). No-op when there is no pending request.
+    await approve_pending_join_requests(bot, settings, tg_id=tg_id, plan_code=plan_code)
 
     allowed_chats = [
         chat for chat in settings.access.protected_chats if chat.chat_id in allowed
