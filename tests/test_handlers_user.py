@@ -450,9 +450,14 @@ async def test_language_callback_updates_language_and_commands(monkeypatch) -> N
     async def fake_set_user_commands(*args: Any, **kwargs: Any) -> None:
         command_calls.append({"args": args, **kwargs})
 
+    async def fake_get_subscription(*args: Any, **kwargs: Any) -> None:
+        return None
+
     monkeypatch.setattr(language_module, "ensure_minimal_user", fake_ensure_minimal_user)
     monkeypatch.setattr(language_module, "update_user_language", fake_update_user_language)
     monkeypatch.setattr(language_module, "set_user_commands", fake_set_user_commands)
+    monkeypatch.setattr(language_module, "get_subscription_for_user", fake_get_subscription)
+    monkeypatch.setattr(language_module, "build_start_text", lambda *a, **k: "MENU_TEXT")
     monkeypatch.setattr(language_module, "main_menu_keyboard", lambda *args, **kwargs: menu_markup)
 
     settings = Settings(admin_ids=[500], bot={"support_username": "HydraSupport"})
@@ -495,7 +500,7 @@ async def test_language_callback_updates_language_and_commands(monkeypatch) -> N
     assert callback.answers == [{"text": "Language changed to English."}]
     assert callback_message.edits == [
         {
-            "text": "Welcome to Hydra Monitors payment bot.\n\nSupport: https://t.me/HydraSupport",
+            "text": "MENU_TEXT",
             "reply_markup": menu_markup,
         }
     ]
@@ -515,9 +520,14 @@ async def test_language_callback_answers_main_menu_when_message_is_not_editable(
     async def fake_set_user_commands(*args: Any, **kwargs: Any) -> None:
         return None
 
+    async def fake_get_subscription(*args: Any, **kwargs: Any) -> None:
+        return None
+
     monkeypatch.setattr(language_module, "ensure_minimal_user", fake_ensure_minimal_user)
     monkeypatch.setattr(language_module, "update_user_language", fake_update_user_language)
     monkeypatch.setattr(language_module, "set_user_commands", fake_set_user_commands)
+    monkeypatch.setattr(language_module, "get_subscription_for_user", fake_get_subscription)
+    monkeypatch.setattr(language_module, "build_start_text", lambda *a, **k: "MENU_TEXT")
     monkeypatch.setattr(language_module, "main_menu_keyboard", lambda *args, **kwargs: "keyboard")
 
     callback = FakeCallback(
@@ -536,7 +546,7 @@ async def test_language_callback_answers_main_menu_when_message_is_not_editable(
 
     assert callback.answers == [
         {
-            "text": "Welcome to Hydra Monitors payment bot.\n\nSupport: https://t.me/HydraSupport",
+            "text": "MENU_TEXT",
             "show_alert": True,
         },
     ]
@@ -554,9 +564,14 @@ async def test_language_callback_answers_when_edit_raises_bad_request(monkeypatc
     async def fake_set_user_commands(*args: Any, **kwargs: Any) -> None:
         return None
 
+    async def fake_get_subscription(*args: Any, **kwargs: Any) -> None:
+        return None
+
     monkeypatch.setattr(language_module, "ensure_minimal_user", fake_ensure_minimal_user)
     monkeypatch.setattr(language_module, "update_user_language", fake_update_user_language)
     monkeypatch.setattr(language_module, "set_user_commands", fake_set_user_commands)
+    monkeypatch.setattr(language_module, "get_subscription_for_user", fake_get_subscription)
+    monkeypatch.setattr(language_module, "build_start_text", lambda *a, **k: "MENU_TEXT")
     monkeypatch.setattr(language_module, "main_menu_keyboard", lambda *args, **kwargs: "keyboard")
 
     callback = FakeCallback(
@@ -575,7 +590,7 @@ async def test_language_callback_answers_when_edit_raises_bad_request(monkeypatc
 
     assert callback.answers == [
         {
-            "text": "Welcome to Hydra Monitors payment bot.\n\nSupport: https://t.me/HydraSupport",
+            "text": "MENU_TEXT",
             "show_alert": True,
         },
     ]

@@ -5,6 +5,7 @@ fallback_language = "ru"
 # Set username_override to force a specific @username and skip getMe.
 username = "HydraPaymentBot"
 support_username = "HMonitorsBot"
+docs_url = "http://docs.hydramonitors.com/"
 
 [service_channel]
 chat_id = -1001234567890

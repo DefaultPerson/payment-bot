@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from bot.config import Settings
 from bot.core.i18n import JsonI18n
 from bot.keyboards import icons as icon_module
 from bot.keyboards.menu import (
@@ -21,19 +22,19 @@ def _callbacks(keyboard) -> set[str]:
 
 
 def test_main_menu_hides_trial_button_by_default() -> None:
-    keyboard = main_menu_keyboard(JsonI18n(), "en", is_admin=False)
+    keyboard = main_menu_keyboard(JsonI18n(), "en", Settings(), is_admin=False)
 
     assert CB_TRIAL_START not in _callbacks(keyboard)
 
 
 def test_main_menu_shows_trial_button_when_available() -> None:
-    keyboard = main_menu_keyboard(JsonI18n(), "en", is_admin=False, show_trial=True)
+    keyboard = main_menu_keyboard(JsonI18n(), "en", Settings(), is_admin=False, show_trial=True)
 
     assert CB_TRIAL_START in _callbacks(keyboard)
 
 
 def test_main_menu_trial_button_carries_mapped_icon() -> None:
-    keyboard = main_menu_keyboard(JsonI18n(), "en", is_admin=False, show_trial=True)
+    keyboard = main_menu_keyboard(JsonI18n(), "en", Settings(), is_admin=False, show_trial=True)
     by_cb = {
         button.callback_data: button.icon_custom_emoji_id
         for row in keyboard.inline_keyboard

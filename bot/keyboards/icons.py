@@ -19,6 +19,7 @@ MENU_ICONS: dict[str, str] = {
     "menu.button.trial": "5773677501825945508",  # 🎁 free trial (shared with referral gift)
     "menu.button.profile": "6032994772321309200",  # 👤
     "menu.button.language": "5776233299424843260",  # 🌐
+    "menu.button.docs": "6034969813032374911",  # 📄 documentation link
     "menu.button.referral": "5773677501825945508",  # 🎁
     "menu.button.promo": "5888620056551625531",  # 🏷
     "menu.button.support": "6030784887093464891",  # 💬

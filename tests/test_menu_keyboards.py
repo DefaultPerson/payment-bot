@@ -151,26 +151,30 @@ async def test_set_user_commands_maps_internal_ua_to_telegram_uk() -> None:
     assert bot.calls[0]["language_code"] == "uk"
 
 
-def test_main_menu_keyboard_contains_user_and_future_feature_buttons() -> None:
+def test_main_menu_keyboard_contains_user_buttons_and_link_row() -> None:
     keyboards = keyboard_module()
+    settings = Settings(bot={"support_username": "HydraSupport"})
 
-    keyboard = keyboards.main_menu_keyboard(JsonI18n(), "en", is_admin=False)
+    keyboard = keyboards.main_menu_keyboard(JsonI18n(), "en", settings, is_admin=False)
 
-    assert {
-        keyboards.CB_SUPPORT,
-        keyboards.CB_PROFILE,
-        keyboards.CB_LANGUAGE,
-        keyboards.CB_BUY,
-        keyboards.CB_REFERRAL,
-        keyboards.CB_PROMO,
-    } <= keyboard_callback_data(keyboard)
+    callbacks = keyboard_callback_data(keyboard)
+    # Core callback buttons remain.
+    assert {keyboards.CB_BUY, keyboards.CB_PROFILE, keyboards.CB_LANGUAGE} <= callbacks
+    # Promo/referral buttons removed; support is now a direct URL button (no callback).
+    assert keyboards.CB_PROMO not in callbacks
+    assert keyboards.CB_REFERRAL not in callbacks
+    assert keyboards.CB_SUPPORT not in callbacks
+    # Documentation + support ship as URL buttons on one row.
+    urls = keyboard_urls(keyboard)
+    assert settings.bot.docs_url in urls
+    assert "https://t.me/HydraSupport" in urls
 
 
 def test_main_menu_keyboard_contains_admin_button_for_admins() -> None:
     keyboards = keyboard_module()
 
-    user_keyboard = keyboards.main_menu_keyboard(JsonI18n(), "en", is_admin=False)
-    admin_keyboard = keyboards.main_menu_keyboard(JsonI18n(), "en", is_admin=True)
+    user_keyboard = keyboards.main_menu_keyboard(JsonI18n(), "en", Settings(), is_admin=False)
+    admin_keyboard = keyboards.main_menu_keyboard(JsonI18n(), "en", Settings(), is_admin=True)
 
     assert keyboards.CB_ADMIN not in keyboard_callback_data(user_keyboard)
     assert keyboards.CB_ADMIN in keyboard_callback_data(admin_keyboard)
@@ -186,6 +190,24 @@ def test_language_keyboard_offers_supported_locales() -> None:
         f"{keyboards.LANG_PREFIX}ua",
         f"{keyboards.LANG_PREFIX}en",
     } <= keyboard_callback_data(keyboard)
+
+
+def test_language_keyboard_has_back_button_and_checkmark_on_selected() -> None:
+    keyboards = keyboard_module()
+
+    keyboard = keyboards.language_keyboard(JsonI18n(), "en")
+
+    # Back-to-menu button present.
+    assert keyboards.CB_MENU in keyboard_callback_data(keyboard)
+    # Selected language marked with a checkmark, not a word.
+    selected = next(
+        button
+        for row in keyboard.inline_keyboard
+        for button in row
+        if button.callback_data == f"{keyboards.LANG_PREFIX}en"
+    )
+    assert selected.text.startswith("✅")
+    assert "selected" not in selected.text.lower()
 
 
 def test_support_keyboard_points_to_configured_support_username() -> None:
@@ -394,6 +416,8 @@ def test_profile_text_locale_formats_expected_kwargs() -> None:
         referral_count=3,
         referral_earned_usd="12.50",
         referral_unpaid_earned_usd="7.50",
+        invite_link="https://t.me/HMPTbot?start=ref_42",
+        min_withdraw_usd="10.00",
     )
 
     assert "42" in text
@@ -405,3 +429,5 @@ def test_profile_text_locale_formats_expected_kwargs() -> None:
     assert "3" in text
     assert "12.50" in text
     assert "7.50" in text
+    assert "https://t.me/HMPTbot?start=ref_42" in text
+    assert "10.00" in text

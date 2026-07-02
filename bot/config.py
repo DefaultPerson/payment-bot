@@ -21,6 +21,7 @@ class BotConfig(BaseModel):
     username: str = Field(default="HydraPaymentBot", min_length=1)  # resolved at runtime from getMe
     username_override: str = ""  # force a specific @username, skips getMe
     support_username: str = "HMonitorsBot"
+    docs_url: str = "http://docs.hydramonitors.com/"  # main-menu documentation link button
     custom_emoji_icons: bool = True  # attach tgiosicons custom-emoji icons to inline buttons
 
     @model_validator(mode="after")

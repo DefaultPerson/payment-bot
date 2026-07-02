@@ -27,17 +27,32 @@ def _by_callback(keyboard) -> dict[str, str | None]:
     }
 
 
+def _by_url(keyboard) -> dict[str, str | None]:
+    return {
+        button.url: button.icon_custom_emoji_id
+        for row in keyboard.inline_keyboard
+        for button in row
+        if button.url is not None
+    }
+
+
 def test_main_menu_buttons_carry_mapped_icons() -> None:
-    keyboard = main_menu_keyboard(JsonI18n(), "en", is_admin=True)
+    settings = Settings()
+    keyboard = main_menu_keyboard(JsonI18n(), "en", settings, is_admin=True)
     by_cb = _by_callback(keyboard)
 
     assert by_cb["buy"] == icon_module.MENU_ICONS["menu.button.buy"]
     assert by_cb["profile"] == icon_module.MENU_ICONS["menu.button.profile"]
     assert by_cb["language"] == icon_module.MENU_ICONS["menu.button.language"]
-    assert by_cb["referral"] == icon_module.MENU_ICONS["menu.button.referral"]
-    assert by_cb["promo"] == icon_module.MENU_ICONS["menu.button.promo"]
-    assert by_cb["support"] == icon_module.MENU_ICONS["menu.button.support"]
     assert by_cb["admin"] == icon_module.MENU_ICONS["menu.button.admin"]
+
+    # Documentation + support are URL buttons (no callback_data); check their icons by URL.
+    by_url = _by_url(keyboard)
+    assert by_url[settings.bot.docs_url] == icon_module.MENU_ICONS["menu.button.docs"]
+    assert (
+        by_url[f"https://t.me/{settings.bot.support_username}"]
+        == icon_module.MENU_ICONS["menu.button.support"]
+    )
 
 
 def test_pay_buttons_get_provider_icons() -> None:
@@ -69,7 +84,7 @@ def test_payment_keyboard_icon_follows_provider_key() -> None:
 
 def test_apply_valid_icon_ids_drops_unknown_ids() -> None:
     icon_module.apply_valid_icon_ids({icon_module.MENU_ICONS["menu.button.buy"]})
-    by_cb = _by_callback(main_menu_keyboard(JsonI18n(), "en", is_admin=False))
+    by_cb = _by_callback(main_menu_keyboard(JsonI18n(), "en", Settings(), is_admin=False))
 
     assert by_cb["buy"] == icon_module.MENU_ICONS["menu.button.buy"]
     assert by_cb["profile"] is None  # not in the validated set -> no icon
@@ -77,7 +92,7 @@ def test_apply_valid_icon_ids_drops_unknown_ids() -> None:
 
 def test_disable_icons_removes_all_icons() -> None:
     icon_module.disable_icons()
-    keyboard = main_menu_keyboard(JsonI18n(), "en", is_admin=True)
+    keyboard = main_menu_keyboard(JsonI18n(), "en", Settings(), is_admin=True)
     icons = {button.icon_custom_emoji_id for row in keyboard.inline_keyboard for button in row}
 
     assert icons == {None}

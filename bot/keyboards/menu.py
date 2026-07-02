@@ -18,6 +18,7 @@ CB_PROMO = "promo"
 CB_RENEW = "renew"
 CB_ENTER_CHAT = "enter_chat"
 CB_ADMIN = "admin"
+CB_MENU = "menu"
 LANG_PREFIX = "lang:"
 CB_PLAN_PREFIX = "plan:"
 CB_TARIFF_PREFIX = "tariff:"
@@ -56,6 +57,7 @@ def _button(
 def main_menu_keyboard(
     i18n: JsonI18n,
     lang_code: str,
+    settings: Settings,
     *,
     is_admin: bool,
     show_trial: bool = False,
@@ -80,35 +82,31 @@ def main_menu_keyboard(
             ]
         )
     rows += [
+        # Documentation + support: two direct URL buttons on one row.
+        [
+            _button(
+                i18n.gettext("menu.button.docs", lang_code),
+                icon_key="menu.button.docs",
+                url=_docs_url(settings),
+            ),
+            _button(
+                i18n.gettext("menu.button.support", lang_code),
+                icon_key="menu.button.support",
+                url=_support_url(settings),
+            ),
+        ],
+        [
+            _button(
+                i18n.gettext("menu.button.language", lang_code),
+                icon_key="menu.button.language",
+                callback_data=CB_LANGUAGE,
+            )
+        ],
         [
             _button(
                 i18n.gettext("menu.button.profile", lang_code),
                 icon_key="menu.button.profile",
                 callback_data=CB_PROFILE,
-            ),
-            _button(
-                i18n.gettext("menu.button.language", lang_code),
-                icon_key="menu.button.language",
-                callback_data=CB_LANGUAGE,
-            ),
-        ],
-        [
-            _button(
-                i18n.gettext("menu.button.referral", lang_code),
-                icon_key="menu.button.referral",
-                callback_data=CB_REFERRAL,
-            ),
-            _button(
-                i18n.gettext("menu.button.promo", lang_code),
-                icon_key="menu.button.promo",
-                callback_data=CB_PROMO,
-            ),
-        ],
-        [
-            _button(
-                i18n.gettext("menu.button.support", lang_code),
-                icon_key="menu.button.support",
-                callback_data=CB_SUPPORT,
             )
         ],
     ]
@@ -151,12 +149,9 @@ def language_keyboard(i18n: JsonI18n, lang_code: str) -> InlineKeyboardMarkup:
     rows = []
     for language_code in LANGUAGE_CODES:
         language_name = i18n.gettext(f"language.name.{language_code}", lang_code)
+        # Mark the active language with a checkmark instead of a trailing word.
         if language_code == selected_language:
-            language_name = i18n.gettext(
-                "language.selected",
-                lang_code,
-                language_name=language_name,
-            )
+            language_name = f"✅ {language_name}"
         rows.append(
             [
                 _button(
@@ -165,7 +160,14 @@ def language_keyboard(i18n: JsonI18n, lang_code: str) -> InlineKeyboardMarkup:
                 )
             ]
         )
-
+    rows.append(
+        [
+            _button(
+                i18n.gettext("menu.back", lang_code),
+                callback_data=CB_MENU,
+            )
+        ]
+    )
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -400,3 +402,7 @@ def payment_keyboard(
 
 def _support_url(settings: Settings) -> str:
     return f"https://t.me/{settings.bot.support_username}"
+
+
+def _docs_url(settings: Settings) -> str:
+    return settings.bot.docs_url

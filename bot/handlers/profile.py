@@ -76,6 +76,8 @@ async def _build_profile_response(
             now=datetime.now(UTC),
             referral_stats=referral_stats,
             loyalty=settings.loyalty,
+            bot_username=settings.bot.username,
+            min_withdraw_usd=settings.referral.min_withdraw_usd,
         )
         lang_code = user.lang_code
 

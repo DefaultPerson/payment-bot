@@ -150,11 +150,16 @@ async def trial_cancel_callback(
     """Abort the trial confirmation and return to the main menu (still eligible)."""
     context = callback_context(callback, settings)
     lang_code = i18n.resolve_language(context.language_code)
+    # Reaching cancel means the trial was still available, so the user has no active
+    # subscription — the welcome status is Free without needing a DB read.
+    status_label = i18n.gettext("start.status.free", lang_code)
     await _edit_text_or_answer(
         callback,
-        build_start_text(i18n, settings, lang_code),
+        build_start_text(
+            i18n, settings, lang_code, status_label=status_label, trial_available=True
+        ),
         reply_markup=main_menu_keyboard(
-            i18n, lang_code, is_admin=context.is_admin, show_trial=True
+            i18n, lang_code, settings, is_admin=context.is_admin, show_trial=True
         ),
     )
 

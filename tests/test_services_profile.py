@@ -28,6 +28,8 @@ def test_profile_view_fields_match_service_contract() -> None:
         "referral_count",
         "referral_earned_usd",
         "referral_unpaid_earned_usd",
+        "invite_link",
+        "min_withdraw_usd",
     ]
 
 
@@ -39,7 +41,9 @@ def test_build_profile_view_reports_inactive_subscription_without_expiration() -
         expires_at=NOW - timedelta(days=1),
     )
 
-    view = build_profile_view(user, subscription, now=NOW)
+    view = build_profile_view(
+        user, subscription, now=NOW, bot_username="HMPTbot", min_withdraw_usd=Decimal("10")
+    )
 
     assert view == ProfileView(
         tg_id=123456789,
@@ -51,6 +55,8 @@ def test_build_profile_view_reports_inactive_subscription_without_expiration() -
         referral_count=0,
         referral_earned_usd=Decimal("0.00"),
         referral_unpaid_earned_usd=Decimal("0.00"),
+        invite_link="https://t.me/HMPTbot?start=ref_123456789",
+        min_withdraw_usd=Decimal("10"),
     )
 
 
@@ -132,6 +138,8 @@ def test_format_profile_text_uses_i18n_keys(tmp_path) -> None:
         referral_count=0,
         referral_earned_usd=Decimal("0.00"),
         referral_unpaid_earned_usd=Decimal("0.00"),
+        invite_link="https://t.me/HMPTbot?start=ref_123456789",
+        min_withdraw_usd=Decimal("10"),
     )
 
     text = format_profile_text(view, i18n, "en")

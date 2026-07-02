@@ -82,6 +82,11 @@ class PersistedUser:
     username: str | None
     first_name: str | None
     lang_code: str
+    id: int = 0
+
+
+async def _fake_no_subscription(*args: Any, **kwargs: Any) -> None:
+    return None
 
 
 @dataclass(slots=True)
@@ -94,40 +99,37 @@ def test_build_start_text_uses_english_for_english_user_language() -> None:
     i18n = JsonI18n()
     settings = Settings(bot={"support_username": "HydraSupport"})
 
-    text = build_start_text(i18n, settings, "en")
+    text = build_start_text(i18n, settings, "en", status_label="Free")
 
-    assert "Welcome to Hydra Monitors payment bot." in text
-    assert "https://t.me/HydraSupport" in text
+    assert "Welcome to the <b>Hydra Monitors</b> payment bot." in text
+    assert "<b>Status:</b> Free" in text
 
 
 def test_build_start_text_falls_back_to_russian_for_unsupported_language() -> None:
     i18n = JsonI18n()
     settings = Settings(bot={"support_username": "HydraSupport"})
 
-    text = build_start_text(i18n, settings, "de")
+    text = build_start_text(i18n, settings, "de", status_label="Free")
 
-    assert "Добро пожаловать в платежного бота Hydra Monitors." in text
-    assert "https://t.me/HydraSupport" in text
+    assert "Добро пожаловать в платёжного бота" in text
 
 
 def test_build_start_text_maps_telegram_uk_to_ukrainian_locale() -> None:
     i18n = JsonI18n()
     settings = Settings(bot={"support_username": "HydraSupport"})
 
-    text = build_start_text(i18n, settings, "uk")
+    text = build_start_text(i18n, settings, "uk", status_label="Free")
 
-    assert "Ласкаво просимо до платіжного бота Hydra Monitors." in text
-    assert "https://t.me/HydraSupport" in text
+    assert "Ласкаво просимо до платіжного бота" in text
 
 
 def test_build_start_text_maps_regional_english_tag_to_english_locale() -> None:
     i18n = JsonI18n()
     settings = Settings(bot={"support_username": "HydraSupport"})
 
-    text = build_start_text(i18n, settings, "en-US")
+    text = build_start_text(i18n, settings, "en-US", status_label="Free")
 
-    assert "Welcome to Hydra Monitors payment bot." in text
-    assert "https://t.me/HydraSupport" in text
+    assert "Welcome to the <b>Hydra Monitors</b> payment bot." in text
 
 
 def test_create_router_does_not_require_dependencies() -> None:
@@ -186,6 +188,7 @@ async def test_start_calls_user_upsert_commands_and_answers_main_menu(monkeypatc
     monkeypatch.setattr(start_module, "upsert_user_from_telegram_with_created", fake_upsert)
     monkeypatch.setattr(start_module, "set_user_commands", fake_set_user_commands)
     monkeypatch.setattr(start_module, "main_menu_keyboard", fake_main_menu_keyboard)
+    monkeypatch.setattr(start_module, "get_subscription_for_user", _fake_no_subscription)
 
     settings = Settings(admin_ids=[1001], bot={"support_username": "HydraSupport"})
     i18n = JsonI18n()
@@ -224,13 +227,14 @@ async def test_start_calls_user_upsert_commands_and_answers_main_menu(monkeypatc
     ]
     assert menu_calls == [
         {
-            "args": (i18n, "en"),
+            "args": (i18n, "en", settings),
             "is_admin": True,
             "show_trial": False,
         }
     ]
     assert len(message.answers) == 1
-    assert "Welcome to Hydra Monitors payment bot." in message.answers[0]["text"]
+    assert "Hydra Monitors" in message.answers[0]["text"]
+    assert "<b>Status:</b> Free" in message.answers[0]["text"]
     assert message.answers[0]["reply_markup"] is menu_markup
 
 
@@ -258,6 +262,7 @@ async def test_start_clears_pending_fsm_state(monkeypatch) -> None:
     monkeypatch.setattr(start_module, "upsert_user_from_telegram_with_created", fake_upsert)
     monkeypatch.setattr(start_module, "set_user_commands", _noop_async)
     monkeypatch.setattr(start_module, "main_menu_keyboard", lambda *a, **k: object())
+    monkeypatch.setattr(start_module, "get_subscription_for_user", _fake_no_subscription)
 
     state = FakeState()
     message = FakeMessage(

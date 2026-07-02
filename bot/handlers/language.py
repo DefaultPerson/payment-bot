@@ -16,7 +16,9 @@ from bot.core.i18n import JsonI18n
 from bot.core.menu import set_user_commands
 from bot.handlers.start import build_start_text, callback_context, message_context
 from bot.keyboards import CB_LANGUAGE, LANG_PREFIX, language_keyboard, main_menu_keyboard
+from bot.repos.subscriptions import get_subscription_for_user
 from bot.repos.users import ensure_minimal_user, update_user_language, upsert_user_from_telegram
+from bot.services.profile import welcome_status_label
 from bot.services.trial import is_trial_available
 
 logger = logging.getLogger(__name__)
@@ -84,6 +86,8 @@ async def language_callback(
         return
 
     trial_available = False
+    now = datetime.now(UTC)
+    status_label = i18n.gettext("start.status.free", lang_code)
     try:
         async with session_scope(session_factory) as session:
             await ensure_minimal_user(
@@ -94,8 +98,12 @@ async def language_callback(
             )
             user = await update_user_language(session, tg_id=context.tg_id, lang_code=lang_code)
             persisted_lang_code = user.lang_code
+            subscription = await get_subscription_for_user(session, user.id)
             trial_available = await is_trial_available(
-                session, user=user, settings=settings, now=datetime.now(UTC)
+                session, user=user, settings=settings, now=now
+            )
+            status_label = welcome_status_label(
+                i18n, persisted_lang_code, user, subscription, now, settings.loyalty
             )
     except SQLAlchemyError:
         logger.exception("failed to update language")
@@ -120,11 +128,18 @@ async def language_callback(
     )
     await _edit_text_or_answer(
         callback,
-        build_start_text(i18n, settings, persisted_lang_code),
+        build_start_text(
+            i18n,
+            settings,
+            persisted_lang_code,
+            status_label=status_label,
+            trial_available=trial_available,
+        ),
         answer_text=changed_text,
         reply_markup=main_menu_keyboard(
             i18n,
             persisted_lang_code,
+            settings,
             is_admin=context.is_admin,
             show_trial=trial_available,
         ),

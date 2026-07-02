@@ -15,6 +15,7 @@ from bot.services.subscriptions import (
     SupportsLoyaltyThresholds,
     consumed_coverage_days,
     effective_status,
+    subscription_active_at,
     tier_threshold_days,
 )
 
@@ -30,6 +31,8 @@ class ProfileView:
     referral_count: int
     referral_earned_usd: Decimal
     referral_unpaid_earned_usd: Decimal
+    invite_link: str
+    min_withdraw_usd: Decimal
 
 
 def build_profile_view(
@@ -39,6 +42,8 @@ def build_profile_view(
     now: datetime,
     referral_stats: ReferralStats | None = None,
     loyalty: SupportsLoyaltyThresholds | None = None,
+    bot_username: str = "",
+    min_withdraw_usd: Decimal = Decimal("0"),
 ) -> ProfileView:
     expires_at = subscription.expires_at if subscription is not None else None
     subscription_active = expires_at is not None and expires_at > now
@@ -63,7 +68,29 @@ def build_profile_view(
         referral_unpaid_earned_usd=(
             referral_stats.available_usd if referral_stats is not None else Decimal("0.00")
         ),
+        invite_link=f"https://t.me/{bot_username}?start=ref_{user.tg_id}",
+        min_withdraw_usd=min_withdraw_usd,
     )
+
+
+def welcome_status_label(
+    i18n: JsonI18n,
+    lang_code: str,
+    user: User,
+    subscription: Subscription | None,
+    now: datetime,
+    loyalty: SupportsLoyaltyThresholds | None = None,
+) -> str:
+    """Status shown on the /start welcome screen.
+
+    ``Free`` when there is no active subscription; otherwise the localized loyalty tier
+    (Basic/Bronze/Silver/Gold). The real tier is always visible in the profile view.
+    """
+    expires_at = subscription.expires_at if subscription is not None else None
+    if not subscription_active_at(expires_at, now):
+        return i18n.gettext("start.status.free", lang_code)
+    status = effective_status(user.status, user.total_active_days, expires_at, now, loyalty)
+    return i18n.gettext(f"profile.status.{status.value}", lang_code)
 
 
 def format_profile_text(view: ProfileView, i18n: JsonI18n, lang_code: str) -> str:
@@ -97,6 +124,8 @@ def format_profile_text(view: ProfileView, i18n: JsonI18n, lang_code: str) -> st
         referral_count=view.referral_count,
         referral_earned_usd=f"{view.referral_earned_usd:.2f}",
         referral_unpaid_earned_usd=f"{view.referral_unpaid_earned_usd:.2f}",
+        invite_link=view.invite_link,
+        min_withdraw_usd=f"{view.min_withdraw_usd:.2f}",
     )
 
 

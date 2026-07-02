@@ -4,10 +4,11 @@ import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from aiogram import Bot, Router
+from aiogram import Bot, F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message
+from aiogram.types import CallbackQuery, Message
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -15,8 +16,11 @@ from bot.config import Settings
 from bot.core.db import session_scope
 from bot.core.i18n import JsonI18n
 from bot.core.menu import set_user_commands
-from bot.keyboards import main_menu_keyboard
-from bot.repos.users import upsert_user_from_telegram_with_created
+from bot.core.text_emoji import welcome_emoji
+from bot.keyboards import CB_MENU, main_menu_keyboard
+from bot.repos.subscriptions import get_subscription_for_user
+from bot.repos.users import ensure_minimal_user, upsert_user_from_telegram_with_created
+from bot.services.profile import welcome_status_label
 from bot.services.referrals import (
     ReferralBindResult,
     ReferralBindStatus,
@@ -38,12 +42,36 @@ class TelegramContext:
     is_admin: bool
 
 
-def build_start_text(i18n: JsonI18n, settings: Settings, language_code: str | None) -> str:
+def build_start_text(
+    i18n: JsonI18n,
+    settings: Settings,
+    language_code: str | None,
+    *,
+    status_label: str,
+    trial_available: bool = False,
+) -> str:
     language = i18n.normalize_language(language_code)
     if language not in settings.bot.supported_languages:
         language = None
-    support_url = f"https://t.me/{settings.bot.support_username}"
-    return i18n.gettext("start.text", language, support_url=support_url)
+    trial_block = ""
+    if trial_available:
+        cta = i18n.gettext(
+            "start.trial.cta",
+            language,
+            new=welcome_emoji("new"),
+            days=settings.trial.duration_days,
+        )
+        trial_block = f"{cta}\n\n"
+    return i18n.gettext(
+        "start.text",
+        language,
+        wave=welcome_emoji("wave"),
+        down=welcome_emoji("down"),
+        api=welcome_emoji("api"),
+        question=welcome_emoji("question"),
+        trial_block=trial_block,
+        status=status_label,
+    )
 
 
 def message_context(message: Message, settings: Settings | None = None) -> TelegramContext:
@@ -95,6 +123,8 @@ async def start(
     lang_code = i18n.resolve_language(context.language_code)
     referral_result: ReferralBindResult | None = None
     trial_available = False
+    now = datetime.now(UTC)
+    status_label = i18n.gettext("start.status.free", lang_code)
 
     if context.tg_id is not None:
         try:
@@ -115,11 +145,15 @@ async def start(
                         session,
                         referee=user,
                         referrer_tg_id=referrer_tg_id,
-                        now=datetime.now(UTC),
+                        now=now,
                         allow_referrer_change=settings.referral.allow_referrer_change,
                     )
+                subscription = await get_subscription_for_user(session, user.id)
                 trial_available = await is_trial_available(
-                    session, user=user, settings=settings, now=datetime.now(UTC)
+                    session, user=user, settings=settings, now=now
+                )
+                status_label = welcome_status_label(
+                    i18n, lang_code, user, subscription, now, settings.loyalty
                 )
         except SQLAlchemyError:
             logger.exception("failed to upsert user on start")
@@ -136,14 +170,18 @@ async def start(
                 is_admin=context.is_admin,
             )
 
-    text = _start_text_with_referral_feedback(i18n, settings, lang_code, referral_result)
-    if trial_available:
-        cta = i18n.gettext("start.trial.cta", lang_code, days=settings.trial.duration_days)
-        text = f"{text}\n\n{cta}"
+    text = _start_text_with_referral_feedback(
+        i18n,
+        settings,
+        lang_code,
+        referral_result,
+        status_label=status_label,
+        trial_available=trial_available,
+    )
     await message.answer(
         text,
         reply_markup=main_menu_keyboard(
-            i18n, lang_code, is_admin=context.is_admin, show_trial=trial_available
+            i18n, lang_code, settings, is_admin=context.is_admin, show_trial=trial_available
         ),
     )
 
@@ -153,8 +191,13 @@ def _start_text_with_referral_feedback(
     settings: Settings,
     lang_code: str,
     referral_result: ReferralBindResult | None,
+    *,
+    status_label: str,
+    trial_available: bool,
 ) -> str:
-    text = build_start_text(i18n, settings, lang_code)
+    text = build_start_text(
+        i18n, settings, lang_code, status_label=status_label, trial_available=trial_available
+    )
     if referral_result is None:
         return text
     if referral_result.status is ReferralBindStatus.applied:
@@ -164,7 +207,75 @@ def _start_text_with_referral_feedback(
     return text
 
 
+async def back_to_menu_callback(
+    callback: CallbackQuery,
+    settings: Settings,
+    i18n: JsonI18n,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Re-render the main menu (e.g. the language menu's "Back" button)."""
+    context = callback_context(callback, settings)
+    lang_code = i18n.resolve_language(context.language_code)
+    now = datetime.now(UTC)
+    trial_available = False
+    status_label = i18n.gettext("start.status.free", lang_code)
+
+    if context.tg_id is not None:
+        try:
+            async with session_scope(session_factory) as session:
+                user = await ensure_minimal_user(
+                    session,
+                    tg_id=context.tg_id,
+                    i18n=i18n,
+                    language_code=context.language_code,
+                )
+                lang_code = user.lang_code
+                subscription = await get_subscription_for_user(session, user.id)
+                trial_available = await is_trial_available(
+                    session, user=user, settings=settings, now=now
+                )
+                status_label = welcome_status_label(
+                    i18n, lang_code, user, subscription, now, settings.loyalty
+                )
+        except SQLAlchemyError:
+            logger.exception("failed to render main menu")
+            await callback.answer(
+                i18n.gettext("error.generic", context.language_code), show_alert=True
+            )
+            return
+
+    text = build_start_text(
+        i18n, settings, lang_code, status_label=status_label, trial_available=trial_available
+    )
+    await _edit_menu_or_answer(
+        callback,
+        text,
+        reply_markup=main_menu_keyboard(
+            i18n, lang_code, settings, is_admin=context.is_admin, show_trial=trial_available
+        ),
+    )
+
+
+async def _edit_menu_or_answer(
+    callback: CallbackQuery,
+    text: str,
+    *,
+    reply_markup: object | None = None,
+) -> None:
+    edit_text = getattr(callback.message, "edit_text", None)
+    if callable(edit_text):
+        try:
+            await edit_text(text, reply_markup=reply_markup)
+        except TelegramBadRequest:
+            await callback.answer()
+        else:
+            await callback.answer()
+        return
+    await callback.answer()
+
+
 def create_start_router() -> Router:
     start_router = Router(name="start")
     start_router.message(CommandStart())(start)
+    start_router.callback_query(F.data == CB_MENU)(back_to_menu_callback)
     return start_router

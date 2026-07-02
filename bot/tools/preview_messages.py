@@ -55,6 +55,7 @@ from bot.core.service_events import (
     render_event,
     user_mention,
 )
+from bot.core.text_emoji import welcome_emoji
 from bot.handlers.admin.broadcast import _segment_keyboard
 from bot.handlers.admin.stats import _format_stats
 from bot.handlers.buy import _duration_menu_text, _format_quote_text
@@ -119,8 +120,8 @@ class Preview:
 def _user_previews(i18n: JsonI18n, settings: Settings, lang: str) -> list[Preview]:
     g = lambda key, **kw: i18n.gettext(key, lang, **kw)  # noqa: E731
     support_url = f"https://t.me/{settings.bot.support_username}"
-    start_text = build_start_text(i18n, settings, lang)
-    trial_cta = g("start.trial.cta", days=settings.trial.duration_days)
+    start_text = build_start_text(i18n, settings, lang, status_label=g("start.status.free"))
+    trial_cta = g("start.trial.cta", days=settings.trial.duration_days, new=welcome_emoji("new"))
 
     base_quote = quote_tariff(settings, _QUOTE_CODE, UserStatus.basic)
     promo_discount_quote = replace(
@@ -128,6 +129,8 @@ def _user_previews(i18n: JsonI18n, settings: Settings, lang: str) -> list[Previe
     )
     promo_days_quote = replace(base_quote, promo_code="PLUS7", promo_extra_days=7)
 
+    invite_link = f"https://t.me/{settings.bot.username}?start=ref_{_TG}"
+    min_withdraw_usd = settings.referral.min_withdraw_usd
     profile_active = ProfileView(
         tg_id=_TG,
         status=UserStatus.silver,
@@ -138,6 +141,8 @@ def _user_previews(i18n: JsonI18n, settings: Settings, lang: str) -> list[Previe
         referral_count=8,
         referral_earned_usd=Decimal("42.50"),
         referral_unpaid_earned_usd=Decimal("22.50"),
+        invite_link=invite_link,
+        min_withdraw_usd=min_withdraw_usd,
     )
     profile_inactive = ProfileView(
         tg_id=_TG,
@@ -149,6 +154,8 @@ def _user_previews(i18n: JsonI18n, settings: Settings, lang: str) -> list[Previe
         referral_count=0,
         referral_earned_usd=Decimal("0.00"),
         referral_unpaid_earned_usd=Decimal("0.00"),
+        invite_link=invite_link,
+        min_withdraw_usd=min_withdraw_usd,
     )
 
     access_links = "\n".join(
@@ -167,18 +174,19 @@ def _user_previews(i18n: JsonI18n, settings: Settings, lang: str) -> list[Previe
 
     return [
         Preview("user", "01 · /start — main menu (new user, no admin)",
-                start_text, main_menu_keyboard(i18n, lang, is_admin=False)),
+                start_text, main_menu_keyboard(i18n, lang, settings, is_admin=False)),
         Preview("user", "02 · /start — main menu + trial CTA",
                 f"{start_text}\n\n{trial_cta}",
-                main_menu_keyboard(i18n, lang, is_admin=False, show_trial=True)),
+                main_menu_keyboard(i18n, lang, settings, is_admin=False, show_trial=True)),
         Preview("user", "03 · /start — main menu (admin, admin button)",
-                start_text, main_menu_keyboard(i18n, lang, is_admin=True, show_trial=True)),
+                start_text,
+                main_menu_keyboard(i18n, lang, settings, is_admin=True, show_trial=True)),
         Preview("user", "04 · /start — referral link applied",
                 f"{start_text}\n\n{g('referral.start.applied')}",
-                main_menu_keyboard(i18n, lang, is_admin=False)),
+                main_menu_keyboard(i18n, lang, settings, is_admin=False)),
         Preview("user", "05 · /start — referral rebind rejected",
                 f"{start_text}\n\n{g('referral.start.rebind_rejected')}",
-                main_menu_keyboard(i18n, lang, is_admin=False)),
+                main_menu_keyboard(i18n, lang, settings, is_admin=False)),
         Preview("user", "06 · Profile — active subscription",
                 format_profile_text(profile_active, i18n, lang),
                 profile_keyboard(i18n, settings, lang)),
@@ -262,7 +270,7 @@ def _user_previews(i18n: JsonI18n, settings: Settings, lang: str) -> list[Previe
                 g("commands.language"), language_keyboard(i18n, lang)),
         Preview("user", "33 · Language — changed",
                 g("language.changed", language_name=g(f"language.name.{lang}")),
-                main_menu_keyboard(i18n, lang, is_admin=False)),
+                main_menu_keyboard(i18n, lang, settings, is_admin=False)),
         Preview("user", "34 · Support", g("support.text", support_url=support_url),
                 support_keyboard(i18n, settings, lang)),
         Preview("user", "35 · Misc — coming soon / generic error",
