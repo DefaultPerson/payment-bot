@@ -61,7 +61,7 @@ def build_start_text(
             new=welcome_emoji("new"),
             days=settings.trial.duration_days,
         )
-        trial_block = f"{cta}\n\n"
+        trial_block = f"\n\n{cta}"
     return i18n.gettext(
         "start.text",
         language,

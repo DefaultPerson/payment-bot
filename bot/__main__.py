@@ -393,7 +393,10 @@ async def main() -> None:
         redis_client = create_redis_client(settings.redis_url)
         bot = Bot(
             token=settings.bot_token.get_secret_value(),
-            default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+            default=DefaultBotProperties(
+                parse_mode=ParseMode.HTML,
+                link_preview_is_disabled=True,
+            ),
         )
         await resolve_bot_username(bot, settings)
         await configure_menu_icons(bot, settings)
