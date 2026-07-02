@@ -100,14 +100,12 @@ def main_menu_keyboard(
                 i18n.gettext("menu.button.language", lang_code),
                 icon_key="menu.button.language",
                 callback_data=CB_LANGUAGE,
-            )
-        ],
-        [
+            ),
             _button(
                 i18n.gettext("menu.button.profile", lang_code),
                 icon_key="menu.button.profile",
                 callback_data=CB_PROFILE,
-            )
+            ),
         ],
     ]
     if is_admin:
@@ -149,13 +147,13 @@ def language_keyboard(i18n: JsonI18n, lang_code: str) -> InlineKeyboardMarkup:
     rows = []
     for language_code in LANGUAGE_CODES:
         language_name = i18n.gettext(f"language.name.{language_code}", lang_code)
-        # Mark the active language with a checkmark instead of a trailing word.
-        if language_code == selected_language:
-            language_name = f"✅ {language_name}"
+        # Mark the active language with a custom-emoji checkmark icon (not a trailing word).
+        is_selected = language_code == selected_language
         rows.append(
             [
                 _button(
                     language_name,
+                    icon_key="language.check" if is_selected else None,
                     callback_data=f"{LANG_PREFIX}{language_code}",
                 )
             ]

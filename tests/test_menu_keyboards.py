@@ -193,21 +193,27 @@ def test_language_keyboard_offers_supported_locales() -> None:
 
 
 def test_language_keyboard_has_back_button_and_checkmark_on_selected() -> None:
+    from bot.keyboards import icons as icon_module
+
     keyboards = keyboard_module()
 
     keyboard = keyboards.language_keyboard(JsonI18n(), "en")
 
     # Back-to-menu button present.
     assert keyboards.CB_MENU in keyboard_callback_data(keyboard)
-    # Selected language marked with a checkmark, not a word.
-    selected = next(
-        button
+    buttons = {
+        button.callback_data: button
         for row in keyboard.inline_keyboard
         for button in row
-        if button.callback_data == f"{keyboards.LANG_PREFIX}en"
-    )
-    assert selected.text.startswith("✅")
+        if button.callback_data is not None
+    }
+    # Selected language marked with a custom-emoji checkmark icon (not a word), label unchanged.
+    selected = buttons[f"{keyboards.LANG_PREFIX}en"]
+    assert selected.icon_custom_emoji_id == icon_module.MENU_ICONS["language.check"]
+    assert selected.text == "English"
     assert "selected" not in selected.text.lower()
+    # Non-selected languages carry no checkmark icon.
+    assert buttons[f"{keyboards.LANG_PREFIX}ru"].icon_custom_emoji_id is None
 
 
 def test_support_keyboard_points_to_configured_support_username() -> None:

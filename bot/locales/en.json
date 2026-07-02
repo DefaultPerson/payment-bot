@@ -1,5 +1,5 @@
 {
-  "start.text": "{wave} Welcome to the <b>Hydra Monitors</b> payment bot.\n\nWe turn an ocean of on-chain/off-chain data into $.\n\n{down} Read more about the service in our documentation, link below.\n\n{trial_block}{api} Our service is available via <b>API</b>; access is granted through support.\n\n{question} Questions? Interested in a partnership? Message support!\n\n<b>Status:</b> {status}",
+  "start.text": "{wave} <b>Welcome</b> to the <b>Hydra Monitors</b> payment bot.\n\n<b>Our service</b> aggregates and processes a wealth of on-chain/off-chain data to extract alpha from an information-overloaded market, just for you. Our arsenal includes:\n\n⁍ CEX and DEX arbitrage of every kind;\n⁍ Many types of on-chain events;\n⁍ Off-chain data, from X/Telegram to news;\n⁍ And much more...\n\nRead more about the service in our <a href=\"{docs_url}\">documentation</a>.\n\n{trial_block}{api} <b>Our service is available via API</b>; access is granted through {support}.\n\n{question} <b>Questions? Interested in a partnership?</b> Message {support}.\n\n<b>Status:</b> {status}",
   "start.status.free": "Free",
   "commands.start": "Open the main menu",
   "commands.language": "Change interface language",

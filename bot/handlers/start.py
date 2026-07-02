@@ -66,11 +66,12 @@ def build_start_text(
         "start.text",
         language,
         wave=welcome_emoji("wave"),
-        down=welcome_emoji("down"),
         api=welcome_emoji("api"),
         question=welcome_emoji("question"),
         trial_block=trial_block,
         status=status_label,
+        support=f"@{settings.bot.support_username}",
+        docs_url=settings.bot.docs_url,
     )
 
 

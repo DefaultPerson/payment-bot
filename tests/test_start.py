@@ -101,7 +101,7 @@ def test_build_start_text_uses_english_for_english_user_language() -> None:
 
     text = build_start_text(i18n, settings, "en", status_label="Free")
 
-    assert "Welcome to the <b>Hydra Monitors</b> payment bot." in text
+    assert "<b>Welcome</b> to the <b>Hydra Monitors</b> payment bot." in text
     assert "<b>Status:</b> Free" in text
 
 
@@ -111,7 +111,7 @@ def test_build_start_text_falls_back_to_russian_for_unsupported_language() -> No
 
     text = build_start_text(i18n, settings, "de", status_label="Free")
 
-    assert "Добро пожаловать в платёжного бота" in text
+    assert "<b>Добро пожаловать</b>" in text
 
 
 def test_build_start_text_maps_telegram_uk_to_ukrainian_locale() -> None:
@@ -120,7 +120,7 @@ def test_build_start_text_maps_telegram_uk_to_ukrainian_locale() -> None:
 
     text = build_start_text(i18n, settings, "uk", status_label="Free")
 
-    assert "Ласкаво просимо до платіжного бота" in text
+    assert "<b>Ласкаво просимо</b>" in text
 
 
 def test_build_start_text_maps_regional_english_tag_to_english_locale() -> None:
@@ -129,7 +129,7 @@ def test_build_start_text_maps_regional_english_tag_to_english_locale() -> None:
 
     text = build_start_text(i18n, settings, "en-US", status_label="Free")
 
-    assert "Welcome to the <b>Hydra Monitors</b> payment bot." in text
+    assert "<b>Welcome</b> to the <b>Hydra Monitors</b> payment bot." in text
 
 
 def test_create_router_does_not_require_dependencies() -> None:

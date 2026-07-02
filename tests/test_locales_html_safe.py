@@ -24,7 +24,7 @@ _LOCALE_ITEMS = [
 ]
 
 # Intentional, valid Telegram-HTML formatting tags allowed in locale templates.
-_ALLOWED_TAGS = re.compile(r"</?(?:b|i|u|s|tg-emoji)(?:\s[^>]*)?>")
+_ALLOWED_TAGS = re.compile(r"</?(?:a|b|i|u|s|tg-emoji)(?:\s[^>]*)?>")
 
 
 @pytest.mark.parametrize(("filename", "key", "value"), _LOCALE_ITEMS)
