@@ -46,7 +46,7 @@ from bot.repos.referrals import (
     spend_referral_balance,
 )
 from bot.repos.subscriptions import extend_manual_subscription, get_subscription_for_user
-from bot.repos.tariffs import get_plan_tariffs, get_tariff, resolve_plan_code
+from bot.repos.tariffs import get_plan, get_plan_tariffs, get_tariff, resolve_plan_code
 from bot.repos.users import ensure_minimal_user
 from bot.services.access import send_access_links
 from bot.services.payments import (
@@ -177,8 +177,24 @@ def _plan_description(i18n: JsonI18n, lang_code: str, plan_code: str) -> str:
     return "" if text == key else text
 
 
-def _duration_menu_text(i18n: JsonI18n, lang_code: str, plan_code: str, current: str) -> str:
-    parts = [i18n.gettext("buy.duration.title", lang_code)]
+def _plan_title(settings: Settings, plan_code: str) -> str:
+    """Configured plan title (fail-safe: falls back to the raw code on an unknown plan)."""
+    try:
+        plan = get_plan(settings, plan_code)
+    except LookupError:
+        return plan_code
+    return plan.title or plan_code
+
+
+def _duration_menu_text(
+    settings: Settings, i18n: JsonI18n, lang_code: str, plan_code: str, current: str
+) -> str:
+    # Blocks are joined by a blank line, so the plan label gets exactly one blank line above
+    # (from the title) and one below (to the description) — as requested.
+    parts = [
+        i18n.gettext("buy.duration.title", lang_code),
+        i18n.gettext("buy.duration.plan", lang_code, plan=_plan_title(settings, plan_code)),
+    ]
     description = _plan_description(i18n, lang_code, plan_code)
     if description:
         parts.append(description)
@@ -263,7 +279,7 @@ async def build_duration_menu(
             priced = await _priced_tariffs(session, settings, plan_code, user, status, now)
             current = profile_plan_label(settings, i18n, lang_code, subscription, now)
 
-    text = _duration_menu_text(i18n, lang_code, plan_code, current)
+    text = _duration_menu_text(settings, i18n, lang_code, plan_code, current)
     if banner:
         text = f"{banner}\n\n{text}"
     return text, tariff_keyboard(i18n, lang_code, plan_code, priced), lang_code

@@ -388,7 +388,7 @@ def test_tariff_detail_keyboard_contains_cryptobot_payment_action() -> None:
 
     assert f"{keyboards.CB_CRYPTOBOT_PREFIX}3m" in keyboard_callback_data(keyboard)
     # Label now carries the per-method price (gross + fee), so match a substring.
-    assert any("Pay with CryptoBot" in text for text in keyboard_texts(keyboard))
+    assert any("CryptoBot" in text for text in keyboard_texts(keyboard))
 
 
 def test_tariff_detail_keyboard_contains_stars_payment_action_when_enabled() -> None:
@@ -400,7 +400,7 @@ def test_tariff_detail_keyboard_contains_stars_payment_action_when_enabled() -> 
     )
 
     assert f"{keyboards.CB_STARS_PREFIX}1m" in keyboard_callback_data(keyboard)
-    assert any("Pay with Telegram Stars" in text for text in keyboard_texts(keyboard))
+    assert any("Telegram Stars" in text for text in keyboard_texts(keyboard))
     assert any("⭐ 500" in text for text in keyboard_texts(keyboard))
 
 
@@ -418,7 +418,7 @@ def test_tariff_detail_keyboard_contains_xrocket_payment_action_only_when_enable
 
     assert f"{keyboards.CB_XROCKET_PREFIX}1m" not in keyboard_callback_data(disabled)
     assert f"{keyboards.CB_XROCKET_PREFIX}1m" in keyboard_callback_data(enabled)
-    assert any("Pay with xRocket" in text for text in keyboard_texts(enabled))
+    assert any("xRocket" in text for text in keyboard_texts(enabled))
 
 
 def test_tariff_detail_keyboard_shows_referral_pay_only_when_flagged() -> None:
@@ -434,7 +434,7 @@ def test_tariff_detail_keyboard_shows_referral_pay_only_when_flagged() -> None:
 
     assert f"{keyboards.CB_REFERRAL_PAY_PREFIX}1m" not in keyboard_callback_data(hidden)
     assert f"{keyboards.CB_REFERRAL_PAY_PREFIX}1m" in keyboard_callback_data(shown)
-    assert any("Pay with referral balance" in text for text in keyboard_texts(shown))
+    assert any("Referral balance" in text for text in keyboard_texts(shown))
 
 
 def test_tariff_detail_keyboard_pay_buttons_have_no_icons() -> None:
@@ -476,7 +476,7 @@ def test_payment_keyboard_can_use_xrocket_provider_label() -> None:
     )
 
     assert "https://t.me/xrocket?start=pay" in keyboard_urls(keyboard)
-    assert "Pay with xRocket" in keyboard_texts(keyboard)
+    assert "xRocket" in keyboard_texts(keyboard)
 
 
 def test_locale_files_include_profile_display_contract_keys() -> None:

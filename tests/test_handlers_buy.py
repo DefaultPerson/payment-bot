@@ -1186,3 +1186,27 @@ async def test_cancel_unusable_invoice_releases_reserved_promo(monkeypatch) -> N
     assert release_calls == [invoice]
     assert invoice.status is InvoiceStatus.cancelled
     assert session_factory.session.commits == 1
+
+
+def test_duration_menu_text_shows_plan_label_between_title_and_description() -> None:
+    import bot.handlers.buy as buy_module
+
+    settings = Settings()
+    text = buy_module._duration_menu_text(settings, JsonI18n(), "en", "pro", "Free")
+
+    # Title, then the plan label, then the description, each separated by a blank line.
+    title = "<b>Choose a duration</b>"
+    plan_label = "<b>Plan HMonitors PRO:</b>"
+    assert f"{title}\n\n{plan_label}\n\n" in text
+    assert plan_label in text
+    assert text.index(title) < text.index(plan_label) < text.index("⁍")
+
+
+def test_duration_menu_text_falls_back_to_plan_code_for_unknown_plan() -> None:
+    import bot.handlers.buy as buy_module
+
+    settings = Settings()
+    text = buy_module._duration_menu_text(settings, JsonI18n(), "en", "ghost", "Free")
+
+    # Unknown plan: label uses the raw code, description block is omitted (no locale key).
+    assert "<b>Plan ghost:</b>" in text
