@@ -35,6 +35,18 @@ class TariffQuote:
     promo_extra_days: int = 0
 
 
+@dataclass(frozen=True, slots=True)
+class PricedTariff:
+    """A duration tier priced for the buy keyboard: ``old_usd`` is the loyalty+duration price
+    before any promo, ``new_usd`` is the price after the pending promo. When
+    ``promo_discount_usd`` is 0 the two are equal (no promo / extra-days promo)."""
+
+    tariff: TariffConfig
+    old_usd: Decimal
+    new_usd: Decimal
+    promo_discount_usd: Decimal
+
+
 def money(value: Decimal) -> Decimal:
     return value.quantize(USD_CENTS, rounding=ROUND_HALF_UP)
 

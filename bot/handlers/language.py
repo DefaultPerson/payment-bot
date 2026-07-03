@@ -18,7 +18,7 @@ from bot.handlers.start import build_start_text, callback_context, message_conte
 from bot.keyboards import CB_LANGUAGE, LANG_PREFIX, language_keyboard, main_menu_keyboard
 from bot.repos.subscriptions import get_subscription_for_user
 from bot.repos.users import ensure_minimal_user, update_user_language, upsert_user_from_telegram
-from bot.services.profile import welcome_status_label
+from bot.services.profile import profile_plan_label
 from bot.services.trial import is_trial_available
 
 logger = logging.getLogger(__name__)
@@ -102,8 +102,8 @@ async def language_callback(
             trial_available = await is_trial_available(
                 session, user=user, settings=settings, now=now
             )
-            status_label = welcome_status_label(
-                i18n, persisted_lang_code, user, subscription, now, settings.loyalty
+            status_label = profile_plan_label(
+                settings, i18n, persisted_lang_code, subscription, now
             )
     except SQLAlchemyError:
         logger.exception("failed to update language")

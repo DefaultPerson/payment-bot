@@ -14,6 +14,7 @@ from __future__ import annotations
 
 # glyph key -> (plain unicode fallback, custom_emoji_id)
 TEXT_EMOJI: dict[str, tuple[str, str]] = {
+    "wave": ("\U0001f44b", "6041921818896372382"),  # 👋 tgiosicons
     "new": ("\U0001f195", "5895669571058142797"),  # 🆕 tgiosicons
     "api": ("⚙️", "5287480366330816274"),  # ⚙️ CryptachEmoji4
     "question": ("❓", "6030848053177486888"),  # ❓ tgiosicons

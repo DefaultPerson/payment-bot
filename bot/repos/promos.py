@@ -187,7 +187,7 @@ async def get_pending_promo_for_user(
     session: AsyncSession,
     *,
     user: User,
-    tariff_code: str,
+    tariff_code: str | None,
     now: datetime,
     lock_user: bool,
 ) -> tuple[User, Promo | None]:
@@ -244,6 +244,28 @@ async def get_pending_promo_snapshot_for_user(
         lock_user=False,
     )
     return promo_snapshot_from_row(promo) if promo is not None else None
+
+
+async def get_pending_promo_for_menu(
+    session: AsyncSession,
+    *,
+    user: User,
+    now: datetime,
+) -> tuple[PromoSnapshot | None, frozenset[str]]:
+    """Resolve the user's pending promo for the duration MENU (display only).
+
+    Returns ``(snapshot, allowed_tariffs)``. Unlike :func:`get_pending_promo_snapshot_for_user`
+    this passes ``tariff_code=None`` so a promo restricted to specific tariffs is NOT dropped
+    merely because the menu is being viewed — browsing must never wipe a valid pending promo. A
+    genuinely dead promo (inactive/expired/exhausted/already-redeemed) is still cleared. The
+    caller decides per tariff whether the promo applies, using ``allowed_tariffs`` (empty = all).
+    """
+    _, promo = await get_pending_promo_for_user(
+        session, user=user, tariff_code=None, now=now, lock_user=False
+    )
+    if promo is None:
+        return None, frozenset()
+    return promo_snapshot_from_row(promo), frozenset(promo.allowed_tariffs or ())
 
 
 async def reserve_promo_redemption(

@@ -76,7 +76,11 @@ async def test_buy_callback_edits_tariff_list(monkeypatch) -> None:
         calls.append({"session": session, **kwargs})
         return FakeUserRecord(id=7, tg_id=700, lang_code="en")
 
+    async def fake_no_subscription(*args: Any, **kwargs: Any) -> None:
+        return None
+
     monkeypatch.setattr(buy_module, "ensure_minimal_user", fake_ensure_minimal_user)
+    monkeypatch.setattr(buy_module, "get_subscription_for_user", fake_no_subscription)
     monkeypatch.setattr(buy_module, "plan_keyboard", lambda *args: "plan-keyboard")
 
     i18n = JsonI18n()
@@ -104,18 +108,23 @@ async def test_buy_callback_edits_tariff_list(monkeypatch) -> None:
         }
     ]
     assert callback.answers == [{"text": None}]
-    # Menu 1 — tariff (product) selection, shown even with a single plan.
-    assert callback_message.edits == [{"text": "Choose a tariff:", "reply_markup": "plan-keyboard"}]
+    # Menu 1 — tariff (product) selection with the user's current plan (Free without a sub).
+    assert callback_message.edits == [
+        {
+            "text": "<b>Choose a tariff</b>\n\n<b>Current:</b> <code>Free</code>",
+            "reply_markup": "plan-keyboard",
+        }
+    ]
 
 
 async def test_plan_callback_shows_duration_menu(monkeypatch) -> None:
     import bot.handlers.buy as buy_module
 
-    async def fake_ensure_minimal_user(session: FakeSession, **kwargs: Any) -> FakeUserRecord:
-        return FakeUserRecord(id=7, tg_id=700, lang_code="en")
+    async def fake_build_duration_menu(*args: Any, **kwargs: Any) -> tuple[str, str, str]:
+        assert kwargs["plan_code"] == "main"
+        return "duration-text", "duration-keyboard", "en"
 
-    monkeypatch.setattr(buy_module, "ensure_minimal_user", fake_ensure_minimal_user)
-    monkeypatch.setattr(buy_module, "tariff_keyboard", lambda *args: "duration-keyboard")
+    monkeypatch.setattr(buy_module, "build_duration_menu", fake_build_duration_menu)
 
     callback_message = FakeMessage(chat=FakeChat(id=700))
     callback = FakeCallback(
@@ -133,7 +142,7 @@ async def test_plan_callback_shows_duration_menu(monkeypatch) -> None:
 
     # Menu 2 — duration selection for the chosen plan.
     assert callback_message.edits == [
-        {"text": "Choose a duration:", "reply_markup": "duration-keyboard"}
+        {"text": "duration-text", "reply_markup": "duration-keyboard"}
     ]
 
 
@@ -143,7 +152,11 @@ async def test_back_to_tariffs_callback_shows_plan_menu(monkeypatch) -> None:
     async def fake_ensure_minimal_user(session: FakeSession, **kwargs: Any) -> FakeUserRecord:
         return FakeUserRecord(id=7, tg_id=700, lang_code="en")
 
+    async def fake_no_subscription(*args: Any, **kwargs: Any) -> None:
+        return None
+
     monkeypatch.setattr(buy_module, "ensure_minimal_user", fake_ensure_minimal_user)
+    monkeypatch.setattr(buy_module, "get_subscription_for_user", fake_no_subscription)
     monkeypatch.setattr(buy_module, "plan_keyboard", lambda *args: "plan-keyboard")
 
     callback_message = FakeMessage(chat=FakeChat(id=700))
@@ -160,7 +173,72 @@ async def test_back_to_tariffs_callback_shows_plan_menu(monkeypatch) -> None:
         session_factory=FakeSessionFactory(),
     )
 
-    assert callback_message.edits == [{"text": "Choose a tariff:", "reply_markup": "plan-keyboard"}]
+    assert callback_message.edits == [
+        {
+            "text": "<b>Choose a tariff</b>\n\n<b>Current:</b> <code>Free</code>",
+            "reply_markup": "plan-keyboard",
+        }
+    ]
+
+
+async def test_priced_tariffs_applies_loyalty_and_promo(monkeypatch) -> None:
+    import bot.handlers.buy as buy_module
+
+    async def fake_menu_promo(
+        session: FakeSession, *, user: Any, now: Any
+    ) -> tuple[PromoSnapshot, frozenset[str]]:
+        snapshot = PromoSnapshot(
+            promo_id=1, code="SAVE20", kind=PromoKind.percent, value=Decimal("20")
+        )
+        return snapshot, frozenset()  # empty allowed_tariffs -> applies to all
+
+    monkeypatch.setattr(buy_module, "get_pending_promo_for_menu", fake_menu_promo)
+
+    priced = await buy_module._priced_tariffs(
+        FakeSession(),
+        Settings(),
+        "main",
+        FakeUserRecord(id=7, tg_id=700, lang_code="en"),
+        UserStatus.basic,
+        datetime(2026, 7, 3, tzinfo=UTC),
+    )
+
+    by_code = {entry.tariff.code: entry for entry in priced}
+    one_month = by_code["1m"]
+    # 1m base $59.00, no duration/loyalty discount; a 20% promo knocks off $11.80 -> $47.20.
+    assert one_month.new_usd == Decimal("47.20")
+    assert one_month.promo_discount_usd == Decimal("11.80")
+    # Invariant the keyboard relies on to strike the pre-promo price.
+    assert one_month.old_usd == one_month.new_usd + one_month.promo_discount_usd
+
+
+async def test_priced_tariffs_restricts_promo_to_allowed_tariffs(monkeypatch) -> None:
+    import bot.handlers.buy as buy_module
+
+    async def fake_menu_promo(
+        session: FakeSession, *, user: Any, now: Any
+    ) -> tuple[PromoSnapshot, frozenset[str]]:
+        snapshot = PromoSnapshot(
+            promo_id=1, code="SAVE6M", kind=PromoKind.percent, value=Decimal("20")
+        )
+        return snapshot, frozenset({"6m"})  # restricted to the 6-month tariff only
+
+    monkeypatch.setattr(buy_module, "get_pending_promo_for_menu", fake_menu_promo)
+
+    priced = await buy_module._priced_tariffs(
+        FakeSession(),
+        Settings(),
+        "main",
+        FakeUserRecord(id=7, tg_id=700, lang_code="en"),
+        UserStatus.basic,
+        datetime(2026, 7, 3, tzinfo=UTC),
+    )
+
+    by_code = {entry.tariff.code: entry for entry in priced}
+    # Promo applies only to its allowed tariff; other buttons keep the regular price (no strike).
+    assert by_code["6m"].promo_discount_usd > Decimal("0.00")
+    assert by_code["1m"].promo_discount_usd == Decimal("0.00")
+    assert by_code["1m"].old_usd == by_code["1m"].new_usd
 
 
 async def test_tariff_callback_edits_quote_detail(monkeypatch) -> None:
@@ -169,8 +247,8 @@ async def test_tariff_callback_edits_quote_detail(monkeypatch) -> None:
     async def fake_ensure_minimal_user(session: FakeSession, **kwargs: Any) -> FakeUserRecord:
         return FakeUserRecord(id=7, tg_id=700, lang_code="en", status=UserStatus.basic)
 
-    async def fake_pending_promo(*args: Any, **kwargs: Any) -> None:
-        return None
+    async def fake_menu_promo(*args: Any, **kwargs: Any) -> tuple[None, frozenset[str]]:
+        return None, frozenset()
 
     async def fake_referral_stats(*args: Any, **kwargs: Any) -> Any:
         return SimpleNamespace(available_usd=Decimal("0"))
@@ -179,7 +257,7 @@ async def test_tariff_callback_edits_quote_detail(monkeypatch) -> None:
         return "detail-keyboard"
 
     monkeypatch.setattr(buy_module, "ensure_minimal_user", fake_ensure_minimal_user)
-    monkeypatch.setattr(buy_module, "get_pending_promo_snapshot_for_user", fake_pending_promo)
+    monkeypatch.setattr(buy_module, "get_pending_promo_for_menu", fake_menu_promo)
     monkeypatch.setattr(buy_module, "get_referral_stats", fake_referral_stats)
     monkeypatch.setattr(buy_module, "tariff_detail_keyboard", fake_detail_keyboard)
 
@@ -204,6 +282,45 @@ async def test_tariff_callback_edits_quote_detail(monkeypatch) -> None:
     assert "$168.15" in text
     assert callback.answers == [{"text": None}]
     assert callback_message.edits[0]["reply_markup"] == "detail-keyboard"
+
+
+async def test_tariff_callback_gates_promo_to_allowed_tariffs(monkeypatch) -> None:
+    # A pending promo restricted to '6m' must NOT price down an unrelated tariff's quote, and
+    # (via the non-destructive resolver) viewing that quote must not consume the promo.
+    import bot.handlers.buy as buy_module
+
+    async def fake_ensure_minimal_user(session: FakeSession, **kwargs: Any) -> FakeUserRecord:
+        return FakeUserRecord(id=7, tg_id=700, lang_code="en")
+
+    async def fake_menu_promo(*args: Any, **kwargs: Any) -> tuple[PromoSnapshot, frozenset[str]]:
+        snapshot = PromoSnapshot(
+            promo_id=1, code="SAVE6M", kind=PromoKind.percent, value=Decimal("20")
+        )
+        return snapshot, frozenset({"6m"})
+
+    async def fake_referral_stats(*args: Any, **kwargs: Any) -> Any:
+        return SimpleNamespace(available_usd=Decimal("0"))
+
+    monkeypatch.setattr(buy_module, "ensure_minimal_user", fake_ensure_minimal_user)
+    monkeypatch.setattr(buy_module, "get_pending_promo_for_menu", fake_menu_promo)
+    monkeypatch.setattr(buy_module, "get_referral_stats", fake_referral_stats)
+    monkeypatch.setattr(buy_module, "tariff_detail_keyboard", lambda *a, **k: "detail-keyboard")
+
+    callback_message = FakeMessage(chat=FakeChat(id=700))
+    callback = FakeCallback(
+        data="tariff:3m",  # not the promo's allowed tariff
+        from_user=FakeTelegramUser(id=700, language_code="en"),
+        message=callback_message,
+    )
+
+    await buy_module.tariff_callback(
+        callback, settings=Settings(), i18n=JsonI18n(), session_factory=FakeSessionFactory()
+    )
+
+    text = callback_message.edits[0]["text"]
+    # Full 3m price ($168.15 net), no promo line applied.
+    assert "$168.15" in text
+    assert "SAVE6M" not in text
 
 
 async def test_stars_invoice_callback_sends_telegram_stars_invoice(monkeypatch) -> None:

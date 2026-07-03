@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import json
+from decimal import Decimal
 from importlib import import_module
 from pathlib import Path
 
 import pytest
 from aiogram.types import BotCommandScopeChat
 
-from bot.config import Settings
+from bot.config import Settings, TariffConfig
 from bot.core.i18n import JsonI18n
+from bot.handlers.buy import _priced_no_promo
+from bot.models import UserStatus
+from bot.services.pricing import PricedTariff
 
 PROFILE_DISPLAY_KEYS = {
     "profile.text",
@@ -249,7 +253,7 @@ def test_dismiss_keyboard_deletes_message_with_cross_icon() -> None:
     assert button.icon_custom_emoji_id == icon_module.MENU_ICONS["access.button.dismiss"]
 
 
-def test_plan_keyboard_lists_active_plans_and_support_url() -> None:
+def test_plan_keyboard_lists_active_plans_with_back_and_no_support() -> None:
     settings = Settings(
         bot={"support_username": "HydraSupport"},
         tariffs={
@@ -270,11 +274,13 @@ def test_plan_keyboard_lists_active_plans_and_support_url() -> None:
     keyboards = keyboard_module()
 
     keyboard = keyboards.plan_keyboard(JsonI18n(), settings, "en")
+    callbacks = keyboard_callback_data(keyboard)
 
-    assert f"{keyboards.CB_PLAN_PREFIX}main" in keyboard_callback_data(keyboard)
-    assert f"{keyboards.CB_PLAN_PREFIX}pro" not in keyboard_callback_data(keyboard)
+    assert f"{keyboards.CB_PLAN_PREFIX}main" in callbacks
+    assert f"{keyboards.CB_PLAN_PREFIX}pro" not in callbacks
     assert "Main plan" in keyboard_texts(keyboard)
-    assert "https://t.me/HydraSupport" in keyboard_urls(keyboard)
+    assert keyboards.CB_MENU in callbacks  # back-to-menu button at the bottom
+    assert keyboard_urls(keyboard) == set()  # support button removed
 
 
 def test_tariff_keyboard_lists_plan_durations_with_promo_and_back() -> None:
@@ -298,7 +304,8 @@ def test_tariff_keyboard_lists_plan_durations_with_promo_and_back() -> None:
     )
     keyboards = keyboard_module()
 
-    keyboard = keyboards.tariff_keyboard(JsonI18n(), settings, "en", "main")
+    priced = _priced_no_promo(settings, "main", UserStatus.basic)
+    keyboard = keyboards.tariff_keyboard(JsonI18n(), "en", "main", priced)
     callbacks = keyboard_callback_data(keyboard)
 
     assert f"{keyboards.CB_TARIFF_PREFIX}active" in callbacks
@@ -306,19 +313,52 @@ def test_tariff_keyboard_lists_plan_durations_with_promo_and_back() -> None:
     # Promo entry and back navigation live on the duration page; support does not.
     assert f"{keyboards.CB_PROMO_BUY_PREFIX}main" in callbacks
     assert keyboards.CB_BACK_TARIFFS in callbacks
-    assert "https://t.me/HydraSupport" not in keyboard_urls(keyboard)
+    assert keyboard_urls(keyboard) == set()
 
 
 def test_tariff_keyboard_labels_show_discount_and_net_price() -> None:
     keyboards = keyboard_module()
 
-    keyboard = keyboards.tariff_keyboard(JsonI18n(), Settings(), "en", "main")
+    settings = Settings()
+    priced = _priced_no_promo(settings, "main", UserStatus.basic)
+    keyboard = keyboards.tariff_keyboard(JsonI18n(), "en", "main", priced)
     texts = keyboard_texts(keyboard)
 
     # 1m has no discount ($59.00); 3m is -5% ($168.15); 6m is -10% ($318.60).
     assert any("$59.00" in text and "%" not in text for text in texts)
     assert any("$168.15" in text and "5%" in text for text in texts)
     assert any("$318.60" in text and "10%" in text for text in texts)
+
+
+def test_tariff_keyboard_strikes_old_price_and_shows_new_when_promo_applies() -> None:
+    keyboards = keyboard_module()
+    icon_module = import_module("bot.keyboards.icons")
+
+    tariff = TariffConfig(code="1m", duration_months=1, base_price_usd=Decimal("100"))
+    priced = [
+        PricedTariff(
+            tariff=tariff,
+            old_usd=Decimal("100.00"),
+            new_usd=Decimal("70.00"),
+            promo_discount_usd=Decimal("30.00"),
+        )
+    ]
+
+    keyboard = keyboards.tariff_keyboard(JsonI18n(), "en", "main", priced)
+    texts = keyboard_texts(keyboard)
+
+    # Old price is struck through (each glyph followed by U+0336); new price is plain.
+    assert any("̶" in text and "$70.00" in text for text in texts)
+    assert any("1̶0̶0" in text for text in texts)  # "100" struck
+
+    promo_button = next(
+        button
+        for row in keyboard.inline_keyboard
+        for button in row
+        if button.callback_data and button.callback_data.startswith(keyboards.CB_PROMO_BUY_PREFIX)
+    )
+    assert promo_button.text == "Enter promo code"  # renamed, no literal tag emoji
+    assert promo_button.icon_custom_emoji_id == icon_module.MENU_ICONS["menu.button.promo"]
 
 
 def test_tariff_detail_keyboard_has_back_to_duration() -> None:

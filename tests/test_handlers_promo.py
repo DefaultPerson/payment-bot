@@ -241,12 +241,21 @@ async def test_promo_buy_callback_prompts_and_sets_state() -> None:
 
 
 async def test_promo_code_message_applies_and_rerenders_duration_menu(monkeypatch) -> None:
+    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
     import bot.handlers.promo as promo_module
 
     async def fake_apply(session: FakeSession, **kwargs: Any) -> FakePromoRecord:
         return FakePromoRecord(code="SAVE20")
 
+    async def fake_build(*args: Any, banner: str = "", **kwargs: Any) -> tuple[str, Any, str]:
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text="← Back", callback_data=CB_BACK_TARIFFS)]]
+        )
+        return f"{banner}\n\nChoose a duration", keyboard, "en"
+
     monkeypatch.setattr(promo_module, "apply_promo_code_for_user", fake_apply)
+    monkeypatch.setattr(promo_module, "build_duration_menu", fake_build)
 
     state = FakeState({"plan_code": "main"})
     message = FakeMessage(text="save20", from_user=FakeTelegramUser(id=700, language_code="en"))
@@ -262,7 +271,7 @@ async def test_promo_code_message_applies_and_rerenders_duration_menu(monkeypatc
     assert state.cleared is True
     answer = message.answers[0]
     assert "Promo code SAVE20 will be applied to your next invoice." in answer["text"]
-    assert "Choose a duration:" in answer["text"]
+    assert "Choose a duration" in answer["text"]
     assert CB_BACK_TARIFFS in {
         button.callback_data
         for row in answer["reply_markup"].inline_keyboard
@@ -271,8 +280,15 @@ async def test_promo_code_message_applies_and_rerenders_duration_menu(monkeypatc
     }
 
 
-async def test_promo_cancel_callback_returns_to_duration_menu() -> None:
+async def test_promo_cancel_callback_returns_to_duration_menu(monkeypatch) -> None:
+    from aiogram.types import InlineKeyboardMarkup
+
     import bot.handlers.promo as promo_module
+
+    async def fake_build(*args: Any, **kwargs: Any) -> tuple[str, Any, str]:
+        return "Choose a duration", InlineKeyboardMarkup(inline_keyboard=[]), "en"
+
+    monkeypatch.setattr(promo_module, "build_duration_menu", fake_build)
 
     state = FakeState({"plan_code": "main"})
     message = CallbackFakeMessage(chat=FakeChat(id=700))
@@ -287,7 +303,8 @@ async def test_promo_cancel_callback_returns_to_duration_menu() -> None:
         state=state,
         settings=Settings(),
         i18n=JsonI18n(),
+        session_factory=FakeSessionFactory(),
     )
 
     assert state.cleared is True
-    assert message.edits[0]["text"] == "Choose a duration:"
+    assert message.edits[0]["text"] == "Choose a duration"

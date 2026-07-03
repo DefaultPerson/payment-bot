@@ -6,7 +6,7 @@ from decimal import Decimal
 
 from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.types import CallbackQuery, LabeledPrice
+from aiogram.types import CallbackQuery, InlineKeyboardMarkup, LabeledPrice
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -32,16 +32,17 @@ from bot.keyboards import (
     tariff_detail_keyboard,
     tariff_keyboard,
 )
+from bot.models import User, UserStatus
 from bot.payments.cryptobot import CryptoBotAPIError, CryptoBotClient
 from bot.payments.xrocket import XRocketAPIError, XRocketClient
-from bot.repos.promos import PromoUnavailable, get_pending_promo_snapshot_for_user
+from bot.repos.promos import PromoUnavailable, get_pending_promo_for_menu
 from bot.repos.referrals import (
     InsufficientReferralBalance,
     get_referral_stats,
     spend_referral_balance,
 )
 from bot.repos.subscriptions import extend_manual_subscription, get_subscription_for_user
-from bot.repos.tariffs import get_plan, get_tariff, resolve_plan_code
+from bot.repos.tariffs import get_plan_tariffs, get_tariff, resolve_plan_code
 from bot.repos.users import ensure_minimal_user
 from bot.services.access import send_access_links
 from bot.services.payments import (
@@ -50,7 +51,8 @@ from bot.services.payments import (
     create_stars_invoice_for_user,
     create_xrocket_invoice_for_user,
 )
-from bot.services.pricing import TariffQuote, quote_tariff, tariff_duration_days
+from bot.services.pricing import PricedTariff, TariffQuote, quote_tariff, tariff_duration_days
+from bot.services.profile import profile_plan_label
 from bot.services.subscriptions import effective_status
 
 logger = logging.getLogger(__name__)
@@ -65,22 +67,31 @@ async def buy_callback(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     context = callback_context(callback, settings)
+    now = datetime.now(UTC)
+    lang_code = i18n.resolve_language(context.language_code)
+    current = i18n.gettext("start.status.free", lang_code)
     try:
-        lang_code = await _resolve_user_language(
-            context.tg_id,
-            context.language_code,
-            i18n,
-            session_factory,
-        )
+        if context.tg_id is not None:
+            async with session_scope(session_factory) as session:
+                user = await ensure_minimal_user(
+                    session,
+                    tg_id=context.tg_id,
+                    i18n=i18n,
+                    language_code=context.language_code,
+                )
+                lang_code = user.lang_code
+                subscription = await get_subscription_for_user(session, user.id)
+                current = profile_plan_label(settings, i18n, lang_code, subscription, now)
     except SQLAlchemyError:
         logger.exception("failed to resolve buy callback user")
         await callback.answer(i18n.gettext("error.generic", context.language_code), show_alert=True)
         return
 
     # Menu 1 — tariff (product) selection. Always shown, even with a single plan.
+    text = f"{i18n.gettext('buy.title', lang_code)}\n\n{_current_line(i18n, lang_code, current)}"
     await _edit_text_or_answer(
         callback,
-        i18n.gettext("buy.title", lang_code),
+        text,
         reply_markup=plan_keyboard(i18n, settings, lang_code),
     )
 
@@ -134,36 +145,124 @@ async def _show_duration_menu(
 ) -> None:
     context = callback_context(callback, settings)
     try:
-        lang_code = await _resolve_user_language(
-            context.tg_id,
-            context.language_code,
+        text, keyboard, _lang = await build_duration_menu(
+            settings,
             i18n,
             session_factory,
+            tg_id=context.tg_id,
+            language_code=context.language_code,
+            plan_code=plan_code,
         )
     except SQLAlchemyError:
         logger.exception("failed to resolve duration menu user")
         await callback.answer(i18n.gettext("error.generic", context.language_code), show_alert=True)
         return
 
-    await _edit_text_or_answer(
-        callback,
-        _duration_menu_text(i18n, settings, lang_code, plan_code),
-        reply_markup=tariff_keyboard(i18n, settings, lang_code, plan_code),
-    )
+    await _edit_text_or_answer(callback, text, reply_markup=keyboard)
 
 
-def _duration_menu_text(
-    i18n: JsonI18n,
+def _current_line(i18n: JsonI18n, lang_code: str, current: str) -> str:
+    return i18n.gettext("buy.current", lang_code, current=current)
+
+
+def _plan_description(i18n: JsonI18n, lang_code: str, plan_code: str) -> str:
+    """Localized plan description (bullet list) from ``plan.<code>.description``; empty when the
+    key is absent (JsonI18n returns the key itself for a miss)."""
+    key = f"plan.{plan_code}.description"
+    text = i18n.gettext(key, lang_code)
+    return "" if text == key else text
+
+
+def _duration_menu_text(i18n: JsonI18n, lang_code: str, plan_code: str, current: str) -> str:
+    parts = [i18n.gettext("buy.duration.title", lang_code)]
+    description = _plan_description(i18n, lang_code, plan_code)
+    if description:
+        parts.append(description)
+    parts.append(_current_line(i18n, lang_code, current))
+    return "\n\n".join(parts)
+
+
+def _priced_no_promo(
+    settings: Settings, plan_code: str, status: UserStatus
+) -> list[PricedTariff]:
+    """Per-duration prices with the loyalty ``status`` applied but no promo (no user context)."""
+    priced: list[PricedTariff] = []
+    for tariff in get_plan_tariffs(settings, plan_code):
+        net = quote_tariff(settings, tariff.code, status).net_usd
+        priced.append(
+            PricedTariff(
+                tariff=tariff, old_usd=net, new_usd=net, promo_discount_usd=Decimal("0.00")
+            )
+        )
+    return priced
+
+
+async def _priced_tariffs(
+    session: AsyncSession,
     settings: Settings,
-    lang_code: str,
     plan_code: str,
-) -> str:
-    title = i18n.gettext("buy.duration.title", lang_code)
-    try:
-        description = get_plan(settings, plan_code).description
-    except LookupError:
-        description = ""
-    return f"{description}\n\n{title}" if description else title
+    user: User,
+    status: UserStatus,
+    now: datetime,
+) -> list[PricedTariff]:
+    """Per-duration prices with loyalty AND the user's pending promo. The promo is resolved ONCE,
+    non-destructively (see ``get_pending_promo_for_menu``), and applied only to the tariffs it is
+    valid for — so browsing the menu never drops a tariff-restricted pending promo."""
+    promo, allowed = await get_pending_promo_for_menu(session, user=user, now=now)
+    priced: list[PricedTariff] = []
+    for tariff in get_plan_tariffs(settings, plan_code):
+        applies = promo is not None and (not allowed or tariff.code in allowed)
+        quote = quote_tariff(settings, tariff.code, status, promo=promo if applies else None)
+        priced.append(
+            PricedTariff(
+                tariff=tariff,
+                old_usd=quote.net_usd + quote.promo_discount_usd,
+                new_usd=quote.net_usd,
+                promo_discount_usd=quote.promo_discount_usd,
+            )
+        )
+    return priced
+
+
+async def build_duration_menu(
+    settings: Settings,
+    i18n: JsonI18n,
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    tg_id: int | None,
+    language_code: str | None,
+    plan_code: str,
+    banner: str = "",
+) -> tuple[str, InlineKeyboardMarkup, str]:
+    """Build Menu 2: text (title + localized plan description + current plan) and a keyboard
+    whose prices reflect the user's loyalty tier and pending promo. Returns
+    ``(text, keyboard, lang_code)``; an optional ``banner`` is prefixed (e.g. after a promo)."""
+    now = datetime.now(UTC)
+    lang_code = i18n.resolve_language(language_code)
+    if tg_id is None:
+        priced = _priced_no_promo(settings, plan_code, UserStatus.basic)
+        current = i18n.gettext("start.status.free", lang_code)
+    else:
+        async with session_scope(session_factory) as session:
+            user = await ensure_minimal_user(
+                session, tg_id=tg_id, i18n=i18n, language_code=language_code
+            )
+            lang_code = user.lang_code
+            subscription = await get_subscription_for_user(session, user.id)
+            status = effective_status(
+                user.status,
+                user.total_active_days,
+                subscription.expires_at if subscription is not None else None,
+                now,
+                settings.loyalty,
+            )
+            priced = await _priced_tariffs(session, settings, plan_code, user, status, now)
+            current = profile_plan_label(settings, i18n, lang_code, subscription, now)
+
+    text = _duration_menu_text(i18n, lang_code, plan_code, current)
+    if banner:
+        text = f"{banner}\n\n{text}"
+    return text, tariff_keyboard(i18n, lang_code, plan_code, priced), lang_code
 
 
 async def tariff_callback(
@@ -191,12 +290,11 @@ async def tariff_callback(
                 language_code=context.language_code,
             )
             now = datetime.now(UTC)
-            promo = await get_pending_promo_snapshot_for_user(
-                session,
-                user=user,
-                tariff_code=tariff_code,
-                now=now,
-            )
+            # Resolve the pending promo non-destructively (see get_pending_promo_for_menu): merely
+            # viewing a tariff's quote must not wipe a promo restricted to a different tariff. The
+            # promo applies here only if this tariff is in its allowed set (empty = all tariffs).
+            promo_snapshot, allowed = await get_pending_promo_for_menu(session, user=user, now=now)
+            applies = promo_snapshot is not None and (not allowed or tariff_code in allowed)
             subscription = await get_subscription_for_user(session, user.id)
             status = effective_status(
                 user.status,
@@ -205,7 +303,9 @@ async def tariff_callback(
                 now,
                 settings.loyalty,
             )
-            quote = quote_tariff(settings, tariff_code, status, promo=promo)
+            quote = quote_tariff(
+                settings, tariff_code, status, promo=promo_snapshot if applies else None
+            )
             lang_code = user.lang_code
             referral_stats = await get_referral_stats(session, referrer_id=user.id)
             show_referral_pay = referral_stats.available_usd >= quote.net_usd

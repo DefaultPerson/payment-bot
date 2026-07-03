@@ -17,9 +17,9 @@ from bot.core.db import session_scope
 from bot.core.i18n import JsonI18n
 from bot.core.logger import ServiceChannel
 from bot.core.service_events import render_event, user_mention
-from bot.handlers.buy import _duration_menu_text, _edit_text_or_answer
-from bot.handlers.start import message_context
-from bot.keyboards import CB_PROMO, CB_PROMO_BUY_PREFIX, CB_PROMO_CANCEL, tariff_keyboard
+from bot.handlers.buy import _edit_text_or_answer, build_duration_menu
+from bot.handlers.start import callback_context, message_context
+from bot.keyboards import CB_PROMO, CB_PROMO_BUY_PREFIX, CB_PROMO_CANCEL
 from bot.models import Promo, PromoKind
 from bot.repos.promos import PromoUnavailable, apply_promo_code_for_user
 
@@ -139,18 +139,27 @@ async def promo_cancel_callback(
     state: FSMContext,
     settings: Settings,
     i18n: JsonI18n,
+    session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """Abort inline promo entry and return to the duration page."""
     state_data = await state.get_data()
     plan_code = state_data.get("plan_code") or settings.tariffs.default_plan_code
     await state.clear()
-    from_user = getattr(callback, "from_user", None)
-    lang_code = i18n.resolve_language(getattr(from_user, "language_code", None))
-    await _edit_text_or_answer(
-        callback,
-        _duration_menu_text(i18n, settings, lang_code, plan_code),
-        reply_markup=tariff_keyboard(i18n, settings, lang_code, plan_code),
-    )
+    context = callback_context(callback, settings)
+    try:
+        text, keyboard, _lang = await build_duration_menu(
+            settings,
+            i18n,
+            session_factory,
+            tg_id=context.tg_id,
+            language_code=context.language_code,
+            plan_code=plan_code,
+        )
+    except SQLAlchemyError:
+        logger.exception("failed to render duration menu on promo cancel")
+        await callback.answer(i18n.gettext("error.generic", context.language_code), show_alert=True)
+        return
+    await _edit_text_or_answer(callback, text, reply_markup=keyboard)
 
 
 async def promo_code_message(
@@ -190,9 +199,11 @@ async def promo_code_message(
         message,
         settings,
         i18n,
-        lang_code,
-        plan_code,
-        banner,
+        session_factory,
+        banner=banner,
+        tg_id=context.tg_id,
+        language_code=context.language_code,
+        plan_code=plan_code,
         chat_id=chat_id,
         message_id=message_id,
     )
@@ -236,15 +247,30 @@ async def _render_duration_after_promo(
     message: Message,
     settings: Settings,
     i18n: JsonI18n,
-    lang_code: str,
-    plan_code: str,
-    banner: str,
+    session_factory: async_sessionmaker[AsyncSession],
     *,
+    banner: str,
+    tg_id: int | None,
+    language_code: str | None,
+    plan_code: str,
     chat_id: int | None,
     message_id: int | None,
 ) -> None:
-    text = f"{banner}\n\n{_duration_menu_text(i18n, settings, lang_code, plan_code)}"
-    keyboard = tariff_keyboard(i18n, settings, lang_code, plan_code)
+    try:
+        text, keyboard, _lang = await build_duration_menu(
+            settings,
+            i18n,
+            session_factory,
+            tg_id=tg_id,
+            language_code=language_code,
+            plan_code=plan_code,
+            banner=banner,
+        )
+    except SQLAlchemyError:
+        logger.exception("failed to render duration menu after promo")
+        await message.answer(banner)
+        await _delete_message_safe(message)
+        return
 
     bot = getattr(message, "bot", None)
     if bot is not None and chat_id is not None and message_id is not None:

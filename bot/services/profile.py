@@ -83,26 +83,6 @@ def build_profile_view(
     )
 
 
-def welcome_status_label(
-    i18n: JsonI18n,
-    lang_code: str,
-    user: User,
-    subscription: Subscription | None,
-    now: datetime,
-    loyalty: SupportsLoyaltyThresholds | None = None,
-) -> str:
-    """Status shown on the /start welcome screen.
-
-    ``Free`` when there is no active subscription; otherwise the localized loyalty tier
-    (Basic/Bronze/Silver/Gold). The real tier is always visible in the profile view.
-    """
-    expires_at = subscription.expires_at if subscription is not None else None
-    if not subscription_active_at(expires_at, now):
-        return i18n.gettext("start.status.free", lang_code)
-    status = effective_status(user.status, user.total_active_days, expires_at, now, loyalty)
-    return i18n.gettext(f"profile.status.{status.value}", lang_code)
-
-
 def profile_plan_label(
     settings: Settings,
     i18n: JsonI18n,

@@ -58,7 +58,7 @@ from bot.core.service_events import (
 from bot.core.text_emoji import text_emoji
 from bot.handlers.admin.broadcast import _segment_keyboard
 from bot.handlers.admin.stats import _format_stats
-from bot.handlers.buy import _duration_menu_text, _format_quote_text
+from bot.handlers.buy import _duration_menu_text, _format_quote_text, _priced_no_promo
 from bot.handlers.promo import _fmt_promo_value, _promo_cancel_keyboard
 from bot.handlers.start import build_start_text
 from bot.keyboards.admin import (
@@ -176,6 +176,9 @@ def _user_previews(i18n: JsonI18n, settings: Settings, lang: str) -> list[Previe
         min_withdraw_usd=f"{settings.referral.min_withdraw_usd:.2f}",
     )
 
+    main_priced = _priced_no_promo(settings, "main", UserStatus.basic)
+    pro_priced = _priced_no_promo(settings, "pro", UserStatus.basic)
+
     return [
         Preview("user", "01 · /start — main menu (new user, no admin)",
                 start_text, main_menu_keyboard(i18n, lang, settings, is_admin=False)),
@@ -198,13 +201,14 @@ def _user_previews(i18n: JsonI18n, settings: Settings, lang: str) -> list[Previe
                 format_profile_text(profile_inactive, i18n, lang),
                 profile_keyboard(i18n, settings, lang)),
         Preview("user", "08 · Buy — plan (product) selection",
-                g("buy.title"), plan_keyboard(i18n, settings, lang)),
+                f'{g("buy.title")}\n\n{g("buy.current", current=g("start.status.free"))}',
+                plan_keyboard(i18n, settings, lang)),
         Preview("user", "09 · Buy — duration menu (main plan)",
-                _duration_menu_text(i18n, settings, lang, "main"),
-                tariff_keyboard(i18n, settings, lang, "main")),
+                _duration_menu_text(i18n, lang, "main", g("start.status.free")),
+                tariff_keyboard(i18n, lang, "main", main_priced)),
         Preview("user", "10 · Buy — duration menu (pro plan)",
-                _duration_menu_text(i18n, settings, lang, "pro"),
-                tariff_keyboard(i18n, settings, lang, "pro")),
+                _duration_menu_text(i18n, lang, "pro", g("start.status.free")),
+                tariff_keyboard(i18n, lang, "pro", pro_priced)),
         Preview("user", "11 · Buy — quote + payment methods",
                 _format_quote_text(i18n, settings, lang, base_quote),
                 tariff_detail_keyboard(i18n, _QUOTE_CODE, lang, settings)),

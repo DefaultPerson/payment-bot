@@ -20,7 +20,7 @@ from bot.core.text_emoji import text_emoji
 from bot.keyboards import CB_DISMISS, CB_MENU, main_menu_keyboard
 from bot.repos.subscriptions import get_subscription_for_user
 from bot.repos.users import ensure_minimal_user, upsert_user_from_telegram_with_created
-from bot.services.profile import welcome_status_label
+from bot.services.profile import profile_plan_label
 from bot.services.referrals import (
     ReferralBindResult,
     ReferralBindStatus,
@@ -65,6 +65,7 @@ def build_start_text(
     return i18n.gettext(
         "start.text",
         language,
+        wave=text_emoji("wave"),
         api=text_emoji("api"),
         question=text_emoji("question"),
         trial_block=trial_block,
@@ -152,8 +153,8 @@ async def start(
                 trial_available = await is_trial_available(
                     session, user=user, settings=settings, now=now
                 )
-                status_label = welcome_status_label(
-                    i18n, lang_code, user, subscription, now, settings.loyalty
+                status_label = profile_plan_label(
+                    settings, i18n, lang_code, subscription, now
                 )
         except SQLAlchemyError:
             logger.exception("failed to upsert user on start")
@@ -234,8 +235,8 @@ async def back_to_menu_callback(
                 trial_available = await is_trial_available(
                     session, user=user, settings=settings, now=now
                 )
-                status_label = welcome_status_label(
-                    i18n, lang_code, user, subscription, now, settings.loyalty
+                status_label = profile_plan_label(
+                    settings, i18n, lang_code, subscription, now
                 )
         except SQLAlchemyError:
             logger.exception("failed to render main menu")

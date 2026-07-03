@@ -102,7 +102,7 @@ def test_build_start_text_uses_english_for_english_user_language() -> None:
     text = build_start_text(i18n, settings, "en", status_label="Free")
 
     assert "<b>Welcome</b> to the <b>Hydra Monitors</b> payment bot." in text
-    assert "<b>Status:</b> <code>Free</code>" in text
+    assert "<b>Tariff:</b> <code>Free</code>" in text
 
 
 def test_build_start_text_falls_back_to_russian_for_unsupported_language() -> None:
@@ -234,7 +234,7 @@ async def test_start_calls_user_upsert_commands_and_answers_main_menu(monkeypatc
     ]
     assert len(message.answers) == 1
     assert "Hydra Monitors" in message.answers[0]["text"]
-    assert "<b>Status:</b> <code>Free</code>" in message.answers[0]["text"]
+    assert "<b>Tariff:</b> <code>Free</code>" in message.answers[0]["text"]
     assert message.answers[0]["reply_markup"] is menu_markup
 
 

@@ -19,6 +19,7 @@ from bot.models import (
 from bot.repos.promos import (
     PromoUnavailable,
     apply_promo_code_for_user,
+    get_pending_promo_for_menu,
     get_pending_promo_for_user,
     get_promo_by_code,
     promo_snapshot_from_row,
@@ -277,6 +278,26 @@ async def test_get_pending_promo_for_user_clears_unusable_pending_promo() -> Non
     assert pending is None
     assert user.pending_promo_id is None
     assert session.flushed == 1
+
+
+async def test_get_pending_promo_for_menu_keeps_tariff_restricted_promo() -> None:
+    # Regression: browsing the duration menu must NOT drop a valid promo just because it is
+    # restricted to tariffs other than the ones being priced. get_pending_promo_for_menu resolves
+    # with tariff_code=None, so the tariff_not_allowed clear never fires here.
+    session = FakePromoSession()
+    now = datetime(2026, 6, 18, 12, 0, tzinfo=UTC)
+    user = make_user(pending_promo_id=5)
+    promo = make_promo(allowed_tariffs=["6m"])
+    session.users.append(user)
+    session.promos.append(promo)
+
+    snapshot, allowed = await get_pending_promo_for_menu(session, user=user, now=now)
+
+    assert snapshot is not None
+    assert snapshot.code == "SAVE20"
+    assert allowed == frozenset({"6m"})
+    assert user.pending_promo_id == 5  # preserved — not wiped by viewing the menu
+    assert session.flushed == 0
 
 
 async def test_get_pending_promo_for_user_clears_missing_pending_promo() -> None:

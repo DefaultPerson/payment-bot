@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from bot.config import Settings
 from bot.core.i18n import JsonI18n
 from bot.keyboards.icons import icon_for
-from bot.models import UserStatus
-from bot.repos.tariffs import get_active_plans, get_plan_tariffs, resolve_plan_code
-from bot.services.pricing import quote_tariff
+from bot.repos.tariffs import get_active_plans, resolve_plan_code
+
+if TYPE_CHECKING:
+    from bot.services.pricing import PricedTariff
 
 CB_PROFILE = "profile"
 CB_LANGUAGE = "language"
@@ -228,12 +231,12 @@ def dismiss_keyboard(i18n: JsonI18n, lang_code: str) -> InlineKeyboardMarkup:
 
 def plan_keyboard(i18n: JsonI18n, settings: Settings, lang_code: str) -> InlineKeyboardMarkup:
     """Menu 1 — tariff (product) selection. Shown even when a single plan is active so the
-    flow stays a distinct step and a second plan just appears as another button."""
+    flow stays a distinct step and a second plan just appears as another button. Plan buttons
+    carry no icon; a Back button returns to the main menu."""
     rows = [
         [
             _button(
                 plan.title or plan.code,
-                icon_key="menu.button.buy",
                 callback_data=f"{CB_PLAN_PREFIX}{plan.code}",
             )
         ]
@@ -242,9 +245,8 @@ def plan_keyboard(i18n: JsonI18n, settings: Settings, lang_code: str) -> InlineK
     rows.append(
         [
             _button(
-                i18n.gettext("support.button", lang_code),
-                icon_key="support.button",
-                url=_support_url(settings),
+                i18n.gettext("menu.back", lang_code),
+                callback_data=CB_MENU,
             )
         ]
     )
@@ -253,42 +255,22 @@ def plan_keyboard(i18n: JsonI18n, settings: Settings, lang_code: str) -> InlineK
 
 def tariff_keyboard(
     i18n: JsonI18n,
-    settings: Settings,
     lang_code: str,
-    plan_code: str | None = None,
+    plan_code: str,
+    priced: list[PricedTariff],
 ) -> InlineKeyboardMarkup:
-    """Menu 2 — duration selection within a plan, with per-duration discount + price, a
-    promo-code entry, and a back button to the tariff list."""
-    plan_code = plan_code or settings.tariffs.default_plan_code
-    rows = []
-    for tariff in get_plan_tariffs(settings, plan_code):
-        net_usd = quote_tariff(settings, tariff.code, UserStatus.basic).net_usd
-        discount = tariff.duration_discount_percent
-        if discount > 0:
-            text = i18n.gettext(
-                "buy.duration.button_discount",
-                lang_code,
-                months=tariff.duration_months,
-                price=f"{net_usd:.2f}",
-                discount=f"{discount:.0f}",
+    """Menu 2 — duration selection within a plan. Each button shows the price with the user's
+    loyalty discount already applied; when a pending promo lowers the price the old price is
+    struck through and the new one follows. Then a promo-entry button and a back button."""
+    rows = [
+        [
+            _button(
+                _duration_button_text(i18n, lang_code, priced_tariff),
+                callback_data=f"{CB_TARIFF_PREFIX}{priced_tariff.tariff.code}",
             )
-        else:
-            text = i18n.gettext(
-                "buy.duration.button",
-                lang_code,
-                months=tariff.duration_months,
-                price=f"{net_usd:.2f}",
-            )
-        rows.append(
-            [
-                _button(
-                    text,
-                    icon_key="buy.tariff.button",
-                    callback_data=f"{CB_TARIFF_PREFIX}{tariff.code}",
-                )
-            ]
-        )
-
+        ]
+        for priced_tariff in priced
+    ]
     rows.append(
         [
             _button(
@@ -307,6 +289,39 @@ def tariff_keyboard(
         ]
     )
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _strike(text: str) -> str:
+    """Overlay each character with U+0336 (combining long stroke overlay) so a price reads as
+    struck through on a plain-text inline button, which cannot render an HTML ``<s>`` tag."""
+    return "".join(f"{char}̶" for char in text)
+
+
+def _duration_button_text(i18n: JsonI18n, lang_code: str, priced: PricedTariff) -> str:
+    months = priced.tariff.duration_months
+    if priced.promo_discount_usd > 0:
+        return i18n.gettext(
+            "buy.duration.button_promo",
+            lang_code,
+            months=months,
+            old=_strike(f"${priced.old_usd:.2f}"),
+            price=f"{priced.new_usd:.2f}",
+        )
+    discount = priced.tariff.duration_discount_percent
+    if discount > 0:
+        return i18n.gettext(
+            "buy.duration.button_discount",
+            lang_code,
+            months=months,
+            price=f"{priced.new_usd:.2f}",
+            discount=f"{discount:.0f}",
+        )
+    return i18n.gettext(
+        "buy.duration.button",
+        lang_code,
+        months=months,
+        price=f"{priced.new_usd:.2f}",
+    )
 
 
 def tariff_detail_keyboard(
