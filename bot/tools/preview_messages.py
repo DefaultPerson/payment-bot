@@ -242,8 +242,7 @@ def _user_previews(i18n: JsonI18n, settings: Settings, lang: str) -> list[Previe
                 payment_keyboard(i18n, settings, lang, _PAY_URL, _QUOTE_CODE,
                                  payment_key="buy.pay.tribute")),
         Preview("user", "19 · Invoice failed", g("buy.invoice.failed")),
-        Preview("user", "20 · Payment success", g("payment.success.text")),
-        Preview("user", "21 · Access links delivered",
+        Preview("user", "20 · Access links delivered",
                 g("access.links.text", sparkles="✨", links=access_links)
                 + "\n\n" + g("access.links.footer", docs_url=settings.bot.docs_url)),
         Preview("user", "22 · Access — no chats configured",

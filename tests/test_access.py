@@ -394,13 +394,10 @@ def test_access_and_payment_locale_keys_are_available() -> None:
             language,
             support_url="https://t.me/HydraSupport",
         )
-        success_text = i18n.gettext("payment.success.text", language)
-
         assert links_text != "access.links.text"
         assert "Signals: link" in links_text
         assert empty_text != "access.empty.text"
         assert "https://t.me/HydraSupport" in empty_text
-        assert success_text != "payment.success.text"
 
 
 async def test_send_access_links_edits_in_place_with_main_menu_button() -> None:

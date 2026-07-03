@@ -197,9 +197,8 @@ async def test_successful_payment_processes_invoice_and_sends_access(monkeypatch
     assert access_calls[0]["tg_id"] == 700
     assert access_calls[0]["lang_code"] == "en"
     assert service_channel.messages
-    answer = message.answers[0]
-    assert answer["text"] == "Payment received. Your access has been activated."
-    assert answer["reply_markup"].inline_keyboard[0][0].callback_data == "dismiss"  # ❌ close
+    # The access-links message is the only confirmation now; no extra "payment received" message.
+    assert message.answers == []
     assert metrics.payments == [("stars", "paid", Decimal("81.44"))]
 
 
@@ -354,9 +353,8 @@ async def test_successful_payment_retries_access_for_idempotent_undelivered_char
     assert access_calls[0]["bot"] is bot
     assert access_calls[0]["tg_id"] == 700
     assert mark_calls[0]["invoice_id"] == 55
-    answer = message.answers[0]
-    assert answer["text"] == "Payment received. Your access has been activated."
-    assert answer["reply_markup"].inline_keyboard[0][0].callback_data == "dismiss"  # ❌ close
+    # The access-links message is the only confirmation now; no extra "payment received" message.
+    assert message.answers == []
     assert metrics.payments == [("stars", "duplicate", None)]
 
 

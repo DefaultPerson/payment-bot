@@ -27,7 +27,7 @@ MENU_ICONS: dict[str, str] = {
     "menu.button.admin": "5904258298764334001",  # ⚙️
     "profile.button.renew": "5769248574499983619",  # 🔄
     "profile.button.enter_chat": "6035130900075777681",  # 🚪
-    "access.button.dismiss": "6030757850274336631",  # ❌ delete the access-links message
+    "access.button.dismiss": "5774077015388852135",  # ❌ close/dismiss button (2nd variation)
     "nav.back": "5960671702059848143",  # ⬅️ step-back button (1st variation)
     "nav.home": "5938537205847822613",  # 🏡 return to the main menu
     "nav.cancel": "6030757850274336631",  # ❌ cancel button

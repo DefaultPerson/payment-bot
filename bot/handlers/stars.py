@@ -15,11 +15,9 @@ from bot.core.i18n import JsonI18n
 from bot.core.logger import ServiceChannel
 from bot.core.metrics import PaymentBotMetrics
 from bot.core.service_events import fmt_amount, fmt_dt, money, render_event, user_mention
-from bot.keyboards import close_keyboard
 from bot.repos.invoices import lock_invoice_by_id
 from bot.repos.users import get_user_by_tg_id
 from bot.services.access import send_access_links
-from bot.services.message_ttl import schedule_deletion
 from bot.services.payments import (
     PaidInvoiceResult,
     StarsDuplicateChargeError,
@@ -125,16 +123,14 @@ async def successful_payment(
         await message.answer(i18n.gettext("error.generic", result.lang_code))
         return
 
+    # No separate "payment received" confirmation: the access-links message that
+    # send_access_links just delivered already confirms the purchase (and this mirrors the other
+    # providers, none of which send an extra confirmation message).
     await _mark_access_delivered(
         session_factory=session_factory,
         invoice_id=result.invoice_id,
         now=delivered_at,
     )
-    sent = await message.answer(
-        i18n.gettext("payment.success.text", result.lang_code),
-        reply_markup=close_keyboard(i18n, result.lang_code),
-    )
-    schedule_deletion(sent, delay_seconds=settings.bot.ephemeral_ttl_seconds)
 
 
 def _successful_payment_from_message(message: Message) -> StarsSuccessfulPayment:

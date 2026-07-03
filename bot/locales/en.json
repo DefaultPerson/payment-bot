@@ -84,7 +84,6 @@
   "referral.start.applied": "Referral link applied.",
   "referral.start.rebind_rejected": "Referral is already set and cannot be changed.",
   "referral.text": "Referral program\n\nInvite link: {invite_link}\nReferrals: {referral_count}\nLifetime earned: ${referral_earned_usd}\nAvailable for withdrawal: ${referral_unpaid_earned_usd} of ${min_withdraw_usd} minimum\n\nWhen the minimum is reached, contact support for a manual payout.",
-  "payment.success.text": "Payment received. Your access has been activated.",
   "payment.duplicate.refunded": "This invoice was already paid — the duplicate charge was refunded.",
   "stars.invoice.description": "Hydra Monitors access: {months} months",
   "access.links.text": "{sparkles} Your access links:\n\n{links}\n\nTap a link and choose “Request to Join” — you are approved automatically while your subscription is active.",
