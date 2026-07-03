@@ -122,7 +122,9 @@ async def test_promo_command_stores_pending_promo(monkeypatch) -> None:
             "i18n": i18n,
         }
     ]
-    assert message.answers == [{"text": "Promo code SAVE20 will be applied to your next invoice."}]
+    answer = message.answers[0]
+    assert answer["text"] == "Promo code SAVE20 will be applied to your next invoice."
+    assert answer["reply_markup"].inline_keyboard[0][0].callback_data == "dismiss"  # ❌ close
 
 
 async def test_promo_command_emits_service_event(monkeypatch) -> None:
@@ -177,7 +179,9 @@ async def test_promo_command_without_service_channel_skips_event(monkeypatch) ->
         session_factory=FakeSessionFactory(),
     )
 
-    assert message.answers == [{"text": "Promo code SAVE20 will be applied to your next invoice."}]
+    answer = message.answers[0]
+    assert answer["text"] == "Promo code SAVE20 will be applied to your next invoice."
+    assert answer["reply_markup"].inline_keyboard[0][0].callback_data == "dismiss"  # ❌ close
 
 
 async def test_promo_command_without_code_replies_usage() -> None:

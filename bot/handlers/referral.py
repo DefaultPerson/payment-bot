@@ -14,9 +14,10 @@ from bot.config import Settings
 from bot.core.db import session_scope
 from bot.core.i18n import JsonI18n
 from bot.handlers.start import callback_context, message_context
-from bot.keyboards import CB_REFERRAL
+from bot.keyboards import CB_REFERRAL, close_keyboard
 from bot.repos.referrals import ReferralStats, get_referral_stats
 from bot.repos.users import ensure_minimal_user
+from bot.services.message_ttl import schedule_deletion
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +47,8 @@ async def referral(
         logger.exception("failed to build referral response")
         await message.answer(i18n.gettext("error.generic", context.language_code))
         return
-    await message.answer(text)
+    sent = await message.answer(text, reply_markup=close_keyboard(i18n, lang_code))
+    schedule_deletion(sent, delay_seconds=settings.bot.ephemeral_ttl_seconds)
 
 
 async def referral_callback(

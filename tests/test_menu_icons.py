@@ -159,3 +159,11 @@ async def test_configure_menu_icons_disables_on_api_error() -> None:
     await main_module.configure_menu_icons(FakeBot(), Settings())
 
     assert icon_module.icon_for("menu.button.buy") is None
+
+
+def test_close_keyboard_button_carries_dismiss_icon() -> None:
+    from bot.keyboards.menu import close_keyboard
+
+    button = close_keyboard(JsonI18n(), "en").inline_keyboard[0][0]
+
+    assert button.icon_custom_emoji_id == icon_module.MENU_ICONS["access.button.dismiss"]  # ❌

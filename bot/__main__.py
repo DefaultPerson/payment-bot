@@ -57,6 +57,7 @@ from bot.services.broadcast_ui import (
     create_redis_jobstore,
     set_scheduled_broadcast_bot,
 )
+from bot.services.message_ttl import configure_message_ttl
 
 # FSM states whose flows a slash-command must be able to escape (see FsmCommandExitMiddleware).
 _FSM_EXIT_PREFIXES = (
@@ -430,6 +431,10 @@ async def main() -> None:
         apscheduler = AsyncIOScheduler(
             jobstores={"default": create_redis_jobstore(settings.redis_url)}
         )
+        # Auto-delete ephemeral clutter messages after their TTL (restart-durable via the same
+        # Redis jobstore); the close button on each message is the immediate fallback. Register
+        # BEFORE start() so a persisted delete job that fires on restart finds a configured bot.
+        configure_message_ttl(bot, apscheduler)
         apscheduler.start()
         broadcast_scheduler = BroadcastScheduler(broadcast_service, apscheduler)
         dispatcher.update.middleware.register(

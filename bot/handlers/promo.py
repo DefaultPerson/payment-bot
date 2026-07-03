@@ -19,10 +19,11 @@ from bot.core.logger import ServiceChannel
 from bot.core.service_events import render_event, user_mention
 from bot.handlers.buy import _edit_text_or_answer, build_duration_menu
 from bot.handlers.start import callback_context, message_context
-from bot.keyboards import CB_PROMO, CB_PROMO_BUY_PREFIX, CB_PROMO_CANCEL
+from bot.keyboards import CB_PROMO, CB_PROMO_BUY_PREFIX, CB_PROMO_CANCEL, close_keyboard
 from bot.keyboards.icons import icon_for
 from bot.models import Promo, PromoKind
 from bot.repos.promos import PromoUnavailable, apply_promo_code_for_user
+from bot.services.message_ttl import schedule_deletion
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +54,6 @@ async def promo_command(
     session_factory: async_sessionmaker[AsyncSession],
     service_channel: ServiceChannel | None = None,
 ) -> None:
-    del settings
     context = message_context(message)
     lang_code = i18n.resolve_language(context.language_code)
     if context.tg_id is None:
@@ -76,7 +76,11 @@ async def promo_command(
                 i18n=i18n,
             )
             applied_code = promo.code
-        await message.answer(i18n.gettext("promo.applied", lang_code, code=applied_code))
+        sent = await message.answer(
+            i18n.gettext("promo.applied", lang_code, code=applied_code),
+            reply_markup=close_keyboard(i18n, lang_code),
+        )
+        schedule_deletion(sent, delay_seconds=settings.bot.ephemeral_ttl_seconds)
     except PromoUnavailable as exc:
         await message.answer(_promo_error_text(i18n, lang_code, exc.reason))
         return

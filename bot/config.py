@@ -24,6 +24,9 @@ class BotConfig(BaseModel):
     support_url: str = "https://t.me/HMonitorsBot"  # config-driven support link for all buttons
     docs_url: str = "http://docs.hydramonitors.com/"  # main-menu documentation link button
     custom_emoji_icons: bool = True  # attach tgiosicons custom-emoji icons to inline buttons
+    ephemeral_ttl_seconds: int = Field(
+        default=300, ge=0
+    )  # auto-delete clutter messages after N seconds (0 = keep; close button always added)
 
     @model_validator(mode="after")
     def validate_fallback_language(self) -> BotConfig:

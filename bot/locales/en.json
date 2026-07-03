@@ -101,6 +101,7 @@
   "support.text": "Support is available here: {support_url}",
   "support.button": "Contact support",
   "coming_soon.text": "This feature is coming soon.",
+  "common.close": "Close",
   "error.generic": "Something went wrong. Please try again later.",
   "grant.usage": "Usage: /grant &lt;telegram_id&gt; &lt;days&gt;",
   "grant.forbidden": "Only admins can grant access.",

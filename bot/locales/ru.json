@@ -101,6 +101,7 @@
   "support.text": "Поддержка доступна здесь: {support_url}",
   "support.button": "Написать в поддержку",
   "coming_soon.text": "Эта функция скоро появится.",
+  "common.close": "Закрыть",
   "error.generic": "Что-то пошло не так. Попробуйте позже.",
   "grant.usage": "Использование: /grant &lt;telegram_id&gt; &lt;дней&gt;",
   "grant.forbidden": "Только администраторы могут выдавать доступ.",

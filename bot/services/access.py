@@ -167,14 +167,20 @@ async def send_access_links(
         chat for chat in settings.access.protected_chats if chat.chat_id in allowed
     ]
     if not allowed_chats:
-        await bot.send_message(
+        # Local imports keep services free of a module-load dependency on keyboards.
+        from bot.keyboards import close_keyboard
+        from bot.services.message_ttl import schedule_deletion
+
+        sent = await bot.send_message(
             chat_id=tg_id,
             text=i18n.gettext(
                 "access.empty.text",
                 lang_code,
                 support_url=_support_url(settings),
             ),
+            reply_markup=close_keyboard(i18n, lang_code),
         )
+        schedule_deletion(sent, delay_seconds=settings.bot.ephemeral_ttl_seconds)
         return
 
     invites = await create_protected_chat_invite_links(bot, settings, now=now, chats=allowed_chats)

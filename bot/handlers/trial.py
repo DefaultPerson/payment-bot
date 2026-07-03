@@ -18,11 +18,13 @@ from bot.keyboards import (
     CB_TRIAL_CANCEL,
     CB_TRIAL_CONFIRM,
     CB_TRIAL_START,
+    close_keyboard,
     main_menu_keyboard,
     trial_confirm_keyboard,
 )
 from bot.repos.tariffs import get_plan, resolve_plan_code
 from bot.services.access import send_access_links
+from bot.services.message_ttl import schedule_deletion
 from bot.services.trial import TrialResult, activate_trial, trial_availability
 
 logger = logging.getLogger(__name__)
@@ -158,6 +160,11 @@ async def trial_confirm_callback(
             expires_at=fmt_dt(result.expires_at),
             plan=_plan_title(settings, result.plan_code),
         ),
+        reply_markup=close_keyboard(i18n, lang_code),
+    )
+    schedule_deletion(
+        getattr(callback, "message", None),
+        delay_seconds=settings.bot.ephemeral_ttl_seconds,
     )
 
 

@@ -28,6 +28,7 @@ from bot.keyboards import (
     CB_TARIFF_PREFIX,
     CB_TRIBUTE_PREFIX,
     CB_XROCKET_PREFIX,
+    close_keyboard,
     invoice_failed_keyboard,
     payment_keyboard,
     plan_keyboard,
@@ -48,6 +49,7 @@ from bot.repos.subscriptions import extend_manual_subscription, get_subscription
 from bot.repos.tariffs import get_plan, get_plan_tariffs, get_tariff, resolve_plan_code
 from bot.repos.users import ensure_minimal_user
 from bot.services.access import send_access_links
+from bot.services.message_ttl import schedule_deletion
 from bot.services.payments import (
     cancel_unusable_invoice,
     create_cryptobot_invoice_for_user,
@@ -747,6 +749,11 @@ async def referral_pay_callback(
     await _edit_text_or_answer(
         callback,
         i18n.gettext("buy.referral.success", lang_code, expires_at=_format_expiry(expires_at)),
+        reply_markup=close_keyboard(i18n, lang_code),
+    )
+    schedule_deletion(
+        getattr(callback, "message", None),
+        delay_seconds=settings.bot.ephemeral_ttl_seconds,
     )
 
 

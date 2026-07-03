@@ -526,3 +526,13 @@ def test_profile_text_locale_formats_expected_kwargs() -> None:
     assert "7.50" in text
     assert "https://t.me/HMPTbot?start=ref_42" in text
     assert "10.00" in text
+
+
+def test_close_keyboard_has_dismiss_button() -> None:
+    keyboards = keyboard_module()
+
+    keyboard = keyboards.close_keyboard(JsonI18n(), "en")
+
+    button = keyboard.inline_keyboard[0][0]
+    assert button.callback_data == keyboards.CB_DISMISS  # reuses dismiss_callback
+    assert button.text == "Close"

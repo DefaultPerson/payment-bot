@@ -232,6 +232,22 @@ def dismiss_keyboard(i18n: JsonI18n, lang_code: str) -> InlineKeyboardMarkup:
     )
 
 
+def close_keyboard(i18n: JsonI18n, lang_code: str) -> InlineKeyboardMarkup:
+    """Single ❌ "Close" button that deletes the message it is attached to. Used to declutter
+    otherwise buttonless info/success messages; shares CB_DISMISS / dismiss_callback."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                _button(
+                    i18n.gettext("common.close", lang_code),
+                    icon_key="access.button.dismiss",
+                    callback_data=CB_DISMISS,
+                )
+            ]
+        ]
+    )
+
+
 def plan_keyboard(i18n: JsonI18n, settings: Settings, lang_code: str) -> InlineKeyboardMarkup:
     """Menu 1 — tariff (product) selection. Shown even when a single plan is active so the
     flow stays a distinct step and a second plan just appears as another button. Plan buttons
