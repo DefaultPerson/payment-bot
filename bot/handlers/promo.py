@@ -20,6 +20,7 @@ from bot.core.service_events import render_event, user_mention
 from bot.handlers.buy import _edit_text_or_answer, build_duration_menu
 from bot.handlers.start import callback_context, message_context
 from bot.keyboards import CB_PROMO, CB_PROMO_BUY_PREFIX, CB_PROMO_CANCEL
+from bot.keyboards.icons import icon_for
 from bot.models import Promo, PromoKind
 from bot.repos.promos import PromoUnavailable, apply_promo_code_for_user
 
@@ -344,6 +345,7 @@ def _promo_cancel_keyboard(i18n: JsonI18n, lang_code: str) -> InlineKeyboardMark
                 InlineKeyboardButton(
                     text=i18n.gettext("promo.cancel", lang_code),
                     callback_data=CB_PROMO_CANCEL,
+                    icon_custom_emoji_id=icon_for("nav.cancel"),
                 )
             ]
         ]

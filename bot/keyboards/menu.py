@@ -166,7 +166,8 @@ def language_keyboard(i18n: JsonI18n, lang_code: str) -> InlineKeyboardMarkup:
     rows.append(
         [
             _button(
-                i18n.gettext("menu.back", lang_code),
+                i18n.gettext("menu.home", lang_code),
+                icon_key="nav.home",
                 callback_data=CB_MENU,
             )
         ]
@@ -207,7 +208,8 @@ def profile_keyboard(i18n: JsonI18n, settings: Settings, lang_code: str) -> Inli
             ],
             [
                 _button(
-                    i18n.gettext("menu.back", lang_code),
+                    i18n.gettext("menu.home", lang_code),
+                    icon_key="nav.home",
                     callback_data=CB_MENU,
                 )
             ],
@@ -246,7 +248,8 @@ def plan_keyboard(i18n: JsonI18n, settings: Settings, lang_code: str) -> InlineK
     rows.append(
         [
             _button(
-                i18n.gettext("menu.back", lang_code),
+                i18n.gettext("menu.home", lang_code),
+                icon_key="nav.home",
                 callback_data=CB_MENU,
             )
         ]
@@ -285,6 +288,7 @@ def tariff_keyboard(
         [
             _button(
                 i18n.gettext("buy.back", lang_code),
+                icon_key="nav.back",
                 callback_data=CB_BACK_TARIFFS,
             )
         ]
