@@ -167,7 +167,9 @@ async def send_access_links(
     disallowed = [
         chat.chat_id for chat in settings.access.protected_chats if chat.chat_id not in allowed
     ]
-    await _kick_from_chats(bot, settings, tg_id=tg_id, chat_ids=disallowed, now=now)
+    await _kick_from_chats(
+        bot, settings, tg_id=tg_id, chat_ids=disallowed, now=now, best_effort=True
+    )
 
     # Admit any request the user already had pending in their plan's chats (they may have
     # requested before paying). No-op when there is no pending request.
@@ -251,21 +253,45 @@ async def _kick_from_chats(
     tg_id: int,
     chat_ids: list[int],
     now: datetime,
+    best_effort: bool = False,
 ) -> None:
-    """Temp-ban then unban (a kick that allows a later rejoin) the user from each chat."""
+    """Temp-ban then unban (a kick that allows a later rejoin) the user from each chat.
+
+    ``best_effort`` selects the two opposite callers' contracts:
+
+    * ``True`` (grant/reconcile path in ``send_access_links``): kicking a user off chats their
+      new plan no longer unlocks is a side-effect, NOT the deliverable. An un-kickable member —
+      the chat owner (Telegram: "can't remove chat owner"), an admin the bot may not ban, or a
+      chat the bot lost rights in — must never abort delivery of the access links the user just
+      paid for. Such a member retains access by other means anyway, so skipping the kick is also
+      semantically correct. Failures are logged per chat and the loop continues.
+    * ``False`` (revoke-on-expiry path in ``revoke_protected_chat_access``): the kick IS the
+      deliverable. A failure must propagate so the caller records an error and does NOT mark the
+      subscription revoked, leaving it to be retried on the next run rather than silently letting
+      an expired user keep access.
+    """
     until_date = now + timedelta(seconds=settings.access.revoke_ban_seconds)
     for chat_id in chat_ids:
-        await bot.ban_chat_member(
-            chat_id=chat_id,
-            user_id=tg_id,
-            until_date=until_date,
-            revoke_messages=False,
-        )
-        await bot.unban_chat_member(
-            chat_id=chat_id,
-            user_id=tg_id,
-            only_if_banned=True,
-        )
+        try:
+            await bot.ban_chat_member(
+                chat_id=chat_id,
+                user_id=tg_id,
+                until_date=until_date,
+                revoke_messages=False,
+            )
+            await bot.unban_chat_member(
+                chat_id=chat_id,
+                user_id=tg_id,
+                only_if_banned=True,
+            )
+        except Exception:
+            if not best_effort:
+                raise
+            logger.warning(
+                "failed to reconcile chat membership; skipping chat",
+                extra={"chat_id": chat_id, "tg_id": tg_id},
+                exc_info=True,
+            )
 
 
 def _invite_link(invite: SupportsInviteLink | dict[str, object]) -> str:

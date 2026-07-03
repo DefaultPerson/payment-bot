@@ -289,6 +289,37 @@ async def test_send_access_links_reconciles_membership_to_plan() -> None:
     assert "Signals" not in bot.messages[0]["text"]
 
 
+async def test_send_access_links_survives_unkickable_owner() -> None:
+    # Regression: a user who OWNS a disallowed chat cannot be kicked (Telegram replies
+    # "Bad Request: can't remove chat owner"). The kick is a best-effort reconciliation and
+    # must not abort access-link delivery — a paid user still gets their links instead of a
+    # generic error. This was the second Stars-payment failure after the charge_id truncation.
+    class OwnerBot(FakeBot):
+        async def ban_chat_member(self, **kwargs: Any) -> None:
+            raise RuntimeError("Bad Request: can't remove chat owner")
+
+    bot = OwnerBot()
+    settings = _two_plan_settings()
+    now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
+
+    # Must NOT raise even though the kick from -1001 (which the user owns) fails.
+    await send_access_links(
+        bot,
+        settings,
+        JsonI18n(fallback_language="en"),
+        tg_id=1001,
+        lang_code="en",
+        now=now,
+        plan_code="vip",
+    )
+
+    # Ban raised before recording; unban is skipped; the allowed chat's link is still delivered.
+    assert bot.bans == []
+    assert bot.unbans == []
+    assert [call["chat_id"] for call in bot.invite_calls] == [-1002]
+    assert "<b>Research</b>: https://t.me/+-1002" in bot.messages[0]["text"]
+
+
 async def test_approve_pending_join_requests_approves_only_plan_chats() -> None:
     from bot.services.access import approve_pending_join_requests
 
