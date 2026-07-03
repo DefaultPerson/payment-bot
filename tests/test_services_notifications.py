@@ -28,12 +28,12 @@ def test_format_subscription_notification_uses_localized_text(
         kind,
         "en",
         expires_at=NOW,
-        support_url="https://t.me/HydraSupport",
+        grace_days=7,
     )
 
     assert expected in text
     assert "2026-06-18 12:00 UTC" in text
-    assert "https://t.me/HydraSupport" in text
+    assert "7" in text  # loyalty grace window mentioned
 
 
 def test_format_subscription_notification_rejects_unknown_kind() -> None:
@@ -45,5 +45,5 @@ def test_format_subscription_notification_rejects_unknown_kind() -> None:
             "bad",
             "en",
             expires_at=NOW,
-            support_url="https://t.me/HydraSupport",
+            grace_days=7,
         )

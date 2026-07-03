@@ -12,11 +12,13 @@ from bot.models import Subscription, SubscriptionSource, User, UserStatus
 from bot.services.access import allowed_chat_ids_for_plan
 from bot.services.pricing import plan_daily_rate
 from bot.services.subscriptions import (
+    DEFAULT_STATUS_GRACE_DAYS,
     SupportsLoyaltyThresholds,
     calculate_extension,
     calculate_plan_change_expiry,
     consumed_coverage_days,
     status_after_total_active_days_for_policy,
+    status_forfeited,
     subscription_active_at,
 )
 
@@ -335,6 +337,13 @@ async def _extend_subscription(
             subscription.source = source
             subscription.last_invoice_id = last_invoice_id
 
+    # Loyalty grace: if the prior subscription had lapsed beyond the grace window, the earned
+    # tenure/tier is forfeited — this purchase re-earns loyalty from scratch. A re-purchase within
+    # the grace window keeps the streak (current_expires_at is the PRE-extension expiry).
+    grace_days = getattr(loyalty, "status_grace_days", DEFAULT_STATUS_GRACE_DAYS)
+    if status_forfeited(current_expires_at, now, grace_days):
+        locked_user.total_active_days = 0
+        locked_user.status = UserStatus.basic
     locked_user.total_active_days = (locked_user.total_active_days or 0) + days
     # Tier is driven by LIVED coverage, not purchased days: the just-added time also raised
     # the remaining days, so consumed is unchanged by this purchase and only rises as real

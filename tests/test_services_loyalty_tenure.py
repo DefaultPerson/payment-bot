@@ -86,3 +86,32 @@ def test_status_never_downgrades_below_stored_high_water() -> None:
 
 def test_none_current_status_defaults_to_basic() -> None:
     assert effective_status(None, 0, None, NOW, None) is UserStatus.basic
+
+
+# --- status grace / decay after expiry (loyalty=None => default 7-day grace) ---------------
+
+
+def test_status_kept_while_subscription_active() -> None:
+    # Gold tenure, still active: current status floors the tier -> gold.
+    assert effective_status(UserStatus.gold, 150, NOW + timedelta(days=5), NOW, None) is (
+        UserStatus.gold
+    )
+
+
+def test_status_kept_within_grace_window_after_expiry() -> None:
+    # Expired 3 days ago (< 7-day grace): a short lapse keeps the earned tier.
+    assert effective_status(UserStatus.gold, 150, NOW - timedelta(days=3), NOW, None) is (
+        UserStatus.gold
+    )
+
+
+def test_status_forfeited_after_grace_window() -> None:
+    # Expired 10 days ago (> 7-day grace): the tier is forfeited back to basic.
+    assert effective_status(UserStatus.gold, 150, NOW - timedelta(days=10), NOW, None) is (
+        UserStatus.basic
+    )
+
+
+def test_status_forfeit_ignores_never_subscribed() -> None:
+    # expires_at is None (never subscribed) is not a forfeit — no crash, stays basic.
+    assert effective_status(UserStatus.basic, 0, None, NOW, None) is UserStatus.basic

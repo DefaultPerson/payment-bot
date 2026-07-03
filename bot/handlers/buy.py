@@ -29,6 +29,7 @@ from bot.keyboards import (
     CB_TRIBUTE_PREFIX,
     CB_XROCKET_PREFIX,
     invoice_cancel_keyboard,
+    invoice_failed_keyboard,
     payment_keyboard,
     plan_keyboard,
     tariff_detail_keyboard,
@@ -356,10 +357,7 @@ async def cryptobot_invoice_callback(
         )
         return
     if cryptobot_client is None:
-        await callback.answer(
-            i18n.gettext("buy.invoice.failed", context.language_code),
-            show_alert=True,
-        )
+        await _invoice_failed(callback, i18n, settings, context.language_code)
         return
 
     try:
@@ -395,10 +393,7 @@ async def cryptobot_invoice_callback(
         return
     except CryptoBotAPIError:
         logger.exception("CryptoBot invoice creation failed")
-        await callback.answer(
-            i18n.gettext("buy.invoice.failed", lang_code),
-            show_alert=True,
-        )
+        await _invoice_failed(callback, i18n, settings, lang_code)
         return
     except LookupError:
         logger.info("invalid CryptoBot invoice callback data: %r", getattr(callback, "data", None))
@@ -409,10 +404,7 @@ async def cryptobot_invoice_callback(
         return
     except Exception:
         logger.exception("unexpected CryptoBot invoice creation failure")
-        await callback.answer(
-            i18n.gettext("buy.invoice.failed", lang_code),
-            show_alert=True,
-        )
+        await _invoice_failed(callback, i18n, settings, lang_code)
         return
 
     await _edit_text_or_answer(
@@ -437,10 +429,7 @@ async def stars_invoice_callback(
         )
         return
     if not settings.stars.enabled:
-        await callback.answer(
-            i18n.gettext("buy.invoice.failed", context.language_code),
-            show_alert=True,
-        )
+        await _invoice_failed(callback, i18n, settings, context.language_code)
         return
 
     try:
@@ -499,7 +488,7 @@ async def stars_invoice_callback(
         return
     except Exception:
         logger.exception("unexpected Stars invoice creation failure")
-        await callback.answer(i18n.gettext("buy.invoice.failed", lang_code), show_alert=True)
+        await _invoice_failed(callback, i18n, settings, lang_code)
         return
 
     # Frame the native Stars invoice like the URL providers: edit the quote message to the
@@ -527,10 +516,7 @@ async def xrocket_invoice_callback(
         )
         return
     if not settings.xrocket.enabled or xrocket_client is None:
-        await callback.answer(
-            i18n.gettext("buy.invoice.failed", context.language_code),
-            show_alert=True,
-        )
+        await _invoice_failed(callback, i18n, settings, context.language_code)
         return
 
     try:
@@ -562,10 +548,7 @@ async def xrocket_invoice_callback(
         return
     except XRocketAPIError:
         logger.exception("xRocket invoice creation failed")
-        await callback.answer(
-            i18n.gettext("buy.invoice.failed", lang_code),
-            show_alert=True,
-        )
+        await _invoice_failed(callback, i18n, settings, lang_code)
         return
     except LookupError:
         logger.info("invalid xRocket invoice callback data: %r", getattr(callback, "data", None))
@@ -576,10 +559,7 @@ async def xrocket_invoice_callback(
         return
     except Exception:
         logger.exception("unexpected xRocket invoice creation failure")
-        await callback.answer(
-            i18n.gettext("buy.invoice.failed", lang_code),
-            show_alert=True,
-        )
+        await _invoice_failed(callback, i18n, settings, lang_code)
         return
 
     await _edit_text_or_answer(
@@ -615,10 +595,7 @@ async def tribute_invoice_callback(
     # configured in settings; settlement arrives later via the Tribute webhook.
     pay_url = settings.tribute.link_for_tariff(tariff_code) if settings.tribute.enabled else None
     if pay_url is None:
-        await callback.answer(
-            i18n.gettext("buy.invoice.failed", context.language_code),
-            show_alert=True,
-        )
+        await _invoice_failed(callback, i18n, settings, context.language_code)
         return
 
     try:
@@ -878,6 +855,20 @@ def _parse_prefixed_callback(data: str | None, prefix: str) -> str | None:
 
 def _invoice_created_text(i18n: JsonI18n, lang_code: str) -> str:
     return i18n.gettext("buy.invoice.created", lang_code, warn=text_emoji("warning"))
+
+
+async def _invoice_failed(
+    callback: CallbackQuery,
+    i18n: JsonI18n,
+    settings: Settings,
+    lang_code: str | None,
+) -> None:
+    """Invoice creation failed: show the error with a back-to-tariffs button and a support link."""
+    await _edit_text_or_answer(
+        callback,
+        i18n.gettext("buy.invoice.failed", lang_code),
+        reply_markup=invoice_failed_keyboard(i18n, settings, lang_code),
+    )
 
 
 async def _edit_text_or_answer(

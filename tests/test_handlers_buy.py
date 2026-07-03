@@ -457,12 +457,10 @@ async def test_stars_invoice_callback_cancels_local_invoice_when_telegram_send_f
     )
 
     assert cancelled_invoice_ids == [42]
-    assert callback.answers == [
-        {
-            "text": "Could not create invoice. Please try again or contact support.",
-            "show_alert": True,
-        }
-    ]
+    assert callback.answers == [{"text": None}]
+    edit = callback.message.edits[0]
+    assert edit["text"] == "Could not create invoice. Please try again or contact support."
+    assert edit["reply_markup"] is not None  # back-to-tariffs + support buttons
 
 
 def test_format_quote_text_includes_promo_discount() -> None:
@@ -601,12 +599,10 @@ async def test_cryptobot_invoice_callback_allows_missing_injected_client() -> No
         session_factory=FakeSessionFactory(),
     )
 
-    assert callback.answers == [
-        {
-            "text": "Could not create invoice. Please try again or contact support.",
-            "show_alert": True,
-        }
-    ]
+    assert callback.answers == [{"text": None}]
+    edit = callback.message.edits[0]
+    assert edit["text"] == "Could not create invoice. Please try again or contact support."
+    assert edit["reply_markup"] is not None  # back-to-tariffs + support buttons
 
 
 async def test_xrocket_invoice_callback_returns_payment_url(monkeypatch) -> None:
@@ -724,12 +720,10 @@ async def test_xrocket_invoice_callback_allows_missing_injected_client() -> None
         session_factory=FakeSessionFactory(),
     )
 
-    assert callback.answers == [
-        {
-            "text": "Could not create invoice. Please try again or contact support.",
-            "show_alert": True,
-        }
-    ]
+    assert callback.answers == [{"text": None}]
+    edit = callback.message.edits[0]
+    assert edit["text"] == "Could not create invoice. Please try again or contact support."
+    assert edit["reply_markup"] is not None  # back-to-tariffs + support buttons
 
 
 async def test_xrocket_invoice_callback_provider_errors_do_not_send_pay_url(
@@ -771,13 +765,10 @@ async def test_xrocket_invoice_callback_provider_errors_do_not_send_pay_url(
 
     assert session_factory.session.commits == 1
     assert payment_keyboard_called is False
-    assert callback.answers == [
-        {
-            "text": "Could not create invoice. Please try again or contact support.",
-            "show_alert": True,
-        }
-    ]
-    assert callback_message.edits == []
+    assert callback.answers == [{"text": None}]
+    edit = callback.message.edits[0]
+    assert edit["text"] == "Could not create invoice. Please try again or contact support."
+    assert edit["reply_markup"] is not None  # back-to-tariffs + support buttons
 
 
 async def test_cryptobot_invoice_callback_surfaces_service_database_errors(monkeypatch) -> None:
@@ -812,7 +803,6 @@ async def test_cryptobot_invoice_callback_surfaces_service_database_errors(monke
     assert callback.answers == [
         {"text": "Something went wrong. Please try again later.", "show_alert": True}
     ]
-    assert callback_message.edits == []
 
 
 async def test_cryptobot_invoice_callback_provider_errors_do_not_send_pay_url(
@@ -854,13 +844,10 @@ async def test_cryptobot_invoice_callback_provider_errors_do_not_send_pay_url(
 
     assert session_factory.session.commits == 1
     assert payment_keyboard_called is False
-    assert callback.answers == [
-        {
-            "text": "Could not create invoice. Please try again or contact support.",
-            "show_alert": True,
-        }
-    ]
-    assert callback_message.edits == []
+    assert callback.answers == [{"text": None}]
+    edit = callback.message.edits[0]
+    assert edit["text"] == "Could not create invoice. Please try again or contact support."
+    assert edit["reply_markup"] is not None  # back-to-tariffs + support buttons
 
 
 async def test_cryptobot_invoice_callback_alert_fallback_shows_created_text(monkeypatch) -> None:
@@ -927,12 +914,10 @@ async def test_cryptobot_invoice_callback_transport_errors_do_not_bubble(monkeyp
         cryptobot_client=object(),
     )
 
-    assert callback.answers == [
-        {
-            "text": "Could not create invoice. Please try again or contact support.",
-            "show_alert": True,
-        }
-    ]
+    assert callback.answers == [{"text": None}]
+    edit = callback.message.edits[0]
+    assert edit["text"] == "Could not create invoice. Please try again or contact support."
+    assert edit["reply_markup"] is not None  # back-to-tariffs + support buttons
 
 
 async def test_bad_cryptobot_callback_data_answers_generic_alert(monkeypatch) -> None:

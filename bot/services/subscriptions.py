@@ -20,10 +20,14 @@ STATUS_RANK = {
 }
 
 
+DEFAULT_STATUS_GRACE_DAYS = 7
+
+
 class SupportsLoyaltyThresholds(Protocol):
     bronze_active_months: int
     silver_active_months: int
     gold_active_months: int
+    status_grace_days: int
 
 
 def tier_threshold_days(active_months: int) -> int:
@@ -158,6 +162,22 @@ def consumed_coverage_days(
     return max(0, (total_active_days or 0) - _remaining_days(now, expires_at))
 
 
+def status_forfeited(
+    expires_at: datetime | None, now: datetime, grace_days: int
+) -> bool:
+    """True when a subscription lapsed MORE than ``grace_days`` ago, forfeiting the loyalty tier.
+
+    While a subscription is active — or within the grace window after expiry — the earned tier is
+    kept (regular payers don't lose status for a short lapse). Past the grace window the tier is
+    forfeited (falls back to basic). ``expires_at is None`` (never subscribed) is not a forfeit.
+    """
+    if expires_at is None or subscription_active_at(expires_at, now):
+        return False
+    aware_expires_at = expires_at if expires_at.tzinfo else expires_at.replace(tzinfo=UTC)
+    aware_now = now if now.tzinfo else now.replace(tzinfo=UTC)
+    return (aware_now - aware_expires_at) > timedelta(days=grace_days)
+
+
 def effective_status(
     current: UserStatus | None,
     total_active_days: int | None,
@@ -165,11 +185,16 @@ def effective_status(
     now: datetime,
     loyalty: SupportsLoyaltyThresholds | None,
 ) -> UserStatus:
-    """Loyalty status from lived coverage (``consumed_coverage_days``), ratcheted.
+    """Loyalty status from lived coverage (``consumed_coverage_days``), ratcheted, with a grace
+    window: once the subscription has lapsed more than ``loyalty.status_grace_days`` days the tier
+    is forfeited back to basic.
 
     Pure read helper: derives the tier a user has EARNED by real elapsed coverage without
     persisting it, so quote/profile paths always price at the current tier while the stored
     high-water status is only bumped on the locked write path (``_extend_subscription``).
     """
+    grace_days = getattr(loyalty, "status_grace_days", DEFAULT_STATUS_GRACE_DAYS)
+    if status_forfeited(expires_at, now, grace_days):
+        return UserStatus.basic
     consumed = consumed_coverage_days(total_active_days, expires_at, now)
     return status_after_total_active_days_for_policy(current or UserStatus.basic, consumed, loyalty)

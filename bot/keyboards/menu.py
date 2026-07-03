@@ -139,6 +139,7 @@ def trial_confirm_keyboard(i18n: JsonI18n, lang_code: str) -> InlineKeyboardMark
             [
                 _button(
                     i18n.gettext("trial.cancel.button", lang_code),
+                    icon_key="nav.cancel",
                     callback_data=CB_TRIAL_CANCEL,
                 )
             ],
@@ -418,6 +419,45 @@ def invoice_cancel_keyboard(
 ) -> InlineKeyboardMarkup:
     """Cancel-only keyboard for the Stars framing message (Stars pays via the native invoice)."""
     return InlineKeyboardMarkup(inline_keyboard=[_invoice_cancel_row(i18n, lang_code, tariff_code)])
+
+
+def notification_keyboard(i18n: JsonI18n, lang_code: str) -> InlineKeyboardMarkup:
+    """Subscription-expiry notification: a single button that opens the tariff-selection menu."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                _button(
+                    i18n.gettext("notification.button.buy", lang_code),
+                    icon_key="menu.button.buy",
+                    callback_data=CB_BUY,
+                )
+            ]
+        ]
+    )
+
+
+def invoice_failed_keyboard(
+    i18n: JsonI18n, settings: Settings, lang_code: str
+) -> InlineKeyboardMarkup:
+    """Shown when invoice creation fails: back to the tariff menu + a support link."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                _button(
+                    i18n.gettext("buy.back", lang_code),
+                    icon_key="nav.back",
+                    callback_data=CB_BUY,
+                )
+            ],
+            [
+                _button(
+                    i18n.gettext("support.button", lang_code),
+                    icon_key="support.button",
+                    url=_support_url(settings),
+                )
+            ],
+        ]
+    )
 
 
 def _support_url(settings: Settings) -> str:

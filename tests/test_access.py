@@ -348,7 +348,9 @@ def test_access_and_payment_locale_keys_are_available() -> None:
     i18n = JsonI18n(fallback_language="en")
 
     for language in ("en", "ru", "ua"):
-        links_text = i18n.gettext("access.links.text", language, links="Signals: link")
+        links_text = i18n.gettext(
+            "access.links.text", language, sparkles="✨", links="Signals: link"
+        )
         empty_text = i18n.gettext(
             "access.empty.text",
             language,

@@ -183,11 +183,18 @@ async def send_access_links(
     )
     # Local import avoids a services→keyboards import at module load; the button lets the user
     # delete this one-time links message once they have joined.
+    from bot.core.text_emoji import text_emoji
     from bot.keyboards import dismiss_keyboard
 
+    text = i18n.gettext(
+        "access.links.text", lang_code, sparkles=text_emoji("sparkles"), links=links
+    )
+    if settings.access.docs_footer_enabled:
+        footer = i18n.gettext("access.links.footer", lang_code, docs_url=settings.bot.docs_url)
+        text = f"{text}\n\n{footer}"
     await bot.send_message(
         chat_id=tg_id,
-        text=i18n.gettext("access.links.text", lang_code, links=links),
+        text=text,
         reply_markup=dismiss_keyboard(i18n, lang_code),
     )
 

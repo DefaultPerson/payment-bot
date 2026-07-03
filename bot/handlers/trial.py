@@ -21,10 +21,22 @@ from bot.keyboards import (
     main_menu_keyboard,
     trial_confirm_keyboard,
 )
+from bot.repos.tariffs import get_plan, resolve_plan_code
 from bot.services.access import send_access_links
 from bot.services.trial import TrialResult, activate_trial, trial_availability
 
 logger = logging.getLogger(__name__)
+
+
+def _plan_title(settings: Settings, plan_code: str | None) -> str:
+    """Human plan title for the trial dialog, falling back to the code (empty when unknown)."""
+    if plan_code is None:
+        return ""
+    try:
+        plan = get_plan(settings, plan_code)
+    except LookupError:
+        return plan_code
+    return plan.title or plan.code
 
 _ALERT_KEYS: dict[str, str] = {
     "already_used": "trial.already_used",
@@ -64,9 +76,15 @@ async def trial_start_callback(
         await callback.answer(i18n.gettext("trial.unavailable", lang_code), show_alert=True)
         return
 
+    plan_title = _plan_title(settings, resolve_plan_code(settings, settings.trial.tariff_code))
     await _edit_text_or_answer(
         callback,
-        i18n.gettext("trial.confirm.text", lang_code, days=settings.trial.duration_days),
+        i18n.gettext(
+            "trial.confirm.text",
+            lang_code,
+            days=settings.trial.duration_days,
+            plan=plan_title,
+        ),
         reply_markup=trial_confirm_keyboard(i18n, lang_code),
     )
 
@@ -138,6 +156,7 @@ async def trial_confirm_callback(
             lang_code,
             days=result.duration_days,
             expires_at=fmt_dt(result.expires_at),
+            plan=_plan_title(settings, result.plan_code),
         ),
     )
 

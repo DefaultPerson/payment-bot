@@ -16,7 +16,7 @@ from bot.core.db import session_scope
 from bot.core.i18n import JsonI18n
 from bot.core.logger import ServiceChannel
 from bot.core.service_events import fmt_dt, render_event, user_mention
-from bot.keyboards import profile_keyboard
+from bot.keyboards import notification_keyboard
 from bot.models import Subscription, User
 from bot.repos.subscriptions import (
     get_subscriptions_due_0d_notification,
@@ -227,9 +227,9 @@ async def _process_notification_batch(
                     kind,
                     user.lang_code,
                     expires_at=subscription.expires_at,
-                    support_url=_support_url(settings),
+                    grace_days=settings.loyalty.status_grace_days,
                 ),
-                reply_markup=profile_keyboard(i18n, settings, user.lang_code),
+                reply_markup=notification_keyboard(i18n, user.lang_code),
             )
         except Exception:
             logger.exception(

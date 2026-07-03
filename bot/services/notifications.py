@@ -17,7 +17,7 @@ def format_subscription_notification(
     lang_code: str,
     *,
     expires_at: datetime,
-    support_url: str,
+    grace_days: int,
 ) -> str:
     key = NOTIFICATION_KEYS.get(kind)
     if key is None:
@@ -28,7 +28,7 @@ def format_subscription_notification(
         key,
         lang_code,
         expires_at=_format_datetime(expires_at),
-        support_url=support_url,
+        grace_days=grace_days,
     )
 
 

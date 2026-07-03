@@ -243,15 +243,17 @@ def _user_previews(i18n: JsonI18n, settings: Settings, lang: str) -> list[Previe
                                  payment_key="buy.pay.tribute")),
         Preview("user", "19 · Invoice failed", g("buy.invoice.failed")),
         Preview("user", "20 · Payment success", g("payment.success.text")),
-        Preview("user", "21 · Access links delivered", g("access.links.text", links=access_links)),
+        Preview("user", "21 · Access links delivered",
+                g("access.links.text", sparkles="✨", links=access_links)
+                + "\n\n" + g("access.links.footer", docs_url=settings.bot.docs_url)),
         Preview("user", "22 · Access — no chats configured",
                 g("access.empty.text", support_url=support_url)),
         Preview("user", "23 · Trial — confirm dialog",
-                g("trial.confirm.text", days=settings.trial.duration_days),
+                g("trial.confirm.text", days=settings.trial.duration_days, plan="HMonitors PRO"),
                 trial_confirm_keyboard(i18n, lang)),
         Preview("user", "24 · Trial — started",
                 g("trial.success.text", days=settings.trial.duration_days,
-                  expires_at=_EXPIRES_SHORT)),
+                  expires_at=_EXPIRES_SHORT, plan="HMonitors PRO")),
         Preview("user", "25 · Trial — states (alerts)",
                 "\n\n".join((
                     "• already_used: " + g("trial.already_used"),
@@ -295,7 +297,6 @@ def _user_previews(i18n: JsonI18n, settings: Settings, lang: str) -> list[Previe
 # NOTIFY — subscription-lifecycle DM reminders
 # ---------------------------------------------------------------------------------------
 def _notify_previews(i18n: JsonI18n, settings: Settings, lang: str) -> list[Preview]:
-    support_url = f"https://t.me/{settings.bot.support_username}"
     labels = {
         "3d": "36 · Notification — 3 days before expiry",
         "0d": "37 · Notification — day of expiry",
@@ -304,7 +305,7 @@ def _notify_previews(i18n: JsonI18n, settings: Settings, lang: str) -> list[Prev
     return [
         Preview("notify", labels[kind],
                 format_subscription_notification(
-                    i18n, kind, lang, expires_at=_EXPIRES, support_url=support_url))
+                    i18n, kind, lang, expires_at=_EXPIRES, grace_days=7))
         for kind in ("3d", "0d", "post")
     ]
 
