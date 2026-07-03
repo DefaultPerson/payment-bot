@@ -117,7 +117,7 @@ async def test_get_user_by_tg_id_returns_none_when_absent() -> None:
     assert await get_user_by_tg_id(session, 999_999) is None
 
 
-async def test_upsert_user_from_telegram_creates_user_with_normalized_language() -> None:
+async def test_upsert_user_from_telegram_seeds_fallback_language_ignoring_telegram_locale() -> None:
     session = FakeAsyncSession()
     i18n = JsonI18n()
 
@@ -134,7 +134,9 @@ async def test_upsert_user_from_telegram_creates_user_with_normalized_language()
     assert user.tg_id == 12345
     assert user.username == "hydra_user"
     assert user.first_name == "Hydra"
-    assert user.lang_code == "ua"
+    # New users default to the fallback language regardless of a (supported) Telegram locale;
+    # they pick their language explicitly on first /start.
+    assert user.lang_code == "ru"
     assert user.status is UserStatus.basic
     assert user.total_active_days == 0
     assert user.created_at.tzinfo is UTC
@@ -158,7 +160,7 @@ async def test_upsert_user_from_telegram_with_created_reports_inserted_user() ->
     assert result.created is True
     assert result.user.id == 1
     assert result.user.tg_id == 12345
-    assert result.user.lang_code == "ua"
+    assert result.user.lang_code == "ru"
 
 
 async def test_upsert_user_from_telegram_with_created_reports_existing_user_on_conflict() -> None:
@@ -336,13 +338,14 @@ async def test_ensure_minimal_user_creates_missing_user_with_fallback_language()
     assert session.flushed == 1
 
 
-async def test_ensure_minimal_user_creates_missing_user_with_telegram_language() -> None:
+async def test_ensure_minimal_user_ignores_telegram_language_and_seeds_fallback() -> None:
     session = FakeAsyncSession()
     i18n = JsonI18n()
 
     user = await ensure_minimal_user(session, tg_id=54321, i18n=i18n, language_code="uk")
 
-    assert user.lang_code == "ua"
+    # Lazily-created users default to the fallback language too, ignoring the Telegram locale.
+    assert user.lang_code == "ru"
 
 
 async def test_ensure_minimal_user_uses_postgres_conflict_safe_insert() -> None:

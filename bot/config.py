@@ -32,6 +32,15 @@ class BotConfig(BaseModel):
             raise ValueError(msg)
         return self
 
+    @model_validator(mode="after")
+    def default_support_url_from_username(self) -> BotConfig:
+        # Keep the two support settings in sync: when ``support_url`` is not explicitly
+        # configured (or left blank), derive it from ``support_username`` so a deployment
+        # that only sets the username still gets a working support link on every button.
+        if "support_url" not in self.model_fields_set or not self.support_url.strip():
+            self.support_url = f"https://t.me/{self.support_username}"
+        return self
+
 
 class ServiceChannelConfig(BaseModel):
     chat_id: int | None = None

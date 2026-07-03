@@ -23,6 +23,7 @@ from bot.core.db import check_database, create_engine, create_session_factory
 from bot.core.http import HealthDependencies, HealthState, create_http_app
 from bot.core.i18n import JsonI18n
 from bot.core.logger import ServiceChannel, setup_json_logging
+from bot.core.menu import configure_commands
 from bot.core.metrics import PaymentBotMetrics, create_metrics
 from bot.core.redis import check_redis, create_redis_client
 from bot.core.service_events import (
@@ -408,6 +409,7 @@ async def main() -> None:
             locales_dir=Path(__file__).resolve().parent / "locales",
             fallback_language=settings.bot.fallback_language,
         )
+        await configure_commands(bot, i18n, settings)
         service_channel = ServiceChannel(bot, settings)
         cryptobot_client = build_cryptobot_client(settings)
         xrocket_client = build_xrocket_client(settings)

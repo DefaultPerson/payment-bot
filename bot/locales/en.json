@@ -3,6 +3,7 @@
   "start.status.free": "Free",
   "commands.start": "Open the main menu",
   "commands.language": "Change interface language",
+  "language.prompt": "🌐 Выберите язык · Choose your language · Оберіть мову",
   "menu.button.buy": "Subscribe",
   "menu.button.trial": "Free trial",
   "menu.button.profile": "Profile",

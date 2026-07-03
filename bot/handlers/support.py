@@ -66,7 +66,7 @@ def _support_text(i18n: JsonI18n, settings: Settings, lang_code: str) -> str:
     return i18n.gettext(
         "support.text",
         lang_code,
-        support_url=f"https://t.me/{settings.bot.support_username}",
+        support_url=settings.bot.support_url,
     )
 
 

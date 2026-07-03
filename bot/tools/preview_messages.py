@@ -119,7 +119,7 @@ class Preview:
 # ---------------------------------------------------------------------------------------
 def _user_previews(i18n: JsonI18n, settings: Settings, lang: str) -> list[Preview]:
     g = lambda key, **kw: i18n.gettext(key, lang, **kw)  # noqa: E731
-    support_url = f"https://t.me/{settings.bot.support_username}"
+    support_url = settings.bot.support_url
     start_text = build_start_text(i18n, settings, lang, status_label=g("start.status.free"))
     trial_cta = g("start.trial.cta", days=settings.trial.duration_days, new=text_emoji("new"))
 

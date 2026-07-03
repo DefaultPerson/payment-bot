@@ -168,6 +168,8 @@ async def test_start_calls_user_upsert_commands_and_answers_main_menu(monkeypatc
 
     async def fake_upsert(session: FakeSession, **kwargs: Any) -> UpsertedUser:
         upsert_calls.append({"session": session, **kwargs})
+        # A returning user (created=False) lands straight on the main menu; a brand-new user
+        # gets the language picker first (covered by test_start_new_user_gets_language_picker).
         return UpsertedUser(
             user=PersistedUser(
                 tg_id=kwargs["tg_id"],
@@ -175,7 +177,7 @@ async def test_start_calls_user_upsert_commands_and_answers_main_menu(monkeypatc
                 first_name=kwargs["first_name"],
                 lang_code="en",
             ),
-            created=True,
+            created=False,
         )
 
     async def fake_set_user_commands(*args: Any, **kwargs: Any) -> None:
@@ -236,6 +238,60 @@ async def test_start_calls_user_upsert_commands_and_answers_main_menu(monkeypatc
     assert "Hydra Monitors" in message.answers[0]["text"]
     assert "<b>Tariff:</b> <code>Free</code>" in message.answers[0]["text"]
     assert message.answers[0]["reply_markup"] is menu_markup
+
+
+async def test_start_new_user_gets_language_picker(monkeypatch) -> None:
+    import bot.handlers.start as start_module
+
+    keyboard_calls: list[str] = []
+    language_markup = object()
+
+    async def fake_upsert(session: FakeSession, **kwargs: Any) -> UpsertedUser:
+        return UpsertedUser(
+            user=PersistedUser(
+                tg_id=kwargs["tg_id"],
+                username=kwargs["username"],
+                first_name=kwargs["first_name"],
+                lang_code="ru",
+            ),
+            created=True,
+        )
+
+    def fake_language_keyboard(i18n: JsonI18n, lang_code: str) -> object:
+        keyboard_calls.append(lang_code)
+        return language_markup
+
+    def fail_main_menu_keyboard(*args: Any, **kwargs: Any) -> object:
+        raise AssertionError("a brand-new user must see the language picker, not the main menu")
+
+    monkeypatch.setattr(start_module, "upsert_user_from_telegram_with_created", fake_upsert)
+    monkeypatch.setattr(start_module, "set_user_commands", _noop_async)
+    monkeypatch.setattr(start_module, "language_keyboard", fake_language_keyboard)
+    monkeypatch.setattr(start_module, "main_menu_keyboard", fail_main_menu_keyboard)
+    monkeypatch.setattr(start_module, "get_subscription_for_user", _fake_no_subscription)
+
+    message = FakeMessage(
+        from_user=FakeTelegramUser(
+            id=42, username="newcomer", first_name="New", language_code="uk"
+        ),
+        chat=FakeChat(id=42),
+    )
+
+    await start(
+        message,
+        settings=Settings(bot={"support_username": "HydraSupport"}),
+        i18n=JsonI18n(),
+        session_factory=FakeSessionFactory(),
+        bot=object(),
+    )
+
+    assert len(message.answers) == 1
+    # The trilingual first-contact prompt, not the welcome text.
+    assert "Choose your language" in message.answers[0]["text"]
+    assert "Hydra Monitors" not in message.answers[0]["text"]
+    assert message.answers[0]["reply_markup"] is language_markup
+    # New users are seeded with (and the picker renders in) the fallback language.
+    assert keyboard_calls == ["ru"]
 
 
 async def test_start_clears_pending_fsm_state(monkeypatch) -> None:

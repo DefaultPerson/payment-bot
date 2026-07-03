@@ -17,7 +17,7 @@ from bot.core.db import session_scope
 from bot.core.i18n import JsonI18n
 from bot.core.menu import set_user_commands
 from bot.core.text_emoji import text_emoji
-from bot.keyboards import CB_DISMISS, CB_MENU, main_menu_keyboard
+from bot.keyboards import CB_DISMISS, CB_MENU, language_keyboard, main_menu_keyboard
 from bot.repos.subscriptions import get_subscription_for_user
 from bot.repos.users import ensure_minimal_user, upsert_user_from_telegram_with_created
 from bot.services.profile import profile_plan_label
@@ -124,6 +124,7 @@ async def start(
     lang_code = i18n.resolve_language(context.language_code)
     referral_result: ReferralBindResult | None = None
     trial_available = False
+    is_new_user = False
     now = datetime.now(UTC)
     status_label = i18n.gettext("start.status.free", lang_code)
 
@@ -140,6 +141,7 @@ async def start(
                 )
                 user = upserted_user.user
                 lang_code = user.lang_code
+                is_new_user = upserted_user.created
                 referrer_tg_id = parse_referral_payload(getattr(message, "text", None))
                 if referrer_tg_id is not None and upserted_user.created:
                     referral_result = await bind_referral_from_start(
@@ -171,6 +173,15 @@ async def start(
                 is_admin=context.is_admin,
             )
 
+    if is_new_user:
+        # First contact: let the user pick a language explicitly (new accounts default to the
+        # fallback language, not their Telegram locale). Selecting one re-renders the welcome
+        # + main menu via language_callback. Any referral feedback rides along on the prompt.
+        prompt = i18n.gettext("language.prompt", lang_code)
+        prompt = f"{prompt}{_referral_feedback(i18n, lang_code, referral_result)}"
+        await message.answer(prompt, reply_markup=language_keyboard(i18n, lang_code))
+        return
+
     text = _start_text_with_referral_feedback(
         i18n,
         settings,
@@ -199,13 +210,22 @@ def _start_text_with_referral_feedback(
     text = build_start_text(
         i18n, settings, lang_code, status_label=status_label, trial_available=trial_available
     )
+    return f"{text}{_referral_feedback(i18n, lang_code, referral_result)}"
+
+
+def _referral_feedback(
+    i18n: JsonI18n,
+    lang_code: str,
+    referral_result: ReferralBindResult | None,
+) -> str:
+    """Trailing referral-binding note appended to the welcome / language prompt (or "")."""
     if referral_result is None:
-        return text
+        return ""
     if referral_result.status is ReferralBindStatus.applied:
-        return f"{text}\n\n{i18n.gettext('referral.start.applied', lang_code)}"
+        return f"\n\n{i18n.gettext('referral.start.applied', lang_code)}"
     if referral_result.status is ReferralBindStatus.rebind_rejected:
-        return f"{text}\n\n{i18n.gettext('referral.start.rebind_rejected', lang_code)}"
-    return text
+        return f"\n\n{i18n.gettext('referral.start.rebind_rejected', lang_code)}"
+    return ""
 
 
 async def back_to_menu_callback(

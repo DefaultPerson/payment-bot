@@ -75,12 +75,14 @@ async def upsert_user_from_telegram_with_created(
     i18n: JsonI18n,
 ) -> UpsertedTelegramUser:
     now = datetime.now(UTC)
+    # New users are seeded with the fallback language regardless of their Telegram locale;
+    # the first /start shows a language picker so they choose explicitly (see start handler).
     created = await _insert_user_if_missing(
         session,
         tg_id=tg_id,
         username=username,
         first_name=first_name,
-        lang_code=resolve_language(i18n, language_code),
+        lang_code=i18n.fallback_language,
         now=now,
     )
     user = await get_user_by_tg_id(session, tg_id)
@@ -129,12 +131,14 @@ async def ensure_minimal_user(
         return user
 
     now = datetime.now(UTC)
+    # Lazily-created users (non-/start entry points) also default to the fallback language;
+    # they pick explicitly via the language menu. Existing users keep their stored language.
     await _insert_user_if_missing(
         session,
         tg_id=tg_id,
         username=None,
         first_name=None,
-        lang_code=resolve_language(i18n, language_code),
+        lang_code=i18n.fallback_language,
         now=now,
     )
     await session.flush()

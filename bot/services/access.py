@@ -249,4 +249,4 @@ def _invite_name(title: str) -> str:
 
 
 def _support_url(settings: Settings) -> str:
-    return f"https://t.me/{settings.bot.support_username}"
+    return settings.bot.support_url

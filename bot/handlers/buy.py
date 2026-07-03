@@ -899,7 +899,7 @@ def _callback_answer_text(text: str) -> str:
 
 
 def _support_url(settings: Settings) -> str:
-    return f"https://t.me/{settings.bot.support_username}"
+    return settings.bot.support_url
 
 
 def _promo_error_text(i18n: JsonI18n, lang_code: str, reason: str) -> str:

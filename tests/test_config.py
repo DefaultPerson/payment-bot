@@ -18,6 +18,26 @@ def test_default_settings_are_safe_for_tests() -> None:
     assert settings.admin_ids == []
 
 
+def test_support_url_defaults_to_configured_username() -> None:
+    settings = Settings(bot={"support_username": "HydraSupport"})
+
+    assert settings.bot.support_url == "https://t.me/HydraSupport"
+
+
+def test_support_url_explicit_override_is_kept() -> None:
+    settings = Settings(
+        bot={"support_username": "HydraSupport", "support_url": "https://example.com/help"}
+    )
+
+    assert settings.bot.support_url == "https://example.com/help"
+
+
+def test_blank_support_url_falls_back_to_username_link() -> None:
+    settings = Settings(bot={"support_username": "HydraSupport", "support_url": "  "})
+
+    assert settings.bot.support_url == "https://t.me/HydraSupport"
+
+
 def test_phase2_cryptobot_config_defaults_are_safe_for_tests() -> None:
     settings = Settings()
 
