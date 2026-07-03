@@ -3,14 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-import pytest
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.methods import SendMessage
 from sqlalchemy.exc import SQLAlchemyError
 
 from bot.config import Settings
 from bot.core.i18n import JsonI18n
-from bot.keyboards import CB_BUY, CB_ENTER_CHAT, CB_PROMO, CB_RENEW
 
 
 @dataclass(slots=True)
@@ -714,26 +712,98 @@ async def test_support_callback_answers_when_edit_raises_bad_request(monkeypatch
     ]
 
 
-def test_buy_button_is_not_a_future_callback() -> None:
-    import bot.handlers.support as support_module
-
-    assert CB_BUY not in support_module.FUTURE_CALLBACKS
-
-
-@pytest.mark.parametrize("callback_data", [CB_PROMO, CB_RENEW, CB_ENTER_CHAT])
-async def test_future_buttons_answer_coming_soon_without_db_mutation(callback_data: str) -> None:
-    import bot.handlers.support as support_module
-
-    callback = FakeCallback(
-        data=callback_data,
-        from_user=FakeTelegramUser(id=1001, language_code="en"),
-        message=FakeMessage(chat=FakeChat(id=1001)),
-    )
-
-    await support_module.coming_soon_callback(callback, i18n=JsonI18n())
-
-    assert callback.answers == [{"text": "This feature is coming soon.", "show_alert": False}]
-
-
 async def _async_return(value: object) -> object:
     return value
+
+
+@dataclass(slots=True)
+class FakeSubscription:
+    expires_at: Any
+    plan_code: str | None = None
+
+
+async def test_enter_chat_sends_access_links_for_active_subscription(monkeypatch) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    import bot.handlers.profile as profile_module
+
+    calls: list[dict[str, Any]] = []
+
+    monkeypatch.setattr(
+        profile_module,
+        "ensure_minimal_user",
+        lambda *a, **k: _async_return(FakeUserRecord(id=7, tg_id=700, lang_code="en")),
+    )
+    subscription = FakeSubscription(
+        expires_at=datetime.now(UTC) + timedelta(days=5), plan_code="pro"
+    )
+    monkeypatch.setattr(
+        profile_module,
+        "get_subscription_for_user",
+        lambda *a, **k: _async_return(subscription),
+    )
+
+    async def fake_send_access_links(*args: Any, **kwargs: Any) -> None:
+        calls.append(kwargs)
+
+    monkeypatch.setattr(profile_module, "send_access_links", fake_send_access_links)
+
+    callback = FakeCallback(
+        data="enter_chat",
+        from_user=FakeTelegramUser(id=700, language_code="en"),
+        message=FakeMessage(from_user=None, chat=FakeChat(id=700)),
+    )
+
+    await profile_module.enter_chat_callback(
+        callback,
+        settings=Settings(),
+        i18n=JsonI18n(),
+        session_factory=FakeSessionFactory(),
+        bot=object(),
+    )
+
+    assert len(calls) == 1
+    assert calls[0]["plan_code"] == "pro"
+    assert calls[0]["tg_id"] == 700
+    assert callback.answers == [{"text": "Access links sent."}]
+
+
+async def test_enter_chat_alerts_without_active_subscription(monkeypatch) -> None:
+    import bot.handlers.profile as profile_module
+
+    monkeypatch.setattr(
+        profile_module,
+        "ensure_minimal_user",
+        lambda *a, **k: _async_return(FakeUserRecord(id=7, tg_id=700, lang_code="en")),
+    )
+    monkeypatch.setattr(
+        profile_module,
+        "get_subscription_for_user",
+        lambda *a, **k: _async_return(None),
+    )
+
+    async def fail_send(*args: Any, **kwargs: Any) -> None:
+        raise AssertionError("must not send access links without an active subscription")
+
+    monkeypatch.setattr(profile_module, "send_access_links", fail_send)
+
+    callback = FakeCallback(
+        data="enter_chat",
+        from_user=FakeTelegramUser(id=700, language_code="en"),
+        message=FakeMessage(from_user=None, chat=FakeChat(id=700)),
+    )
+
+    await profile_module.enter_chat_callback(
+        callback,
+        settings=Settings(),
+        i18n=JsonI18n(),
+        session_factory=FakeSessionFactory(),
+        bot=object(),
+    )
+
+    assert callback.answers == [
+        {
+            "text": "No active subscription. Get a subscription to unlock chat access.",
+            "show_alert": True,
+        }
+    ]

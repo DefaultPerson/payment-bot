@@ -11,6 +11,10 @@ class AdminRefsetState(StatesGroup):
     waiting_input = State()  # "<tg_id> <percent>"
 
 
+class AdminRefResetState(StatesGroup):
+    waiting_input = State()  # "<tg_id>" — zero the user's referral balance
+
+
 class AdminPromoState(StatesGroup):
     code = State()
     kind = State()

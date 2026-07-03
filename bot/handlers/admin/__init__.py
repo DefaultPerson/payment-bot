@@ -7,9 +7,15 @@ from bot.handlers.admin import broadcast as broadcast_handlers
 from bot.handlers.admin import grant as grant_handlers
 from bot.handlers.admin import panel as panel_handlers
 from bot.handlers.admin import promo as promo_handlers
+from bot.handlers.admin import refreset as refreset_handlers
 from bot.handlers.admin import refset as refset_handlers
 from bot.handlers.admin import stats as stats_handlers
-from bot.handlers.admin.states import AdminGrantState, AdminPromoState, AdminRefsetState
+from bot.handlers.admin.states import (
+    AdminGrantState,
+    AdminPromoState,
+    AdminRefResetState,
+    AdminRefsetState,
+)
 from bot.keyboards.admin import (
     CB_ADM_BCAST,
     CB_ADM_CANCEL,
@@ -20,6 +26,7 @@ from bot.keyboards.admin import (
     CB_ADM_PROMO_CONFIRM,
     CB_ADM_PROMO_NEW,
     CB_ADM_PROMO_TARIFF_DONE,
+    CB_ADM_REFRESET,
     CB_ADM_REFSET,
     CB_ADM_ROOT,
     CB_ADM_SKIP,
@@ -50,6 +57,10 @@ def create_admin_router() -> Router:
     # Refset (FSM).
     router.callback_query(F.data == CB_ADM_REFSET, IsAdmin())(refset_handlers.refset_start)
     router.message(AdminRefsetState.waiting_input, IsAdmin())(refset_handlers.refset_input)
+
+    # Refreset — zero a user's referral balance (FSM).
+    router.callback_query(F.data == CB_ADM_REFRESET, IsAdmin())(refreset_handlers.refreset_start)
+    router.message(AdminRefResetState.waiting_input, IsAdmin())(refreset_handlers.refreset_input)
 
     # Broadcast (panel entry + the existing segment composer).
     router.callback_query(F.data == CB_ADM_BCAST, IsAdmin())(broadcast_handlers.broadcast_entry)

@@ -188,13 +188,6 @@ def profile_keyboard(i18n: JsonI18n, settings: Settings, lang_code: str) -> Inli
         inline_keyboard=[
             [
                 _button(
-                    i18n.gettext("profile.button.renew", lang_code),
-                    icon_key="profile.button.renew",
-                    callback_data=CB_RENEW,
-                )
-            ],
-            [
-                _button(
                     i18n.gettext("profile.button.enter_chat", lang_code),
                     icon_key="profile.button.enter_chat",
                     callback_data=CB_ENTER_CHAT,
@@ -205,6 +198,12 @@ def profile_keyboard(i18n: JsonI18n, settings: Settings, lang_code: str) -> Inli
                     i18n.gettext("profile.button.support", lang_code),
                     icon_key="profile.button.support",
                     url=_support_url(settings),
+                )
+            ],
+            [
+                _button(
+                    i18n.gettext("menu.back", lang_code),
+                    callback_data=CB_MENU,
                 )
             ],
         ]

@@ -231,7 +231,10 @@ def test_profile_keyboard_contains_expected_actions_and_support_url() -> None:
 
     keyboard = keyboards.profile_keyboard(JsonI18n(), settings, "en")
 
-    assert {keyboards.CB_RENEW, keyboards.CB_ENTER_CHAT} <= keyboard_callback_data(keyboard)
+    callbacks = keyboard_callback_data(keyboard)
+    assert keyboards.CB_ENTER_CHAT in callbacks
+    assert keyboards.CB_MENU in callbacks  # back-to-menu button at the bottom
+    assert keyboards.CB_RENEW not in callbacks  # broken "renew" button removed
     assert "https://t.me/HydraSupport" in keyboard_urls(keyboard)
 
 
@@ -411,7 +414,11 @@ def test_profile_text_locale_formats_expected_kwargs() -> None:
     text = JsonI18n().gettext(
         "profile.text",
         "en",
+        profile_emoji="👤",
+        referral_emoji="👥",
+        free_emoji="🆓",
         tg_id=42,
+        plan="Free",
         status="Bronze",
         status_value="bronze",
         total_active_days=40,
@@ -427,6 +434,7 @@ def test_profile_text_locale_formats_expected_kwargs() -> None:
     )
 
     assert "42" in text
+    assert "Free" in text
     assert "Bronze" in text
     assert "40" in text
     assert "Active" in text

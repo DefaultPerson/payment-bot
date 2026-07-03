@@ -16,6 +16,7 @@ CB_ADM_ROOT = "adm:root"
 CB_ADM_CLOSE = "adm:close"
 CB_ADM_GRANT = "adm:grant"
 CB_ADM_REFSET = "adm:refset"
+CB_ADM_REFRESET = "adm:refreset"
 CB_ADM_PROMO = "adm:promo"
 CB_ADM_PROMO_NEW = "adm:promo:new"
 CB_ADM_PROMO_CONFIRM = "adm:promo:confirm"
@@ -50,6 +51,7 @@ def root_keyboard(i18n: JsonI18n, lang: str) -> InlineKeyboardMarkup:
         inline_keyboard=[
             [_btn(_t(i18n, lang, "admin.panel.button.grant"), CB_ADM_GRANT)],
             [_btn(_t(i18n, lang, "admin.panel.button.refset"), CB_ADM_REFSET)],
+            [_btn(_t(i18n, lang, "admin.panel.button.refreset"), CB_ADM_REFRESET)],
             [_btn(_t(i18n, lang, "admin.panel.button.promo"), CB_ADM_PROMO)],
             [_btn(_t(i18n, lang, "admin.panel.button.broadcast"), CB_ADM_BCAST)],
             [_btn(_t(i18n, lang, "admin.panel.button.stats"), CB_ADM_STATS)],

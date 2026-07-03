@@ -55,7 +55,7 @@ from bot.core.service_events import (
     render_event,
     user_mention,
 )
-from bot.core.text_emoji import welcome_emoji
+from bot.core.text_emoji import text_emoji
 from bot.handlers.admin.broadcast import _segment_keyboard
 from bot.handlers.admin.stats import _format_stats
 from bot.handlers.buy import _duration_menu_text, _format_quote_text
@@ -121,7 +121,7 @@ def _user_previews(i18n: JsonI18n, settings: Settings, lang: str) -> list[Previe
     g = lambda key, **kw: i18n.gettext(key, lang, **kw)  # noqa: E731
     support_url = f"https://t.me/{settings.bot.support_username}"
     start_text = build_start_text(i18n, settings, lang, status_label=g("start.status.free"))
-    trial_cta = g("start.trial.cta", days=settings.trial.duration_days, new=welcome_emoji("new"))
+    trial_cta = g("start.trial.cta", days=settings.trial.duration_days, new=text_emoji("new"))
 
     base_quote = quote_tariff(settings, _QUOTE_CODE, UserStatus.basic)
     promo_discount_quote = replace(

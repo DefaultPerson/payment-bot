@@ -12,18 +12,10 @@ from bot.config import Settings
 from bot.core.db import session_scope
 from bot.core.i18n import JsonI18n
 from bot.handlers.start import callback_context
-from bot.keyboards import (
-    CB_ENTER_CHAT,
-    CB_RENEW,
-    CB_SUPPORT,
-    support_keyboard,
-)
+from bot.keyboards import CB_SUPPORT, support_keyboard
 from bot.repos.users import ensure_minimal_user
 
 logger = logging.getLogger(__name__)
-
-# CB_ADMIN is no longer "coming soon" — it opens the real admin panel (admin router).
-FUTURE_CALLBACKS = frozenset({CB_RENEW, CB_ENTER_CHAT})
 
 
 async def support_callback(
@@ -49,12 +41,6 @@ async def support_callback(
         _support_text(i18n, settings, lang_code),
         reply_markup=support_keyboard(i18n, settings, lang_code),
     )
-
-
-async def coming_soon_callback(callback: CallbackQuery, i18n: JsonI18n) -> None:
-    from_user = getattr(callback, "from_user", None)
-    lang_code = i18n.resolve_language(getattr(from_user, "language_code", None))
-    await callback.answer(i18n.gettext("coming_soon.text", lang_code), show_alert=False)
 
 
 async def _resolve_user_language(
@@ -106,5 +92,4 @@ async def _edit_text_or_answer(
 def create_support_router() -> Router:
     router = Router(name="support")
     router.callback_query(F.data == CB_SUPPORT)(support_callback)
-    router.callback_query(F.data.in_(FUTURE_CALLBACKS))(coming_soon_callback)
     return router

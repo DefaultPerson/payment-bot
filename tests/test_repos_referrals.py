@@ -14,6 +14,7 @@ from bot.repos.referrals import (
     create_referral_earning_once,
     get_referral_by_referee_id,
     get_referral_stats,
+    reset_referral_balance,
     set_custom_percent_for_referrer,
     spend_referral_balance,
 )
@@ -369,3 +370,41 @@ async def test_spend_referral_balance_rejects_when_short(session_factory: Any) -
 
         assert excinfo.value.available == Decimal("5.00")
         assert (referrer.referral_spent_usd or Decimal("0.00")) == Decimal("0.00")
+
+
+async def test_reset_referral_balance_zeros_available(session_factory: Any) -> None:
+    async with session_factory() as session:
+        referrer = User(tg_id=3001, lang_code="en")
+        referee = User(tg_id=3002, lang_code="en")
+        session.add_all([referrer, referee])
+        await session.flush()
+        session.add_all(
+            [
+                ReferralEarning(
+                    referrer_id=referrer.id,
+                    referee_id=referee.id,
+                    invoice_id=10,
+                    amount_usd=Decimal("20.00"),
+                    created_at=NOW,
+                ),
+                ReferralEarning(
+                    referrer_id=referrer.id,
+                    referee_id=referee.id,
+                    invoice_id=11,
+                    amount_usd=Decimal("5.00"),
+                    created_at=NOW,
+                ),
+            ]
+        )
+        await session.flush()
+        await spend_referral_balance(session, user=referrer, amount=Decimal("4.00"))
+
+        cleared = await reset_referral_balance(session, referrer=referrer, now=NOW)
+
+        assert cleared == 2  # both outstanding earnings settled
+        assert referrer.referral_spent_usd == Decimal("0.00")
+        stats = await get_referral_stats(session, referrer_id=referrer.id)
+        assert stats.earned_usd == Decimal("25.00")  # lifetime history preserved
+        assert stats.unpaid_earned_usd == Decimal("0.00")
+        assert stats.spent_usd == Decimal("0.00")
+        assert stats.available_usd == Decimal("0.00")

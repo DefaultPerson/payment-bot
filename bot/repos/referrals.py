@@ -205,3 +205,38 @@ async def spend_referral_balance(
     locked.referral_spent_usd = spent + amount
     await session.flush()
     return available - amount
+
+
+async def reset_referral_balance(
+    session: AsyncSession,
+    *,
+    referrer: User,
+    now: datetime,
+) -> int:
+    """Zero a user's spendable/withdrawable referral balance; return earnings cleared.
+
+    Marks all outstanding earnings ``paid_out`` and resets ``referral_spent_usd`` to 0, so the
+    derived available balance (Σ unpaid − spent) becomes 0. Lifetime ``earned_usd`` (sum of ALL
+    earnings) is preserved — this settles the balance, it does not erase history.
+    """
+    if referrer.id is None:
+        msg = "referrer must be persisted to reset referral balance"
+        raise ValueError(msg)
+
+    locked = await session.scalar(
+        select(User).where(User.id == referrer.id).with_for_update(),
+    )
+    if locked is None:
+        msg = f"user {referrer.id} was not found"
+        raise LookupError(msg)
+
+    earnings = await get_referral_earnings_for_referrer(session, referrer.id)
+    cleared = 0
+    for earning in earnings:
+        if not earning.paid_out:
+            earning.paid_out = True
+            earning.paid_out_at = now
+            cleared += 1
+    locked.referral_spent_usd = Decimal("0.00")
+    await session.flush()
+    return cleared

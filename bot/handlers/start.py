@@ -16,7 +16,7 @@ from bot.config import Settings
 from bot.core.db import session_scope
 from bot.core.i18n import JsonI18n
 from bot.core.menu import set_user_commands
-from bot.core.text_emoji import welcome_emoji
+from bot.core.text_emoji import text_emoji
 from bot.keyboards import CB_MENU, main_menu_keyboard
 from bot.repos.subscriptions import get_subscription_for_user
 from bot.repos.users import ensure_minimal_user, upsert_user_from_telegram_with_created
@@ -58,16 +58,15 @@ def build_start_text(
         cta = i18n.gettext(
             "start.trial.cta",
             language,
-            new=welcome_emoji("new"),
+            new=text_emoji("new"),
             days=settings.trial.duration_days,
         )
         trial_block = f"\n\n{cta}"
     return i18n.gettext(
         "start.text",
         language,
-        wave=welcome_emoji("wave"),
-        api=welcome_emoji("api"),
-        question=welcome_emoji("question"),
+        api=text_emoji("api"),
+        question=text_emoji("question"),
         trial_block=trial_block,
         status=status_label,
         support=f"@{settings.bot.support_username}",

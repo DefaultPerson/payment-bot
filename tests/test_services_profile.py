@@ -30,6 +30,7 @@ def test_profile_view_fields_match_service_contract() -> None:
         "referral_unpaid_earned_usd",
         "invite_link",
         "min_withdraw_usd",
+        "plan_label",
     ]
 
 
@@ -57,6 +58,7 @@ def test_build_profile_view_reports_inactive_subscription_without_expiration() -
         referral_unpaid_earned_usd=Decimal("0.00"),
         invite_link="https://t.me/HMPTbot?start=ref_123456789",
         min_withdraw_usd=Decimal("10"),
+        plan_label="",
     )
 
 
@@ -122,6 +124,7 @@ def test_format_profile_text_uses_i18n_keys(tmp_path) -> None:
                 "profile.subscription.inactive": "Inactive",
                 "profile.expires_at.none": "No active subscription",
                 "profile.next_tier.none": "Highest tier",
+                "profile.next_tier.days": "{days} days",
             },
         ),
         encoding="utf-8",
@@ -140,13 +143,14 @@ def test_format_profile_text_uses_i18n_keys(tmp_path) -> None:
         referral_unpaid_earned_usd=Decimal("0.00"),
         invite_link="https://t.me/HMPTbot?start=ref_123456789",
         min_withdraw_usd=Decimal("10"),
+        plan_label="Main",
     )
 
     text = format_profile_text(view, i18n, "en")
 
     assert text == (
         "tg=123456789; status=Bronze; days=40; subscription=Active; "
-        f"expires={expires_at.isoformat()}; next=50; referrals=0; earned=0.00; unpaid=0.00"
+        "expires=2026-06-27 12:00 UTC; next=50 days; referrals=0; earned=0.00; unpaid=0.00"
     )
 
 

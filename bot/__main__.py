@@ -31,9 +31,9 @@ from bot.core.service_events import (
     disable_event_emoji,
 )
 from bot.core.text_emoji import (
-    apply_valid_welcome_emoji,
-    configured_welcome_emoji_ids,
-    disable_welcome_emoji,
+    apply_valid_text_emoji,
+    configured_text_emoji_ids,
+    disable_text_emoji,
 )
 from bot.handlers import create_router
 from bot.handlers.provider_webhooks import (
@@ -156,29 +156,29 @@ async def configure_event_emoji(bot: Bot, settings: Settings) -> None:
         logger.warning("dropped invalid event emoji ids", extra={"emoji_ids": dropped})
 
 
-async def configure_welcome_emoji(bot: Bot, settings: Settings) -> None:
-    """Validate custom-emoji glyphs for the /start welcome text; fall back to plain unicode.
+async def configure_text_emoji(bot: Bot, settings: Settings) -> None:
+    """Validate custom-emoji glyphs used inside message text; fall back to plain unicode.
 
     A stale ``custom_emoji_id`` raises ``CUSTOM_EMOJI_INVALID`` and would fail the whole
-    welcome send, so any id Telegram cannot confirm is dropped to its plain glyph.
+    message send, so any id Telegram cannot confirm is dropped to its plain glyph.
     """
     if not settings.bot.custom_emoji_icons:
-        disable_welcome_emoji()
+        disable_text_emoji()
         return
-    ids = configured_welcome_emoji_ids()
+    ids = configured_text_emoji_ids()
     if not ids:
         return
     try:
         stickers = await bot.get_custom_emoji_stickers(ids)
     except Exception:
-        logger.warning("welcome emoji validation failed; using plain emoji", exc_info=True)
-        disable_welcome_emoji()
+        logger.warning("text emoji validation failed; using plain emoji", exc_info=True)
+        disable_text_emoji()
         return
     valid = {sticker.custom_emoji_id for sticker in stickers}
-    apply_valid_welcome_emoji(valid)
+    apply_valid_text_emoji(valid)
     dropped = sorted(set(ids) - valid)
     if dropped:
-        logger.warning("dropped invalid welcome emoji ids", extra={"emoji_ids": dropped})
+        logger.warning("dropped invalid text emoji ids", extra={"emoji_ids": dropped})
 
 
 async def start_http_server(app: web.Application, *, host: str, port: int) -> web.AppRunner:
@@ -401,7 +401,7 @@ async def main() -> None:
         await resolve_bot_username(bot, settings)
         await configure_menu_icons(bot, settings)
         await configure_event_emoji(bot, settings)
-        await configure_welcome_emoji(bot, settings)
+        await configure_text_emoji(bot, settings)
         fsm_storage = RedisStorage.from_url(settings.redis_url)
         dispatcher = Dispatcher(storage=fsm_storage)
         i18n = JsonI18n(
