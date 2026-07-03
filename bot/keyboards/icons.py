@@ -22,13 +22,13 @@ MENU_ICONS: dict[str, str] = {
     "menu.button.docs": "6030687898141987254",  # 🧭 documentation link
     "language.check": "5774022692642492953",  # ✅ selected-language marker
     "menu.button.referral": "5773677501825945508",  # 🎁
-    "menu.button.promo": "5888620056551625531",  # 🏷
+    "menu.button.promo": "5886285355279193209",  # 🏷 (2nd variation)
     "menu.button.support": "6030622631818956594",  # 💬 main-menu support (2nd variation)
     "menu.button.admin": "5904258298764334001",  # ⚙️
     "profile.button.renew": "5769248574499983619",  # 🔄
     "profile.button.enter_chat": "6035130900075777681",  # 🚪
     "access.button.dismiss": "6030757850274336631",  # ❌ delete the access-links message
-    "nav.back": "5895519358871932592",  # 📰 step-back button (one step within a flow)
+    "nav.back": "5893444447286334441",  # 📰 step-back button (2nd variation)
     "nav.home": "5938537205847822613",  # 🏡 return to the main menu
     "nav.cancel": "6030757850274336631",  # ❌ cancel button
     "profile.button.support": "6030622631818956594",  # 💬 unified support icon

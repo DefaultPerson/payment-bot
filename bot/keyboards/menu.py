@@ -248,8 +248,8 @@ def plan_keyboard(i18n: JsonI18n, settings: Settings, lang_code: str) -> InlineK
     rows.append(
         [
             _button(
-                i18n.gettext("menu.home", lang_code),
-                icon_key="nav.home",
+                i18n.gettext("buy.back", lang_code),
+                icon_key="nav.back",
                 callback_data=CB_MENU,
             )
         ]
