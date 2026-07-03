@@ -172,7 +172,7 @@ def format_profile_text(view: ProfileView, i18n: JsonI18n, lang_code: str) -> st
         invite_link=view.invite_link,
         min_withdraw_usd=f"{view.min_withdraw_usd:.2f}",
         referral_percent=_format_percent(view.referral_percent),
-        sparkles_emoji=text_emoji("sparkles"),
+        coin_emoji=text_emoji("coin"),
     )
 
 

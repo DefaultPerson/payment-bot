@@ -16,7 +16,7 @@
   "profile.button.renew": "Renew access",
   "profile.button.enter_chat": "Enter chat",
   "profile.button.support": "Support",
-  "profile.text": "{profile_emoji} <b>Profile</b>\n\n<b>Telegram ID:</b> <code>{tg_id}</code>\n<b>Loyalty:</b> {status}\n<b>Active days:</b> {total_active_days}\n<b>Next tier:</b> {days_to_next_tier}\n<b>Tariff:</b> <code>{plan}</code>\n<b>Expires:</b> {expires_at}\n\n{referral_emoji} <b>Referral program</b>\n\n<b>Invite link:</b> <code>{invite_link}</code>\n<b>Referrals:</b> {referral_count}\n<b>Percent:</b> {referral_percent}%\n<b>Lifetime earned:</b> ${referral_earned_usd}\n<b>Available for withdrawal:</b> ${referral_unpaid_earned_usd} of ${min_withdraw_usd} minimum\n\n{free_emoji} You can pay for a subscription with your referral balance.\n\n{sparkles_emoji} <i>You can withdraw your commissions through support once the minimum is reached.</i>",
+  "profile.text": "{profile_emoji} <b>Profile</b>\n\n<b>Telegram ID:</b> <code>{tg_id}</code>\n<b>Loyalty:</b> {status}\n<b>Active days:</b> {total_active_days}\n<b>Next tier:</b> {days_to_next_tier}\n<b>Tariff:</b> <code>{plan}</code>\n<b>Expires:</b> {expires_at}\n\n{referral_emoji} <b>Referral program</b>\n\n<b>Invite link:</b> <code>{invite_link}</code>\n<b>Referrals:</b> {referral_count}\n<b>Percent:</b> {referral_percent}%\n<b>Lifetime earned:</b> ${referral_earned_usd}\n<b>Available for withdrawal:</b> ${referral_unpaid_earned_usd} of ${min_withdraw_usd} minimum\n\n{free_emoji} You can pay for a subscription with your referral balance.\n\n{coin_emoji} <i>You can withdraw your commissions through support once the minimum is reached.</i>",
   "profile.status.basic": "Basic",
   "profile.status.bronze": "Bronze",
   "profile.status.silver": "Silver",

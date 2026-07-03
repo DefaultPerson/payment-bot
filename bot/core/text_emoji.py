@@ -20,7 +20,7 @@ TEXT_EMOJI: dict[str, tuple[str, str]] = {
     "profile": ("\U0001f464", "6032994772321309200"),  # 👤 tgiosicons
     "people": ("\U0001f465", "6032609071373226027"),  # 👥 tgiosicons
     "free": ("\U0001f193", "5284976439051954090"),  # 🆓 CryptachEmoji4
-    "sparkles": ("\U00002728", "5384505163606144442"),  # ✨ CryptachEmoji4
+    "coin": ("\U0001fa99", "5904462880941545555"),  # 🪙 tgiosicons (same as the buy button)
 }
 
 # Active subset after startup validation. Defaults to every configured id so unit tests

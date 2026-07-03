@@ -443,7 +443,7 @@ def test_profile_text_locale_formats_expected_kwargs() -> None:
         referral_unpaid_earned_usd="7.50",
         invite_link="https://t.me/HMPTbot?start=ref_42",
         min_withdraw_usd="10.00",
-        sparkles_emoji="✨",
+        coin_emoji="🪙",
     )
 
     assert "42" in text
