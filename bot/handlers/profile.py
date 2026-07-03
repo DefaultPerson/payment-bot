@@ -173,13 +173,15 @@ async def enter_chat_callback(
             lang_code=lang_code,
             now=now,
             plan_code=plan_code,
+            # Edit the profile message in place into the links (with a "Main menu" button).
+            edit_message_id=getattr(callback.message, "message_id", None),
         )
     except Exception:
         logger.exception("failed to send access links from profile", extra={"tg_id": context.tg_id})
         await callback.answer(i18n.gettext("error.generic", lang_code), show_alert=True)
         return
 
-    await callback.answer(i18n.gettext("profile.enter_chat.sent", lang_code))
+    await callback.answer()
 
 
 def create_profile_router() -> Router:

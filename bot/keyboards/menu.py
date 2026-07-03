@@ -248,6 +248,25 @@ def close_keyboard(i18n: JsonI18n, lang_code: str) -> InlineKeyboardMarkup:
     )
 
 
+def access_links_keyboard(i18n: JsonI18n, lang_code: str, *, home: bool) -> InlineKeyboardMarkup:
+    """Keyboard for the access-links message: a "Main menu" button (CB_MENU) when the message
+    was edited in place (navigation stays in one message), or a "Close" button (CB_DISMISS)
+    when it is a standalone new message (e.g. after a payment)."""
+    if home:
+        button = _button(
+            i18n.gettext("menu.home", lang_code),
+            icon_key="nav.home",
+            callback_data=CB_MENU,
+        )
+    else:
+        button = _button(
+            i18n.gettext("common.close", lang_code),
+            icon_key="access.button.dismiss",
+            callback_data=CB_DISMISS,
+        )
+    return InlineKeyboardMarkup(inline_keyboard=[[button]])
+
+
 def plan_keyboard(i18n: JsonI18n, settings: Settings, lang_code: str) -> InlineKeyboardMarkup:
     """Menu 1 — tariff (product) selection. Shown even when a single plan is active so the
     flow stays a distinct step and a second plan just appears as another button. Plan buttons
@@ -436,7 +455,14 @@ def payment_keyboard(
                     url=settings.bot.support_url,
                 )
             ],
-            _invoice_cancel_row(i18n, lang_code, tariff_code),
+            [
+                *_invoice_cancel_row(i18n, lang_code, tariff_code),
+                _button(
+                    i18n.gettext("menu.home", lang_code),
+                    icon_key="nav.home",
+                    callback_data=CB_MENU,
+                ),
+            ],
         ]
     )
 

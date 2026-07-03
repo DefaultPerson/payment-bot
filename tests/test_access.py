@@ -16,6 +16,7 @@ class FakeBot:
         self.bans: list[dict[str, Any]] = []
         self.unbans: list[dict[str, Any]] = []
         self.approvals: list[dict[str, Any]] = []
+        self.edits: list[dict[str, Any]] = []
         self.fail_approve = fail_approve
 
     async def create_chat_invite_link(self, **kwargs: Any) -> SimpleNamespace:
@@ -24,6 +25,9 @@ class FakeBot:
 
     async def send_message(self, **kwargs: Any) -> None:
         self.messages.append(kwargs)
+
+    async def edit_message_text(self, **kwargs: Any) -> None:
+        self.edits.append(kwargs)
 
     async def ban_chat_member(self, **kwargs: Any) -> None:
         self.bans.append(kwargs)
@@ -117,8 +121,8 @@ async def test_send_access_links_sends_localized_links() -> None:
     assert len(bot.messages) == 1
     message = bot.messages[0]
     assert message["chat_id"] == 1001
-    assert "Signals: https://t.me/+-1001" in message["text"]
-    assert "Research: https://t.me/+-1002" in message["text"]
+    assert "<b>Signals</b>: https://t.me/+-1001" in message["text"]
+    assert "<b>Research</b>: https://t.me/+-1002" in message["text"]
 
 
 async def test_send_access_links_attaches_dismiss_button() -> None:
@@ -161,7 +165,10 @@ async def test_send_access_links_escapes_html_sensitive_titles() -> None:
         now=now,
     )
 
-    assert "Signals &lt;VIP&gt; &amp; Research: https://t.me/+-1001" in bot.messages[0]["text"]
+    assert (
+        "<b>Signals &lt;VIP&gt; &amp; Research</b>: https://t.me/+-1001"
+        in bot.messages[0]["text"]
+    )
     assert "Signals <VIP> & Research: https://t.me/+-1001" not in bot.messages[0]["text"]
 
 
@@ -278,7 +285,7 @@ async def test_send_access_links_reconciles_membership_to_plan() -> None:
     assert [call["chat_id"] for call in bot.bans] == [-1001]
     assert [call["chat_id"] for call in bot.unbans] == [-1001]
     assert [call["chat_id"] for call in bot.invite_calls] == [-1002]
-    assert "Research: https://t.me/+-1002" in bot.messages[0]["text"]
+    assert "<b>Research</b>: https://t.me/+-1002" in bot.messages[0]["text"]
     assert "Signals" not in bot.messages[0]["text"]
 
 
@@ -363,3 +370,53 @@ def test_access_and_payment_locale_keys_are_available() -> None:
         assert empty_text != "access.empty.text"
         assert "https://t.me/HydraSupport" in empty_text
         assert success_text != "payment.success.text"
+
+
+async def test_send_access_links_edits_in_place_with_main_menu_button() -> None:
+    from bot.keyboards import CB_MENU
+
+    bot = FakeBot()
+    settings = make_settings()
+    now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
+
+    await send_access_links(
+        bot,
+        settings,
+        JsonI18n(fallback_language="en"),
+        tg_id=1001,
+        lang_code="en",
+        now=now,
+        edit_message_id=555,  # button-triggered (enter_chat): edit in place
+    )
+
+    assert bot.messages == []  # no new message
+    assert len(bot.edits) == 1
+    assert bot.edits[0]["chat_id"] == 1001
+    assert bot.edits[0]["message_id"] == 555
+    assert "<b>Signals</b>: https://t.me/+-1001" in bot.edits[0]["text"]
+    # Edited path carries a "Main menu" button (navigation stays in one message).
+    assert bot.edits[0]["reply_markup"].inline_keyboard[0][0].callback_data == CB_MENU
+
+
+async def test_send_access_links_falls_back_to_new_message_when_edit_fails() -> None:
+    class FailingEditBot(FakeBot):
+        async def edit_message_text(self, **kwargs: Any) -> None:
+            raise RuntimeError("message can't be edited")
+
+    bot = FailingEditBot()
+    settings = make_settings()
+    now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
+
+    await send_access_links(
+        bot,
+        settings,
+        JsonI18n(fallback_language="en"),
+        tg_id=1001,
+        lang_code="en",
+        now=now,
+        edit_message_id=555,
+    )
+
+    # Edit failed → a new message is sent instead (links are never lost).
+    assert len(bot.messages) == 1
+    assert "<b>Signals</b>: https://t.me/+-1001" in bot.messages[0]["text"]

@@ -70,10 +70,19 @@ async def set_user_commands(
         language = settings.bot.fallback_language
 
     try:
+        # Chat-scoped WITHOUT language_code so the IN-APP language choice is authoritative for
+        # this chat regardless of the user's Telegram client locale. The previous per-locale
+        # scope only applied when the client language happened to match the choice, so an
+        # in-app switch did nothing. Then clear any stale per-language chat scopes left by that
+        # behavior, so a client whose locale matches an old choice can't resurface them.
         await bot.set_my_commands(
             build_commands(i18n, language, is_admin=is_admin),
             scope=BotCommandScopeChat(chat_id=chat_id),
-            language_code=TELEGRAM_LANGUAGE_CODES.get(language, language),
         )
+        for other in settings.bot.supported_languages:
+            await bot.delete_my_commands(
+                scope=BotCommandScopeChat(chat_id=chat_id),
+                language_code=TELEGRAM_LANGUAGE_CODES.get(other, other),
+            )
     except Exception:
         logger.warning("failed to set bot commands for chat_id=%s", chat_id, exc_info=True)

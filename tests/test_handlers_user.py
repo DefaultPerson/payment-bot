@@ -750,10 +750,12 @@ async def test_enter_chat_sends_access_links_for_active_subscription(monkeypatch
 
     monkeypatch.setattr(profile_module, "send_access_links", fake_send_access_links)
 
+    profile_message = FakeMessage(from_user=None, chat=FakeChat(id=700))
+    profile_message.message_id = 999
     callback = FakeCallback(
         data="enter_chat",
         from_user=FakeTelegramUser(id=700, language_code="en"),
-        message=FakeMessage(from_user=None, chat=FakeChat(id=700)),
+        message=profile_message,
     )
 
     await profile_module.enter_chat_callback(
@@ -767,7 +769,9 @@ async def test_enter_chat_sends_access_links_for_active_subscription(monkeypatch
     assert len(calls) == 1
     assert calls[0]["plan_code"] == "pro"
     assert calls[0]["tg_id"] == 700
-    assert callback.answers == [{"text": "Access links sent."}]
+    # The profile message is edited in place into the links (no "Access links sent" toast).
+    assert calls[0]["edit_message_id"] == 999
+    assert callback.answers == [{"text": None}]
 
 
 async def test_enter_chat_alerts_without_active_subscription(monkeypatch) -> None:

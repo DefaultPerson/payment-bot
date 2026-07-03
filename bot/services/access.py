@@ -59,6 +59,15 @@ class SupportsAccessBot(Protocol):
         self, *, chat_id: int, text: str, reply_markup: object | None = None
     ) -> object: ...
 
+    async def edit_message_text(
+        self,
+        *,
+        chat_id: int,
+        message_id: int,
+        text: str,
+        reply_markup: object | None = None,
+    ) -> object: ...
+
     async def approve_chat_join_request(self, *, chat_id: int, user_id: int) -> object: ...
 
     async def ban_chat_member(
@@ -147,6 +156,7 @@ async def send_access_links(
     lang_code: str,
     now: datetime,
     plan_code: str | None = None,
+    edit_message_id: int | None = None,
 ) -> None:
     allowed = allowed_chat_ids_for_plan(settings, plan_code)
 
@@ -185,12 +195,11 @@ async def send_access_links(
 
     invites = await create_protected_chat_invite_links(bot, settings, now=now, chats=allowed_chats)
     links = "\n".join(
-        f"{escape(invite.title)}: {escape(invite.invite_link)}" for invite in invites
+        f"<b>{escape(invite.title)}</b>: {escape(invite.invite_link)}" for invite in invites
     )
-    # Local import avoids a services→keyboards import at module load; the button lets the user
-    # delete this one-time links message once they have joined.
+    # Local import avoids a services→keyboards import at module load.
     from bot.core.text_emoji import text_emoji
-    from bot.keyboards import dismiss_keyboard
+    from bot.keyboards import access_links_keyboard
 
     text = i18n.gettext(
         "access.links.text", lang_code, sparkles=text_emoji("sparkles"), links=links
@@ -198,10 +207,25 @@ async def send_access_links(
     if settings.access.docs_footer_enabled:
         footer = i18n.gettext("access.links.footer", lang_code, docs_url=settings.bot.docs_url)
         text = f"{text}\n\n{footer}"
+
+    # When triggered by a button (enter_chat), edit that message in place with a "Main menu"
+    # button so navigation stays in one message. Otherwise (payments, webhooks, trial, referral)
+    # send a new message with a "Close" button.
+    if edit_message_id is not None:
+        try:
+            await bot.edit_message_text(
+                chat_id=tg_id,
+                message_id=edit_message_id,
+                text=text,
+                reply_markup=access_links_keyboard(i18n, lang_code, home=True),
+            )
+            return
+        except Exception:
+            logger.debug("access-links edit failed; sending a new message", exc_info=True)
     await bot.send_message(
         chat_id=tg_id,
         text=text,
-        reply_markup=dismiss_keyboard(i18n, lang_code),
+        reply_markup=access_links_keyboard(i18n, lang_code, home=False),
     )
 
 

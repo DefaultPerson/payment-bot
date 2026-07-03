@@ -99,64 +99,42 @@ def test_build_commands_excludes_admin_commands() -> None:
     assert "/broadcast" not in names
 
 
-async def test_set_user_commands_scopes_commands_to_chat() -> None:
-    class FakeBot:
-        def __init__(self) -> None:
-            self.calls: list[dict] = []
+class _CommandFakeBot:
+    def __init__(self) -> None:
+        self.calls: list[dict] = []
+        self.deletes: list[dict] = []
 
-        async def set_my_commands(self, commands, *, scope=None, language_code=None) -> None:
-            self.calls.append(
-                {
-                    "commands": commands,
-                    "scope": scope,
-                    "language_code": language_code,
-                }
-            )
+    async def set_my_commands(self, commands, *, scope=None, language_code=None) -> None:
+        self.calls.append({"commands": commands, "scope": scope, "language_code": language_code})
 
-    bot = FakeBot()
+    async def delete_my_commands(self, *, scope=None, language_code=None) -> None:
+        self.deletes.append({"scope": scope, "language_code": language_code})
+
+
+async def test_set_user_commands_scopes_commands_to_chat_without_language_code() -> None:
+    bot = _CommandFakeBot()
 
     await menu_module().set_user_commands(
-        bot,
-        JsonI18n(),
-        Settings(),
-        chat_id=42,
-        lang_code="en",
-        is_admin=False,
+        bot, JsonI18n(), Settings(), chat_id=42, lang_code="en", is_admin=False
     )
 
     assert len(bot.calls) == 1
     assert isinstance(bot.calls[0]["scope"], BotCommandScopeChat)
     assert bot.calls[0]["scope"].chat_id == 42
-    assert bot.calls[0]["language_code"] == "en"
+    # No language_code: the in-app choice wins for this chat regardless of the client locale.
+    assert bot.calls[0]["language_code"] is None
 
 
-async def test_set_user_commands_maps_internal_ua_to_telegram_uk() -> None:
-    class FakeBot:
-        def __init__(self) -> None:
-            self.calls: list[dict] = []
-
-        async def set_my_commands(self, commands, *, scope=None, language_code=None) -> None:
-            self.calls.append(
-                {
-                    "commands": commands,
-                    "scope": scope,
-                    "language_code": language_code,
-                }
-            )
-
-    bot = FakeBot()
+async def test_set_user_commands_clears_stale_per_language_chat_scopes() -> None:
+    bot = _CommandFakeBot()
 
     await menu_module().set_user_commands(
-        bot,
-        JsonI18n(),
-        Settings(),
-        chat_id=42,
-        lang_code="ua",
-        is_admin=False,
+        bot, JsonI18n(), Settings(), chat_id=42, lang_code="ua", is_admin=False
     )
 
-    assert len(bot.calls) == 1
-    assert bot.calls[0]["language_code"] == "uk"
+    # Internal "ua" maps to Telegram "uk" when clearing the stale per-language chat scopes.
+    assert "uk" in {d["language_code"] for d in bot.deletes}
+    assert all(d["scope"].chat_id == 42 for d in bot.deletes)
 
 
 def test_main_menu_keyboard_contains_user_buttons_and_link_row() -> None:
@@ -458,9 +436,11 @@ def test_payment_keyboard_has_pay_url_support_and_cancel() -> None:
     )
 
     urls = keyboard_urls(keyboard)
+    callbacks = keyboard_callback_data(keyboard)
     assert "https://t.me/CryptoBot?start=pay" in urls
     assert "https://t.me/HydraSupport" in urls  # support link now on the invoice page
-    assert f"{keyboards.CB_TARIFF_PREFIX}1m" in keyboard_callback_data(keyboard)  # cancel → methods
+    assert f"{keyboards.CB_TARIFF_PREFIX}1m" in callbacks  # cancel → methods
+    assert keyboards.CB_MENU in callbacks  # "Главное меню" button → main menu
 
 
 def test_payment_keyboard_can_use_xrocket_provider_label() -> None:
