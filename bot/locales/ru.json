@@ -86,7 +86,7 @@
   "referral.text": "Реферальная программа\n\nСсылка для приглашения: {invite_link}\nРефералы: {referral_count}\nЗаработано за все время: ${referral_earned_usd}\nДоступно к выводу: ${referral_unpaid_earned_usd} из ${min_withdraw_usd} минимума\n\nКогда накопится минимум, напишите в поддержку для ручной выплаты.",
   "payment.duplicate.refunded": "Этот счёт уже оплачен — повторный платёж возвращён.",
   "stars.invoice.description": "Доступ Hydra Monitors: {months} мес.",
-  "access.links.text": "{sparkles} Ваши ссылки доступа:\n\n{links}\n\nОткройте ссылку и нажмите «Подать заявку» — заявка одобряется автоматически, пока активна подписка.",
+  "access.links.text": "{sparkles} <b>Ваши ссылки доступа:</b>\n\n{links}\n\nОткройте ссылку и нажмите «Подать заявку» — заявка одобряется автоматически, пока активна подписка.",
   "access.links.footer": "О возможностях и инструментах можно больше узнать в <a href=\"{docs_url}\">документации</a>.",
   "access.empty.text": "Чаты доступа пока не настроены. Напишите в поддержку: {support_url}",
   "access.button.dismiss": "Удалить",
