@@ -238,6 +238,17 @@ def test_profile_keyboard_contains_expected_actions_and_support_url() -> None:
     assert "https://t.me/HydraSupport" in keyboard_urls(keyboard)
 
 
+def test_dismiss_keyboard_deletes_message_with_cross_icon() -> None:
+    keyboards = keyboard_module()
+    icon_module = import_module("bot.keyboards.icons")
+
+    keyboard = keyboards.dismiss_keyboard(JsonI18n(), "en")
+
+    button = keyboard.inline_keyboard[0][0]
+    assert button.callback_data == keyboards.CB_DISMISS
+    assert button.icon_custom_emoji_id == icon_module.MENU_ICONS["access.button.dismiss"]
+
+
 def test_plan_keyboard_lists_active_plans_and_support_url() -> None:
     settings = Settings(
         bot={"support_username": "HydraSupport"},
@@ -427,20 +438,22 @@ def test_profile_text_locale_formats_expected_kwargs() -> None:
         expires_at="2026-07-01",
         days_to_next_tier=50,
         referral_count=3,
+        referral_percent="10",
         referral_earned_usd="12.50",
         referral_unpaid_earned_usd="7.50",
         invite_link="https://t.me/HMPTbot?start=ref_42",
         min_withdraw_usd="10.00",
+        sparkles_emoji="✨",
     )
 
     assert "42" in text
     assert "Free" in text
     assert "Bronze" in text
     assert "40" in text
-    assert "Active" in text
     assert "2026-07-01" in text
     assert "50" in text
     assert "3" in text
+    assert "10%" in text
     assert "12.50" in text
     assert "7.50" in text
     assert "https://t.me/HMPTbot?start=ref_42" in text

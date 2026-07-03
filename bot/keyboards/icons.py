@@ -27,6 +27,7 @@ MENU_ICONS: dict[str, str] = {
     "menu.button.admin": "5904258298764334001",  # ⚙️
     "profile.button.renew": "5769248574499983619",  # 🔄
     "profile.button.enter_chat": "6035130900075777681",  # 🚪
+    "access.button.dismiss": "6030757850274336631",  # ❌ delete the access-links message
     "profile.button.support": "6030784887093464891",  # 💬
     "support.button": "6030784887093464891",  # 💬
     "buy.tariff.button": "5890937706803894250",  # 📅

@@ -385,3 +385,48 @@ async def test_start_surfaces_database_errors_as_localized_reply(monkeypatch) ->
 
     assert session_factory.session.rollbacks == 1
     assert message.answers == [{"text": "Something went wrong. Please try again later."}]
+
+
+async def test_dismiss_callback_deletes_message_and_answers() -> None:
+    from bot.handlers.start import dismiss_callback
+
+    class FakeDeletableMessage:
+        def __init__(self) -> None:
+            self.deleted = False
+
+        async def delete(self) -> None:
+            self.deleted = True
+
+    class FakeCallback:
+        def __init__(self, message: object) -> None:
+            self.message = message
+            self.answers = 0
+
+        async def answer(self, *args: Any, **kwargs: Any) -> None:
+            self.answers += 1
+
+    message = FakeDeletableMessage()
+    callback = FakeCallback(message)
+
+    await dismiss_callback(callback)
+
+    assert message.deleted is True
+    assert callback.answers == 1
+
+
+async def test_dismiss_callback_answers_when_message_cannot_be_deleted() -> None:
+    from bot.handlers.start import dismiss_callback
+
+    class FakeCallback:
+        def __init__(self) -> None:
+            self.message = None  # no deletable message (e.g. an inline callback)
+            self.answers = 0
+
+        async def answer(self, *args: Any, **kwargs: Any) -> None:
+            self.answers += 1
+
+    callback = FakeCallback()
+
+    await dismiss_callback(callback)
+
+    assert callback.answers == 1

@@ -19,6 +19,7 @@ CB_RENEW = "renew"
 CB_ENTER_CHAT = "enter_chat"
 CB_ADMIN = "admin"
 CB_MENU = "menu"
+CB_DISMISS = "dismiss"
 LANG_PREFIX = "lang:"
 CB_PLAN_PREFIX = "plan:"
 CB_TARIFF_PREFIX = "tariff:"
@@ -206,6 +207,21 @@ def profile_keyboard(i18n: JsonI18n, settings: Settings, lang_code: str) -> Inli
                     callback_data=CB_MENU,
                 )
             ],
+        ]
+    )
+
+
+def dismiss_keyboard(i18n: JsonI18n, lang_code: str) -> InlineKeyboardMarkup:
+    """Single-button keyboard that deletes the message it is attached to (access links)."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                _button(
+                    i18n.gettext("access.button.dismiss", lang_code),
+                    icon_key="access.button.dismiss",
+                    callback_data=CB_DISMISS,
+                )
+            ]
         ]
     )
 

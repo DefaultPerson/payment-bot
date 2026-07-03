@@ -75,6 +75,13 @@ async def _build_profile_response(
         subscription = await get_subscription_for_user(session, user.id)
         referral_stats = await get_referral_stats(session, referrer_id=user.id)
         plan_label = profile_plan_label(settings, i18n, lang_code, subscription, now)
+        # Effective commission rate straight from the DB: the user's own referral_percent
+        # (set via /refset), falling back to the configured default when unset.
+        referral_percent = (
+            user.referral_percent
+            if user.referral_percent is not None
+            else settings.referral.percent_default
+        )
         view = build_profile_view(
             user,
             subscription,
@@ -84,6 +91,7 @@ async def _build_profile_response(
             bot_username=settings.bot.username,
             min_withdraw_usd=settings.referral.min_withdraw_usd,
             plan_label=plan_label,
+            referral_percent=referral_percent,
         )
 
     return format_profile_text(view, i18n, lang_code), lang_code

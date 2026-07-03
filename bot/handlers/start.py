@@ -17,7 +17,7 @@ from bot.core.db import session_scope
 from bot.core.i18n import JsonI18n
 from bot.core.menu import set_user_commands
 from bot.core.text_emoji import text_emoji
-from bot.keyboards import CB_MENU, main_menu_keyboard
+from bot.keyboards import CB_DISMISS, CB_MENU, main_menu_keyboard
 from bot.repos.subscriptions import get_subscription_for_user
 from bot.repos.users import ensure_minimal_user, upsert_user_from_telegram_with_created
 from bot.services.profile import welcome_status_label
@@ -256,6 +256,18 @@ async def back_to_menu_callback(
     )
 
 
+async def dismiss_callback(callback: CallbackQuery) -> None:
+    """Delete the message the button is attached to (e.g. the one-time access-links message)."""
+    delete = getattr(callback.message, "delete", None)
+    if callable(delete):
+        try:
+            await delete()
+        except TelegramBadRequest:
+            # Already deleted, or older than Telegram's 48h bot-deletion window.
+            logger.debug("dismiss: message could not be deleted")
+    await callback.answer()
+
+
 async def _edit_menu_or_answer(
     callback: CallbackQuery,
     text: str,
@@ -278,4 +290,5 @@ def create_start_router() -> Router:
     start_router = Router(name="start")
     start_router.message(CommandStart())(start)
     start_router.callback_query(F.data == CB_MENU)(back_to_menu_callback)
+    start_router.callback_query(F.data == CB_DISMISS)(dismiss_callback)
     return start_router

@@ -31,6 +31,7 @@ def test_profile_view_fields_match_service_contract() -> None:
         "invite_link",
         "min_withdraw_usd",
         "plan_label",
+        "referral_percent",
     ]
 
 
@@ -59,6 +60,7 @@ def test_build_profile_view_reports_inactive_subscription_without_expiration() -
         invite_link="https://t.me/HMPTbot?start=ref_123456789",
         min_withdraw_usd=Decimal("10"),
         plan_label="",
+        referral_percent=Decimal("0.00"),
     )
 
 
@@ -117,7 +119,8 @@ def test_format_profile_text_uses_i18n_keys(tmp_path) -> None:
                     "tg={tg_id}; status={status}; days={total_active_days}; "
                     "subscription={subscription_status}; expires={expires_at}; "
                     "next={days_to_next_tier}; referrals={referral_count}; "
-                    "earned={referral_earned_usd}; unpaid={referral_unpaid_earned_usd}"
+                    "earned={referral_earned_usd}; unpaid={referral_unpaid_earned_usd}; "
+                    "percent={referral_percent}"
                 ),
                 "profile.status.bronze": "Bronze",
                 "profile.subscription.active": "Active",
@@ -144,13 +147,15 @@ def test_format_profile_text_uses_i18n_keys(tmp_path) -> None:
         invite_link="https://t.me/HMPTbot?start=ref_123456789",
         min_withdraw_usd=Decimal("10"),
         plan_label="Main",
+        referral_percent=Decimal("10"),
     )
 
     text = format_profile_text(view, i18n, "en")
 
     assert text == (
         "tg=123456789; status=Bronze; days=40; subscription=Active; "
-        "expires=2026-06-27 12:00 UTC; next=50 days; referrals=0; earned=0.00; unpaid=0.00"
+        "expires=2026-06-27 12:00 UTC; next=50 days; referrals=0; earned=0.00; unpaid=0.00; "
+        "percent=10"
     )
 
 

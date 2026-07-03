@@ -143,6 +143,8 @@ def _user_previews(i18n: JsonI18n, settings: Settings, lang: str) -> list[Previe
         referral_unpaid_earned_usd=Decimal("22.50"),
         invite_link=invite_link,
         min_withdraw_usd=min_withdraw_usd,
+        plan_label="Main",
+        referral_percent=Decimal("10"),
     )
     profile_inactive = ProfileView(
         tg_id=_TG,
@@ -156,6 +158,8 @@ def _user_previews(i18n: JsonI18n, settings: Settings, lang: str) -> list[Previe
         referral_unpaid_earned_usd=Decimal("0.00"),
         invite_link=invite_link,
         min_withdraw_usd=min_withdraw_usd,
+        plan_label=g("start.status.free"),
+        referral_percent=Decimal("10"),
     )
 
     access_links = "\n".join(

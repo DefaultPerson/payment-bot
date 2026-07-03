@@ -38,6 +38,7 @@ class ProfileView:
     invite_link: str
     min_withdraw_usd: Decimal
     plan_label: str
+    referral_percent: Decimal
 
 
 def build_profile_view(
@@ -50,6 +51,7 @@ def build_profile_view(
     bot_username: str = "",
     min_withdraw_usd: Decimal = Decimal("0"),
     plan_label: str = "",
+    referral_percent: Decimal = Decimal("0.00"),
 ) -> ProfileView:
     expires_at = subscription.expires_at if subscription is not None else None
     subscription_active = expires_at is not None and expires_at > now
@@ -77,6 +79,7 @@ def build_profile_view(
         invite_link=f"https://t.me/{bot_username}?start=ref_{user.tg_id}",
         min_withdraw_usd=min_withdraw_usd,
         plan_label=plan_label,
+        referral_percent=referral_percent,
     )
 
 
@@ -168,7 +171,14 @@ def format_profile_text(view: ProfileView, i18n: JsonI18n, lang_code: str) -> st
         referral_unpaid_earned_usd=f"{view.referral_unpaid_earned_usd:.2f}",
         invite_link=view.invite_link,
         min_withdraw_usd=f"{view.min_withdraw_usd:.2f}",
+        referral_percent=_format_percent(view.referral_percent),
+        sparkles_emoji=text_emoji("sparkles"),
     )
+
+
+def _format_percent(value: Decimal) -> str:
+    """Render a referral percent without trailing zeros: 10.00 -> "10", 7.50 -> "7.5"."""
+    return f"{value:.2f}".rstrip("0").rstrip(".")
 
 
 def _days_to_next_tier(

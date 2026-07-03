@@ -121,6 +121,26 @@ async def test_send_access_links_sends_localized_links() -> None:
     assert "Research: https://t.me/+-1002" in message["text"]
 
 
+async def test_send_access_links_attaches_dismiss_button() -> None:
+    from bot.keyboards import CB_DISMISS
+
+    bot = FakeBot()
+    settings = make_settings()
+    now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
+
+    await send_access_links(
+        bot,
+        settings,
+        JsonI18n(fallback_language="en"),
+        tg_id=1001,
+        lang_code="en",
+        now=now,
+    )
+
+    keyboard = bot.messages[0]["reply_markup"]
+    assert keyboard.inline_keyboard[0][0].callback_data == CB_DISMISS
+
+
 async def test_send_access_links_escapes_html_sensitive_titles() -> None:
     bot = FakeBot()
     settings = Settings(

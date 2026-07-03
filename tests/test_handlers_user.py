@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any
 
 from aiogram.exceptions import TelegramBadRequest
@@ -119,6 +120,7 @@ class FakeUserRecord:
     id: int
     tg_id: int
     lang_code: str
+    referral_percent: Decimal | None = None
 
 
 async def test_profile_callback_edits_message_and_acknowledges(monkeypatch) -> None:

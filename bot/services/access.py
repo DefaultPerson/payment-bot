@@ -55,7 +55,9 @@ class SupportsAccessBot(Protocol):
         creates_join_request: bool,
     ) -> object: ...
 
-    async def send_message(self, *, chat_id: int, text: str) -> object: ...
+    async def send_message(
+        self, *, chat_id: int, text: str, reply_markup: object | None = None
+    ) -> object: ...
 
     async def approve_chat_join_request(self, *, chat_id: int, user_id: int) -> object: ...
 
@@ -179,9 +181,14 @@ async def send_access_links(
     links = "\n".join(
         f"{escape(invite.title)}: {escape(invite.invite_link)}" for invite in invites
     )
+    # Local import avoids a services→keyboards import at module load; the button lets the user
+    # delete this one-time links message once they have joined.
+    from bot.keyboards import dismiss_keyboard
+
     await bot.send_message(
         chat_id=tg_id,
         text=i18n.gettext("access.links.text", lang_code, links=links),
+        reply_markup=dismiss_keyboard(i18n, lang_code),
     )
 
 
