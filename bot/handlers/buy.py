@@ -28,7 +28,6 @@ from bot.keyboards import (
     CB_TARIFF_PREFIX,
     CB_TRIBUTE_PREFIX,
     CB_XROCKET_PREFIX,
-    invoice_cancel_keyboard,
     invoice_failed_keyboard,
     payment_keyboard,
     plan_keyboard,
@@ -425,7 +424,7 @@ async def cryptobot_invoice_callback(
 
     await _edit_text_or_answer(
         callback,
-        _invoice_created_text(i18n, lang_code),
+        _invoice_created_text(i18n, settings, lang_code, quote=created.quote),
         reply_markup=payment_keyboard(i18n, settings, lang_code, created.pay_url, tariff_code),
     )
 
@@ -435,6 +434,7 @@ async def stars_invoice_callback(
     settings: Settings,
     i18n: JsonI18n,
     session_factory: async_sessionmaker[AsyncSession],
+    bot: Bot,
 ) -> None:
     context = callback_context(callback, settings)
     tariff_code = _parse_prefixed_callback(getattr(callback, "data", None), CB_STARS_PREFIX)
@@ -471,23 +471,18 @@ async def stars_invoice_callback(
             datetime.now(UTC),
             i18n,
         )
-        invoice_kwargs = {
-            "title": created.title,
-            "description": created.description,
-            "payload": created.payload,
-            "currency": created.stars.currency,
-            "prices": [
-                LabeledPrice(
-                    label=created.title,
-                    amount=created.stars.amount,
-                )
-            ],
-            "provider_token": "",
-        }
-        if created.stars.subscription_period is not None:
-            invoice_kwargs["subscription_period"] = created.stars.subscription_period
         try:
-            await callback.message.answer_invoice(**invoice_kwargs)
+            # An XTR invoice LINK (provider_token="") lets us pay Stars via a URL button —
+            # framing Stars exactly like the URL providers, in the same message, instead of
+            # sending a separate native invoice card. One-shot (no subscription_period).
+            pay_url = await bot.create_invoice_link(
+                title=created.title,
+                description=created.description,
+                payload=created.payload,
+                currency=created.stars.currency,
+                prices=[LabeledPrice(label=created.title, amount=created.stars.amount)],
+                provider_token="",
+            )
         except Exception:
             await cancel_unusable_invoice(session_factory, created.invoice.id)
             raise
@@ -507,12 +502,16 @@ async def stars_invoice_callback(
         await _invoice_failed(callback, i18n, settings, lang_code)
         return
 
-    # Frame the native Stars invoice like the URL providers: edit the quote message to the
-    # "invoice created" text with a cancel button (the native invoice sits below it as the payer).
+    # Same frame as the URL providers: edit the current message to the invoice page with a URL
+    # pay button (the Stars invoice link) + a per-method (XTR) breakdown. No separate message.
     await _edit_text_or_answer(
         callback,
-        _invoice_created_text(i18n, lang_code),
-        reply_markup=invoice_cancel_keyboard(i18n, lang_code, tariff_code),
+        _invoice_created_text(
+            i18n, settings, lang_code, quote=created.quote, stars_amount=created.stars.amount
+        ),
+        reply_markup=payment_keyboard(
+            i18n, settings, lang_code, pay_url, tariff_code, payment_key="buy.pay.stars"
+        ),
     )
 
 
@@ -580,7 +579,7 @@ async def xrocket_invoice_callback(
 
     await _edit_text_or_answer(
         callback,
-        _invoice_created_text(i18n, lang_code),
+        _invoice_created_text(i18n, settings, lang_code, quote=created.quote),
         reply_markup=payment_keyboard(
             i18n,
             settings,
@@ -628,7 +627,7 @@ async def tribute_invoice_callback(
 
     await _edit_text_or_answer(
         callback,
-        _invoice_created_text(i18n, lang_code),
+        _invoice_created_text(i18n, settings, lang_code),
         reply_markup=payment_keyboard(
             i18n,
             settings,
@@ -817,48 +816,14 @@ def _format_quote_text(
     lang_code: str,
     quote: TariffQuote,
 ) -> str:
-    net = quote.net_usd
-    discounts = quote.tariff.base_price_usd - net
-    fee_multiplier = Decimal("1") - (settings.cryptobot.fee_percent / Decimal("100"))
-    if fee_multiplier > 0:
-        total_before = quote.tariff.base_price_usd / fee_multiplier
-    else:
-        total_before = quote.gross_usd
-    total = (
-        f"<s>${total_before:.2f}</s> ${quote.gross_usd:.2f}"
-        if discounts > 0
-        else f"${quote.gross_usd:.2f}"
-    )
-    discounts_line = (
-        "\n" + i18n.gettext("buy.quote.discounts", lang_code, discounts=f"{discounts:.2f}")
-        if discounts > 0
-        else ""
-    )
-    promo_line = ""
-    if quote.promo_code is not None and quote.promo_discount_usd > 0:
-        promo_line = "\n" + i18n.gettext(
-            "buy.quote.promo_discount",
-            lang_code,
-            code=quote.promo_code,
-            discount_usd=f"{quote.promo_discount_usd:.2f}",
-        )
-    elif quote.promo_code is not None and quote.promo_extra_days > 0:
-        promo_line = "\n" + i18n.gettext(
-            "buy.quote.promo_extra_days",
-            lang_code,
-            code=quote.promo_code,
-            days=quote.promo_extra_days,
-        )
+    # The payment-method screen only frames the choice (tariff + duration); the full invoice
+    # breakdown moved to the next step (the invoice page), computed for the chosen method.
     return i18n.gettext(
         "buy.quote.text",
         lang_code,
         coin=text_emoji("coin"),
+        plan=_plan_title(settings, quote.tariff.plan_code),
         months=quote.tariff.duration_months,
-        total=total,
-        net_usd=f"{net:.2f}",
-        fee_usd=f"{quote.fee_usd:.2f}",
-        discounts_line=discounts_line,
-        promo_line=promo_line,
     )
 
 
@@ -869,8 +834,70 @@ def _parse_prefixed_callback(data: str | None, prefix: str) -> str | None:
     return value or None
 
 
-def _invoice_created_text(i18n: JsonI18n, lang_code: str) -> str:
-    return i18n.gettext("buy.invoice.created", lang_code, warn=text_emoji("warning"))
+def _invoice_created_text(
+    i18n: JsonI18n,
+    settings: Settings,
+    lang_code: str,
+    *,
+    quote: TariffQuote | None = None,
+    stars_amount: int | None = None,
+) -> str:
+    """Invoice-page text: the "invoice created" header plus a per-method breakdown.
+
+    ``quote`` drives the USD breakdown (CryptoBot/xRocket — its net/fee/gross already reflect
+    the method's own fee, since the invoice was priced with it). ``stars_amount`` shows the XTR
+    total for Stars. With neither (Tribute — fixed dashboard price) only the header is shown."""
+    header = i18n.gettext("buy.invoice.created", lang_code, warn=text_emoji("warning"))
+    details = _invoice_breakdown(i18n, lang_code, quote=quote, stars_amount=stars_amount)
+    return f"{header}\n\n{details}" if details else header
+
+
+def _invoice_breakdown(
+    i18n: JsonI18n,
+    lang_code: str,
+    *,
+    quote: TariffQuote | None,
+    stars_amount: int | None,
+) -> str:
+    if stars_amount is not None:
+        return i18n.gettext("buy.invoice.details.stars", lang_code, stars=stars_amount)
+    if quote is None:
+        return ""  # Tribute: fixed price set in the dashboard, no USD breakdown.
+    net = quote.net_usd
+    gross = quote.gross_usd
+    fee = quote.fee_usd
+    discounts = quote.tariff.base_price_usd - net
+    # Pre-discount total for THIS method: base price grossed up by the same fee ratio.
+    total_before = quote.tariff.base_price_usd * gross / net if net > 0 else gross
+    total = f"<s>${total_before:.2f}</s> ${gross:.2f}" if discounts > 0 else f"${gross:.2f}"
+    lines = [i18n.gettext("buy.invoice.total", lang_code, total=total)]
+    if fee > 0:
+        lines.append(i18n.gettext("buy.invoice.net", lang_code, net_usd=f"{net:.2f}"))
+        lines.append(i18n.gettext("buy.invoice.fee", lang_code, fee_usd=f"{fee:.2f}"))
+    if discounts > 0:
+        lines.append(i18n.gettext("buy.quote.discounts", lang_code, discounts=f"{discounts:.2f}"))
+    promo_line = _promo_line(i18n, lang_code, quote)
+    if promo_line:
+        lines.append(promo_line)
+    return "\n".join(lines)
+
+
+def _promo_line(i18n: JsonI18n, lang_code: str, quote: TariffQuote) -> str:
+    if quote.promo_code is not None and quote.promo_discount_usd > 0:
+        return i18n.gettext(
+            "buy.quote.promo_discount",
+            lang_code,
+            code=quote.promo_code,
+            discount_usd=f"{quote.promo_discount_usd:.2f}",
+        )
+    if quote.promo_code is not None and quote.promo_extra_days > 0:
+        return i18n.gettext(
+            "buy.quote.promo_extra_days",
+            lang_code,
+            code=quote.promo_code,
+            days=quote.promo_extra_days,
+        )
+    return ""
 
 
 async def _invoice_failed(

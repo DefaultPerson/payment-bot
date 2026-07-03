@@ -449,7 +449,7 @@ def test_tariff_detail_keyboard_pay_buttons_have_no_icons() -> None:
     assert pay_button.icon_custom_emoji_id is None
 
 
-def test_payment_keyboard_has_pay_url_and_cancel() -> None:
+def test_payment_keyboard_has_pay_url_support_and_cancel() -> None:
     keyboards = keyboard_module()
     settings = Settings(bot={"support_username": "HydraSupport"})
 
@@ -457,8 +457,9 @@ def test_payment_keyboard_has_pay_url_and_cancel() -> None:
         JsonI18n(), settings, "en", "https://t.me/CryptoBot?start=pay", "1m"
     )
 
-    assert "https://t.me/CryptoBot?start=pay" in keyboard_urls(keyboard)
-    assert "https://t.me/HydraSupport" not in keyboard_urls(keyboard)  # support removed
+    urls = keyboard_urls(keyboard)
+    assert "https://t.me/CryptoBot?start=pay" in urls
+    assert "https://t.me/HydraSupport" in urls  # support link now on the invoice page
     assert f"{keyboards.CB_TARIFF_PREFIX}1m" in keyboard_callback_data(keyboard)  # cancel → methods
 
 

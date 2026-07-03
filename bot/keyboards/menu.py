@@ -413,16 +413,16 @@ def payment_keyboard(
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [_button(i18n.gettext(payment_key, lang_code), url=pay_url)],
+            [
+                _button(
+                    i18n.gettext("support.button", lang_code),
+                    icon_key="support.button",
+                    url=settings.bot.support_url,
+                )
+            ],
             _invoice_cancel_row(i18n, lang_code, tariff_code),
         ]
     )
-
-
-def invoice_cancel_keyboard(
-    i18n: JsonI18n, lang_code: str, tariff_code: str
-) -> InlineKeyboardMarkup:
-    """Cancel-only keyboard for the Stars framing message (Stars pays via the native invoice)."""
-    return InlineKeyboardMarkup(inline_keyboard=[_invoice_cancel_row(i18n, lang_code, tariff_code)])
 
 
 def notification_keyboard(i18n: JsonI18n, lang_code: str) -> InlineKeyboardMarkup:

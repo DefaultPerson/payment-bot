@@ -277,9 +277,10 @@ async def test_tariff_callback_edits_quote_detail(monkeypatch) -> None:
 
     text = callback_message.edits[0]["text"]
     assert "3 months" in text
-    assert "$173.35" in text  # total (gross)
-    assert "$168.15" in text  # access amount (net)
-    assert "Accepted assets" not in text  # accepted-assets line removed
+    assert "Hydra Monitors" in text  # tariff/plan label
+    # The invoice breakdown moved to the invoice page; the method screen carries no prices.
+    assert "$173.35" not in text
+    assert "$168.15" not in text
     assert callback.answers == [{"text": None}]
     assert callback_message.edits[0]["reply_markup"] == "detail-keyboard"
 
@@ -301,10 +302,16 @@ async def test_tariff_callback_gates_promo_to_allowed_tariffs(monkeypatch) -> No
     async def fake_referral_stats(*args: Any, **kwargs: Any) -> Any:
         return SimpleNamespace(available_usd=Decimal("0"))
 
+    captured: dict[str, Any] = {}
+
+    def fake_detail_keyboard(*args: Any, **kwargs: Any) -> str:
+        captured["quote"] = args[4]  # (i18n, tariff_code, lang_code, settings, quote, ...)
+        return "detail-keyboard"
+
     monkeypatch.setattr(buy_module, "ensure_minimal_user", fake_ensure_minimal_user)
     monkeypatch.setattr(buy_module, "get_pending_promo_for_menu", fake_menu_promo)
     monkeypatch.setattr(buy_module, "get_referral_stats", fake_referral_stats)
-    monkeypatch.setattr(buy_module, "tariff_detail_keyboard", lambda *a, **k: "detail-keyboard")
+    monkeypatch.setattr(buy_module, "tariff_detail_keyboard", fake_detail_keyboard)
 
     callback_message = FakeMessage(chat=FakeChat(id=700))
     callback = FakeCallback(
@@ -317,24 +324,21 @@ async def test_tariff_callback_gates_promo_to_allowed_tariffs(monkeypatch) -> No
         callback, settings=Settings(), i18n=JsonI18n(), session_factory=FakeSessionFactory()
     )
 
-    text = callback_message.edits[0]["text"]
-    # Full 3m price ($168.15 net), no promo line applied.
-    assert "$168.15" in text
-    assert "SAVE6M" not in text
+    # The 6m-only promo must not price down the 3m quote (nor be consumed by merely viewing it).
+    assert captured["quote"].promo_code is None
+    assert captured["quote"].net_usd == Decimal("168.15")
 
 
-async def test_stars_invoice_callback_sends_telegram_stars_invoice(monkeypatch) -> None:
+async def test_stars_invoice_callback_frames_invoice_link_like_url_providers(monkeypatch) -> None:
     import bot.handlers.buy as buy_module
 
     service_calls: list[dict[str, Any]] = []
+    link_calls: list[dict[str, Any]] = []
 
-    class InvoiceMessage(FakeMessage):
-        def __init__(self, *, chat: FakeChat) -> None:
-            super().__init__(chat=chat)
-            self.invoices: list[dict[str, Any]] = []
-
-        async def answer_invoice(self, **kwargs: Any) -> None:
-            self.invoices.append(kwargs)
+    class FakeBot:
+        async def create_invoice_link(self, **kwargs: Any) -> str:
+            link_calls.append(kwargs)
+            return "https://t.me/$stars-invoice-link"
 
     async def fake_ensure_minimal_user(session: FakeSession, **kwargs: Any) -> FakeUserRecord:
         return FakeUserRecord(id=7, tg_id=700, lang_code="en", status=UserStatus.basic)
@@ -348,19 +352,12 @@ async def test_stars_invoice_callback_sends_telegram_stars_invoice(monkeypatch) 
         i18n: JsonI18n,
     ) -> FakeCreatedStarsInvoice:
         service_calls.append(
-            {
-                "session_factory": session_factory_arg,
-                "settings": settings,
-                "user": user,
-                "tariff_code": tariff_code,
-                "now": now,
-                "i18n": i18n,
-            }
+            {"session_factory": session_factory_arg, "tariff_code": tariff_code}
         )
         return FakeCreatedStarsInvoice(
             invoice=object(),
             quote=object(),
-            stars=FakeStarsQuote(amount=8682, subscription_period=2_592_000),
+            stars=FakeStarsQuote(amount=8682, subscription_period=None),
             payload="stars:payload",
             title="Hydra Monitors",
             description="Hydra Monitors access: 1 month",
@@ -371,7 +368,7 @@ async def test_stars_invoice_callback_sends_telegram_stars_invoice(monkeypatch) 
 
     settings = Settings(stars={"enabled": True})
     session_factory = FakeSessionFactory()
-    callback_message = InvoiceMessage(chat=FakeChat(id=700))
+    callback_message = FakeMessage(chat=FakeChat(id=700))
     callback = FakeCallback(
         data=f"{CB_STARS_PREFIX}1m",
         from_user=FakeTelegramUser(id=700, language_code="en"),
@@ -383,32 +380,39 @@ async def test_stars_invoice_callback_sends_telegram_stars_invoice(monkeypatch) 
         settings=settings,
         i18n=JsonI18n(),
         session_factory=session_factory,
+        bot=FakeBot(),
     )
 
     assert service_calls[0]["session_factory"] is session_factory
     assert service_calls[0]["tariff_code"] == "1m"
-    invoice_call = callback_message.invoices[0]
-    assert invoice_call["title"] == "Hydra Monitors"
-    assert invoice_call["description"] == "Hydra Monitors access: 1 month"
-    assert invoice_call["payload"] == "stars:payload"
-    assert invoice_call["currency"] == "XTR"
-    assert invoice_call["provider_token"] == ""
-    assert invoice_call["prices"][0].amount == 8682
-    assert invoice_call["subscription_period"] == 2_592_000
+    # Stars now pays via an XTR invoice LINK on a URL button, not a separate native card.
+    link = link_calls[0]
+    assert link["title"] == "Hydra Monitors"
+    assert link["description"] == "Hydra Monitors access: 1 month"
+    assert link["payload"] == "stars:payload"
+    assert link["currency"] == "XTR"
+    assert link["provider_token"] == ""
+    assert link["prices"][0].amount == 8682
+    assert "subscription_period" not in link  # one-shot
+    # The quote message is edited in place to the invoice page with the link on a URL button.
+    edit = callback_message.edits[0]
+    assert "⭐ 8682" in edit["text"]
+    urls = [b.url for row in edit["reply_markup"].inline_keyboard for b in row if b.url]
+    assert "https://t.me/$stars-invoice-link" in urls
     assert callback.answers == [{"text": None}]
 
 
-async def test_stars_invoice_callback_cancels_local_invoice_when_telegram_send_fails(
+async def test_stars_invoice_callback_cancels_local_invoice_when_link_creation_fails(
     monkeypatch,
 ) -> None:
     import bot.handlers.buy as buy_module
 
     cancelled_invoice_ids: list[int] = []
 
-    class FailingInvoiceMessage(FakeMessage):
-        async def answer_invoice(self, **kwargs: Any) -> None:
+    class FailingBot:
+        async def create_invoice_link(self, **kwargs: Any) -> str:
             del kwargs
-            msg = "telegram send failed"
+            msg = "telegram createInvoiceLink failed"
             raise RuntimeError(msg)
 
     async def fake_ensure_minimal_user(session: FakeSession, **kwargs: Any) -> FakeUserRecord:
@@ -426,7 +430,7 @@ async def test_stars_invoice_callback_cancels_local_invoice_when_telegram_send_f
         return FakeCreatedStarsInvoice(
             invoice=SimpleNamespace(id=42),
             quote=object(),
-            stars=FakeStarsQuote(amount=8682, subscription_period=2_592_000),
+            stars=FakeStarsQuote(amount=8682, subscription_period=None),
             payload="stars:payload",
             title="Hydra Monitors",
             description="Hydra Monitors access: 1 month",
@@ -446,7 +450,7 @@ async def test_stars_invoice_callback_cancels_local_invoice_when_telegram_send_f
     callback = FakeCallback(
         data=f"{CB_STARS_PREFIX}1m",
         from_user=FakeTelegramUser(id=700, language_code="en"),
-        message=FailingInvoiceMessage(chat=FakeChat(id=700)),
+        message=FakeMessage(chat=FakeChat(id=700)),
     )
 
     await buy_module.stars_invoice_callback(
@@ -454,6 +458,7 @@ async def test_stars_invoice_callback_cancels_local_invoice_when_telegram_send_f
         settings=Settings(stars={"enabled": True}),
         i18n=JsonI18n(),
         session_factory=FakeSessionFactory(),
+        bot=FailingBot(),
     )
 
     assert cancelled_invoice_ids == [42]
@@ -463,7 +468,18 @@ async def test_stars_invoice_callback_cancels_local_invoice_when_telegram_send_f
     assert edit["reply_markup"] is not None  # back-to-tariffs + support buttons
 
 
-def test_format_quote_text_includes_promo_discount() -> None:
+def test_format_quote_text_shows_tariff_and_duration_without_breakdown() -> None:
+    import bot.handlers.buy as buy_module
+
+    quote = quote_tariff(Settings(), "3m", UserStatus.basic)
+    text = buy_module._format_quote_text(JsonI18n(), Settings(), "en", quote)
+
+    assert "3 months" in text
+    assert "Hydra Monitors" in text  # plan label
+    assert "$" not in text  # the full breakdown moved to the invoice page
+
+
+def test_invoice_created_text_shows_per_method_breakdown_with_promo() -> None:
     import bot.handlers.buy as buy_module
 
     quote = quote_tariff(
@@ -478,10 +494,44 @@ def test_format_quote_text_includes_promo_discount() -> None:
         ),
     )
 
-    text = buy_module._format_quote_text(JsonI18n(), Settings(), "en", quote)
+    text = buy_module._invoice_created_text(JsonI18n(), Settings(), "en", quote=quote)
 
-    assert "SAVE20" in text
+    assert "Invoice created" in text  # header
+    assert "SAVE20" in text  # promo line
     assert "-$11.80" in text
+    assert "Payment fee" in text  # CryptoBot (3%) fee shown
+
+
+def test_invoice_created_text_zero_fee_omits_fee_and_net_lines() -> None:
+    import bot.handlers.buy as buy_module
+
+    quote = quote_tariff(Settings(), "1m", UserStatus.basic, fee_percent=Decimal("0"))
+    text = buy_module._invoice_created_text(JsonI18n(), Settings(), "en", quote=quote)
+
+    assert "Total" in text
+    assert "Payment fee" not in text  # 0% fee (xRocket/referral) → only the total line
+    assert "Access amount" not in text
+
+
+def test_invoice_created_text_stars_shows_xtr_total_only() -> None:
+    import bot.handlers.buy as buy_module
+
+    quote = quote_tariff(Settings(), "1m", UserStatus.basic)
+    text = buy_module._invoice_created_text(
+        JsonI18n(), Settings(), "en", quote=quote, stars_amount=8682
+    )
+
+    assert "⭐ 8682" in text
+    assert "Payment fee" not in text  # no USD fee line for Stars
+
+
+def test_invoice_created_text_tribute_has_no_breakdown() -> None:
+    import bot.handlers.buy as buy_module
+
+    text = buy_module._invoice_created_text(JsonI18n(), Settings(), "en")
+
+    assert "Invoice created" in text
+    assert "Total" not in text  # fixed dashboard price, no breakdown
 
 
 async def test_cryptobot_invoice_callback_returns_payment_url(monkeypatch) -> None:
@@ -515,7 +565,7 @@ async def test_cryptobot_invoice_callback_returns_payment_url(monkeypatch) -> No
         )
         return SimpleNamespace(
             pay_url="https://t.me/CryptoBot?start=pay",
-            quote=SimpleNamespace(gross_usd=Decimal("81.44")),
+            quote=quote_tariff(Settings(), "1m", UserStatus.basic),
             invoice=object(),
         )
 
@@ -634,7 +684,7 @@ async def test_xrocket_invoice_callback_returns_payment_url(monkeypatch) -> None
         )
         return SimpleNamespace(
             pay_url="https://t.me/xrocket?start=pay",
-            quote=SimpleNamespace(gross_usd=Decimal("79.00")),
+            quote=quote_tariff(Settings(), "1m", UserStatus.basic),
             invoice=object(),
         )
 
@@ -859,7 +909,7 @@ async def test_cryptobot_invoice_callback_alert_fallback_shows_created_text(monk
     async def fake_create_invoice(*args: Any, **kwargs: Any) -> SimpleNamespace:
         return SimpleNamespace(
             pay_url="https://t.me/CryptoBot?start=pay",
-            quote=SimpleNamespace(gross_usd=Decimal("81.44")),
+            quote=quote_tariff(Settings(), "1m", UserStatus.basic),
             invoice=object(),
         )
 
