@@ -21,6 +21,7 @@ class BotConfig(BaseModel):
     username: str = Field(default="HydraPaymentBot", min_length=1)  # resolved at runtime from getMe
     username_override: str = ""  # force a specific @username, skips getMe
     support_username: str = "HMonitorsBot"
+    support_url: str = "https://t.me/HMonitorsBot"  # config-driven support link for all buttons
     docs_url: str = "http://docs.hydramonitors.com/"  # main-menu documentation link button
     custom_emoji_icons: bool = True  # attach tgiosicons custom-emoji icons to inline buttons
 
@@ -309,6 +310,7 @@ class LoyaltyConfig(BaseModel):
     silver_discount_percent: Decimal = Field(default=Decimal("10"), ge=0, lt=100)
     gold_active_months: int = Field(default=6, ge=2)
     gold_discount_percent: Decimal = Field(default=Decimal("15"), ge=0, lt=100)
+    status_grace_days: int = Field(default=7, ge=0)  # keep the earned tier this long after expiry
 
     @model_validator(mode="after")
     def validate_tiers(self) -> LoyaltyConfig:
@@ -364,6 +366,7 @@ class AccessConfig(BaseModel):
     protected_chats: list[ProtectedChatConfig] = Field(default_factory=list)
     invite_link_ttl_seconds: int = Field(default=24 * 60 * 60, ge=60)
     revoke_ban_seconds: int = Field(default=60, ge=1)
+    docs_footer_enabled: bool = True  # append a localized docs-link footer to access-links messages
 
 
 class Settings(BaseSettings):

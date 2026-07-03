@@ -10,7 +10,7 @@ from bot.keyboards.icons import icon_for
 from bot.repos.tariffs import get_active_plans, resolve_plan_code
 
 if TYPE_CHECKING:
-    from bot.services.pricing import PricedTariff
+    from bot.services.pricing import PricedTariff, TariffQuote
 
 CB_PROFILE = "profile"
 CB_LANGUAGE = "language"
@@ -329,60 +329,39 @@ def tariff_detail_keyboard(
     tariff_code: str,
     lang_code: str,
     settings: Settings,
+    quote: TariffQuote,
+    stars_amount: int | None = None,
     *,
     show_referral_pay: bool = False,
 ) -> InlineKeyboardMarkup:
+    """Payment-method menu. Each button shows the price the user actually pays via that method
+    (fees differ per provider); Tribute has no shown price (fixed foreign price). No icons."""
+
+    def pay(key: str, prefix: str, amount: str | None) -> list[InlineKeyboardButton]:
+        label = i18n.gettext(key, lang_code)
+        if amount is not None:
+            label = f"{label} — {amount}"
+        return [_button(label, callback_data=f"{prefix}{tariff_code}")]
+
     rows = [
-        [
-            _button(
-                i18n.gettext("buy.pay.cryptobot", lang_code),
-                icon_key="buy.pay.cryptobot",
-                callback_data=f"{CB_CRYPTOBOT_PREFIX}{tariff_code}",
-            )
-        ]
+        pay(
+            "buy.pay.cryptobot",
+            CB_CRYPTOBOT_PREFIX,
+            f"${quote.gross_usd:.2f} (+${quote.fee_usd:.2f})",
+        )
     ]
     if settings.stars.enabled:
-        rows.append(
-            [
-                _button(
-                    i18n.gettext("buy.pay.stars", lang_code),
-                    icon_key="buy.pay.stars",
-                    callback_data=f"{CB_STARS_PREFIX}{tariff_code}",
-                )
-            ]
-        )
+        amount = f"⭐ {stars_amount}" if stars_amount is not None else None
+        rows.append(pay("buy.pay.stars", CB_STARS_PREFIX, amount))
     if settings.xrocket.enabled:
-        rows.append(
-            [
-                _button(
-                    i18n.gettext("buy.pay.xrocket", lang_code),
-                    icon_key="buy.pay.xrocket",
-                    callback_data=f"{CB_XROCKET_PREFIX}{tariff_code}",
-                )
-            ]
-        )
+        rows.append(pay("buy.pay.xrocket", CB_XROCKET_PREFIX, f"${quote.net_usd:.2f}"))
     if settings.tribute.enabled and settings.tribute.link_for_tariff(tariff_code) is not None:
-        rows.append(
-            [
-                _button(
-                    i18n.gettext("buy.pay.tribute", lang_code),
-                    icon_key="buy.pay.tribute",
-                    callback_data=f"{CB_TRIBUTE_PREFIX}{tariff_code}",
-                )
-            ]
-        )
+        rows.append(pay("buy.pay.tribute", CB_TRIBUTE_PREFIX, None))
     # Shown only when the caller has verified the user's referral balance covers the price
     # (see buy.tariff_callback); the handler re-checks under a row lock before granting.
     if show_referral_pay:
-        rows.append(
-            [
-                _button(
-                    i18n.gettext("buy.pay.referral_balance", lang_code),
-                    icon_key="buy.pay.referral_balance",
-                    callback_data=f"{CB_REFERRAL_PAY_PREFIX}{tariff_code}",
-                )
-            ]
-        )
+        amount = f"${quote.net_usd:.2f}"
+        rows.append(pay("buy.pay.referral_balance", CB_REFERRAL_PAY_PREFIX, amount))
     plan_code = resolve_plan_code(settings, tariff_code)
     back_callback = (
         f"{CB_BACK_DURATION_PREFIX}{plan_code}" if plan_code is not None else CB_BACK_TARIFFS
@@ -391,13 +370,30 @@ def tariff_detail_keyboard(
         [
             _button(
                 i18n.gettext("buy.back", lang_code),
+                icon_key="nav.back",
                 callback_data=back_callback,
-            )
+            ),
+            _button(
+                i18n.gettext("menu.home", lang_code),
+                icon_key="nav.home",
+                callback_data=CB_MENU,
+            ),
         ]
     )
-    return InlineKeyboardMarkup(
-        inline_keyboard=rows,
-    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _invoice_cancel_row(
+    i18n: JsonI18n, lang_code: str, tariff_code: str
+) -> list[InlineKeyboardButton]:
+    """Cancel/back button on an invoice page — returns to the payment-method menu."""
+    return [
+        _button(
+            i18n.gettext("buy.invoice.cancel", lang_code),
+            icon_key="nav.cancel",
+            callback_data=f"{CB_TARIFF_PREFIX}{tariff_code}",
+        )
+    ]
 
 
 def payment_keyboard(
@@ -405,27 +401,23 @@ def payment_keyboard(
     settings: Settings,
     lang_code: str,
     pay_url: str,
+    tariff_code: str,
     *,
     payment_key: str = "buy.pay.cryptobot",
 ) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [
-                _button(
-                    i18n.gettext(payment_key, lang_code),
-                    icon_key=payment_key,
-                    url=pay_url,
-                )
-            ],
-            [
-                _button(
-                    i18n.gettext("support.button", lang_code),
-                    icon_key="support.button",
-                    url=_support_url(settings),
-                )
-            ],
+            [_button(i18n.gettext(payment_key, lang_code), url=pay_url)],
+            _invoice_cancel_row(i18n, lang_code, tariff_code),
         ]
     )
+
+
+def invoice_cancel_keyboard(
+    i18n: JsonI18n, lang_code: str, tariff_code: str
+) -> InlineKeyboardMarkup:
+    """Cancel-only keyboard for the Stars framing message (Stars pays via the native invoice)."""
+    return InlineKeyboardMarkup(inline_keyboard=[_invoice_cancel_row(i18n, lang_code, tariff_code)])
 
 
 def _support_url(settings: Settings) -> str:

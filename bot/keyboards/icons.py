@@ -28,8 +28,11 @@ MENU_ICONS: dict[str, str] = {
     "profile.button.renew": "5769248574499983619",  # 🔄
     "profile.button.enter_chat": "6035130900075777681",  # 🚪
     "access.button.dismiss": "6030757850274336631",  # ❌ delete the access-links message
-    "profile.button.support": "6030784887093464891",  # 💬
-    "support.button": "6030784887093464891",  # 💬
+    "nav.back": "5895519358871932592",  # 📰 step-back button (one step within a flow)
+    "nav.home": "5938537205847822613",  # 🏡 return to the main menu
+    "nav.cancel": "6030757850274336631",  # ❌ cancel button
+    "profile.button.support": "6030622631818956594",  # 💬 unified support icon
+    "support.button": "6030622631818956594",  # 💬 unified support icon
     "buy.tariff.button": "5890937706803894250",  # 📅
     "buy.pay.cryptobot": "5778613750688911681",  # 🪙
     "buy.pay.stars": "6028338546736107668",  # ⭐️

@@ -12,7 +12,11 @@ from bot.config import Settings, TariffConfig
 from bot.core.i18n import JsonI18n
 from bot.handlers.buy import _priced_no_promo
 from bot.models import UserStatus
-from bot.services.pricing import PricedTariff
+from bot.services.pricing import PricedTariff, quote_tariff
+
+
+def _detail_quote(settings: Settings, code: str = "3m"):
+    return quote_tariff(settings, code, UserStatus.basic)
 
 PROFILE_DISPLAY_KEYS = {
     "profile.text",
@@ -361,79 +365,101 @@ def test_tariff_keyboard_strikes_old_price_and_shows_new_when_promo_applies() ->
     assert promo_button.icon_custom_emoji_id == icon_module.MENU_ICONS["menu.button.promo"]
 
 
-def test_tariff_detail_keyboard_has_back_to_duration() -> None:
+def test_tariff_detail_keyboard_has_back_and_home() -> None:
     keyboards = keyboard_module()
+    settings = Settings()
 
-    keyboard = keyboards.tariff_detail_keyboard(JsonI18n(), "3m", "en", Settings())
+    keyboard = keyboards.tariff_detail_keyboard(
+        JsonI18n(), "3m", "en", settings, _detail_quote(settings, "3m")
+    )
+    callbacks = keyboard_callback_data(keyboard)
 
-    assert f"{keyboards.CB_BACK_DURATION_PREFIX}main" in keyboard_callback_data(keyboard)
+    assert f"{keyboards.CB_BACK_DURATION_PREFIX}main" in callbacks  # back → duration menu
+    assert keyboards.CB_MENU in callbacks  # home → main menu
 
 
 def test_tariff_detail_keyboard_contains_cryptobot_payment_action() -> None:
     keyboards = keyboard_module()
+    settings = Settings()
 
-    keyboard = keyboards.tariff_detail_keyboard(JsonI18n(), "3m", "en", Settings())
+    keyboard = keyboards.tariff_detail_keyboard(
+        JsonI18n(), "3m", "en", settings, _detail_quote(settings, "3m")
+    )
 
     assert f"{keyboards.CB_CRYPTOBOT_PREFIX}3m" in keyboard_callback_data(keyboard)
-    assert "Pay with CryptoBot" in keyboard_texts(keyboard)
+    # Label now carries the per-method price (gross + fee), so match a substring.
+    assert any("Pay with CryptoBot" in text for text in keyboard_texts(keyboard))
 
 
 def test_tariff_detail_keyboard_contains_stars_payment_action_when_enabled() -> None:
     keyboards = keyboard_module()
+    settings = Settings(stars={"enabled": True})
 
     keyboard = keyboards.tariff_detail_keyboard(
-        JsonI18n(),
-        "1m",
-        "en",
-        Settings(stars={"enabled": True}),
+        JsonI18n(), "1m", "en", settings, _detail_quote(settings, "1m"), 500
     )
 
     assert f"{keyboards.CB_STARS_PREFIX}1m" in keyboard_callback_data(keyboard)
-    assert "Pay with Telegram Stars" in keyboard_texts(keyboard)
+    assert any("Pay with Telegram Stars" in text for text in keyboard_texts(keyboard))
+    assert any("⭐ 500" in text for text in keyboard_texts(keyboard))
 
 
 def test_tariff_detail_keyboard_contains_xrocket_payment_action_only_when_enabled() -> None:
     keyboards = keyboard_module()
+    plain = Settings()
+    xrocket = Settings(xrocket={"enabled": True})
 
-    disabled = keyboards.tariff_detail_keyboard(JsonI18n(), "1m", "en", Settings())
+    disabled = keyboards.tariff_detail_keyboard(
+        JsonI18n(), "1m", "en", plain, _detail_quote(plain, "1m")
+    )
     enabled = keyboards.tariff_detail_keyboard(
-        JsonI18n(),
-        "1m",
-        "en",
-        Settings(xrocket={"enabled": True}),
+        JsonI18n(), "1m", "en", xrocket, _detail_quote(xrocket, "1m")
     )
 
     assert f"{keyboards.CB_XROCKET_PREFIX}1m" not in keyboard_callback_data(disabled)
     assert f"{keyboards.CB_XROCKET_PREFIX}1m" in keyboard_callback_data(enabled)
-    assert "Pay with xRocket" in keyboard_texts(enabled)
+    assert any("Pay with xRocket" in text for text in keyboard_texts(enabled))
 
 
 def test_tariff_detail_keyboard_shows_referral_pay_only_when_flagged() -> None:
     keyboards = keyboard_module()
+    settings = Settings()
 
-    hidden = keyboards.tariff_detail_keyboard(JsonI18n(), "1m", "en", Settings())
+    hidden = keyboards.tariff_detail_keyboard(
+        JsonI18n(), "1m", "en", settings, _detail_quote(settings, "1m")
+    )
     shown = keyboards.tariff_detail_keyboard(
-        JsonI18n(), "1m", "en", Settings(), show_referral_pay=True
+        JsonI18n(), "1m", "en", settings, _detail_quote(settings, "1m"), show_referral_pay=True
     )
 
     assert f"{keyboards.CB_REFERRAL_PAY_PREFIX}1m" not in keyboard_callback_data(hidden)
     assert f"{keyboards.CB_REFERRAL_PAY_PREFIX}1m" in keyboard_callback_data(shown)
-    assert "Pay with referral balance" in keyboard_texts(shown)
+    assert any("Pay with referral balance" in text for text in keyboard_texts(shown))
 
 
-def test_payment_keyboard_points_to_provider_url_and_support() -> None:
+def test_tariff_detail_keyboard_pay_buttons_have_no_icons() -> None:
+    keyboards = keyboard_module()
+    settings = Settings()
+
+    keyboard = keyboards.tariff_detail_keyboard(
+        JsonI18n(), "1m", "en", settings, _detail_quote(settings, "1m")
+    )
+    pay_button = keyboard.inline_keyboard[0][0]
+
+    assert pay_button.icon_custom_emoji_id is None
+
+
+def test_payment_keyboard_has_pay_url_and_cancel() -> None:
     keyboards = keyboard_module()
     settings = Settings(bot={"support_username": "HydraSupport"})
 
     keyboard = keyboards.payment_keyboard(
-        JsonI18n(),
-        settings,
-        "en",
-        pay_url="https://t.me/CryptoBot?start=pay",
+        JsonI18n(), settings, "en", "https://t.me/CryptoBot?start=pay", "1m"
     )
 
     assert "https://t.me/CryptoBot?start=pay" in keyboard_urls(keyboard)
-    assert "https://t.me/HydraSupport" in keyboard_urls(keyboard)
+    assert "https://t.me/HydraSupport" not in keyboard_urls(keyboard)  # support removed
+    assert f"{keyboards.CB_TARIFF_PREFIX}1m" in keyboard_callback_data(keyboard)  # cancel → methods
 
 
 def test_payment_keyboard_can_use_xrocket_provider_label() -> None:
@@ -444,7 +470,8 @@ def test_payment_keyboard_can_use_xrocket_provider_label() -> None:
         JsonI18n(),
         settings,
         "en",
-        pay_url="https://t.me/xrocket?start=pay",
+        "https://t.me/xrocket?start=pay",
+        "1m",
         payment_key="buy.pay.xrocket",
     )
 

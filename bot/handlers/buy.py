@@ -15,6 +15,7 @@ from bot.core.db import session_scope
 from bot.core.i18n import JsonI18n
 from bot.core.logger import ServiceChannel
 from bot.core.service_events import fmt_amount, fmt_dt, money, render_event, user_mention
+from bot.core.text_emoji import text_emoji
 from bot.handlers.start import callback_context
 from bot.keyboards import (
     CB_BACK_DURATION_PREFIX,
@@ -27,6 +28,7 @@ from bot.keyboards import (
     CB_TARIFF_PREFIX,
     CB_TRIBUTE_PREFIX,
     CB_XROCKET_PREFIX,
+    invoice_cancel_keyboard,
     payment_keyboard,
     plan_keyboard,
     tariff_detail_keyboard,
@@ -34,6 +36,7 @@ from bot.keyboards import (
 )
 from bot.models import User, UserStatus
 from bot.payments.cryptobot import CryptoBotAPIError, CryptoBotClient
+from bot.payments.stars import quote_stars_invoice
 from bot.payments.xrocket import XRocketAPIError, XRocketClient
 from bot.repos.promos import PromoUnavailable, get_pending_promo_for_menu
 from bot.repos.referrals import (
@@ -321,6 +324,7 @@ async def tariff_callback(
         await callback.answer(_promo_error_text(i18n, lang_code, exc.reason), show_alert=True)
         return
 
+    stars_amount = quote_stars_invoice(settings, quote).amount if settings.stars.enabled else None
     await _edit_text_or_answer(
         callback,
         _format_quote_text(i18n, settings, lang_code, quote),
@@ -329,6 +333,8 @@ async def tariff_callback(
             tariff_code,
             lang_code,
             settings,
+            quote,
+            stars_amount,
             show_referral_pay=show_referral_pay,
         ),
     )
@@ -411,8 +417,8 @@ async def cryptobot_invoice_callback(
 
     await _edit_text_or_answer(
         callback,
-        _invoice_created_text(i18n, lang_code, created.pay_url),
-        reply_markup=payment_keyboard(i18n, settings, lang_code, created.pay_url),
+        _invoice_created_text(i18n, lang_code),
+        reply_markup=payment_keyboard(i18n, settings, lang_code, created.pay_url, tariff_code),
     )
 
 
@@ -496,7 +502,13 @@ async def stars_invoice_callback(
         await callback.answer(i18n.gettext("buy.invoice.failed", lang_code), show_alert=True)
         return
 
-    await callback.answer()
+    # Frame the native Stars invoice like the URL providers: edit the quote message to the
+    # "invoice created" text with a cancel button (the native invoice sits below it as the payer).
+    await _edit_text_or_answer(
+        callback,
+        _invoice_created_text(i18n, lang_code),
+        reply_markup=invoice_cancel_keyboard(i18n, lang_code, tariff_code),
+    )
 
 
 async def xrocket_invoice_callback(
@@ -572,12 +584,13 @@ async def xrocket_invoice_callback(
 
     await _edit_text_or_answer(
         callback,
-        _invoice_created_text(i18n, lang_code, created.pay_url),
+        _invoice_created_text(i18n, lang_code),
         reply_markup=payment_keyboard(
             i18n,
             settings,
             lang_code,
             created.pay_url,
+            tariff_code,
             payment_key="buy.pay.xrocket",
         ),
     )
@@ -622,12 +635,13 @@ async def tribute_invoice_callback(
 
     await _edit_text_or_answer(
         callback,
-        _invoice_created_text(i18n, lang_code, pay_url),
+        _invoice_created_text(i18n, lang_code),
         reply_markup=payment_keyboard(
             i18n,
             settings,
             lang_code,
             pay_url,
+            tariff_code,
             payment_key="buy.pay.tribute",
         ),
     )
@@ -810,40 +824,49 @@ def _format_quote_text(
     lang_code: str,
     quote: TariffQuote,
 ) -> str:
-    text = i18n.gettext(
+    net = quote.net_usd
+    discounts = quote.tariff.base_price_usd - net
+    fee_multiplier = Decimal("1") - (settings.cryptobot.fee_percent / Decimal("100"))
+    if fee_multiplier > 0:
+        total_before = quote.tariff.base_price_usd / fee_multiplier
+    else:
+        total_before = quote.gross_usd
+    total = (
+        f"<s>${total_before:.2f}</s> ${quote.gross_usd:.2f}"
+        if discounts > 0
+        else f"${quote.gross_usd:.2f}"
+    )
+    discounts_line = (
+        "\n" + i18n.gettext("buy.quote.discounts", lang_code, discounts=f"{discounts:.2f}")
+        if discounts > 0
+        else ""
+    )
+    promo_line = ""
+    if quote.promo_code is not None and quote.promo_discount_usd > 0:
+        promo_line = "\n" + i18n.gettext(
+            "buy.quote.promo_discount",
+            lang_code,
+            code=quote.promo_code,
+            discount_usd=f"{quote.promo_discount_usd:.2f}",
+        )
+    elif quote.promo_code is not None and quote.promo_extra_days > 0:
+        promo_line = "\n" + i18n.gettext(
+            "buy.quote.promo_extra_days",
+            lang_code,
+            code=quote.promo_code,
+            days=quote.promo_extra_days,
+        )
+    return i18n.gettext(
         "buy.quote.text",
         lang_code,
+        coin=text_emoji("coin"),
         months=quote.tariff.duration_months,
-        gross_usd=f"{quote.gross_usd:.2f}",
-        net_usd=f"{quote.net_usd:.2f}",
+        total=total,
+        net_usd=f"{net:.2f}",
         fee_usd=f"{quote.fee_usd:.2f}",
-        accepted_assets=", ".join(settings.cryptobot.accepted_assets),
+        discounts_line=discounts_line,
+        promo_line=promo_line,
     )
-    if quote.promo_code is not None and quote.promo_discount_usd > 0:
-        text = "\n".join(
-            [
-                text,
-                i18n.gettext(
-                    "buy.quote.promo_discount",
-                    lang_code,
-                    code=quote.promo_code,
-                    discount_usd=f"{quote.promo_discount_usd:.2f}",
-                ),
-            ]
-        )
-    if quote.promo_code is not None and quote.promo_extra_days > 0:
-        text = "\n".join(
-            [
-                text,
-                i18n.gettext(
-                    "buy.quote.promo_extra_days",
-                    lang_code,
-                    code=quote.promo_code,
-                    days=quote.promo_extra_days,
-                ),
-            ]
-        )
-    return text
 
 
 def _parse_prefixed_callback(data: str | None, prefix: str) -> str | None:
@@ -853,8 +876,8 @@ def _parse_prefixed_callback(data: str | None, prefix: str) -> str | None:
     return value or None
 
 
-def _invoice_created_text(i18n: JsonI18n, lang_code: str, pay_url: str) -> str:
-    return f"{i18n.gettext('buy.invoice.created', lang_code)}\n{pay_url}"
+def _invoice_created_text(i18n: JsonI18n, lang_code: str) -> str:
+    return i18n.gettext("buy.invoice.created", lang_code, warn=text_emoji("warning"))
 
 
 async def _edit_text_or_answer(

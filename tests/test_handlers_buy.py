@@ -277,9 +277,9 @@ async def test_tariff_callback_edits_quote_detail(monkeypatch) -> None:
 
     text = callback_message.edits[0]["text"]
     assert "3 months" in text
-    assert "USDT, TON, BTC" in text
-    assert "$173.35" in text
-    assert "$168.15" in text
+    assert "$173.35" in text  # total (gross)
+    assert "$168.15" in text  # access amount (net)
+    assert "Accepted assets" not in text  # accepted-assets line removed
     assert callback.answers == [{"text": None}]
     assert callback_message.edits[0]["reply_markup"] == "detail-keyboard"
 
@@ -482,7 +482,8 @@ def test_format_quote_text_includes_promo_discount() -> None:
 
     text = buy_module._format_quote_text(JsonI18n(), Settings(), "en", quote)
 
-    assert "Promo SAVE20: -$11.80" in text
+    assert "SAVE20" in text
+    assert "-$11.80" in text
 
 
 async def test_cryptobot_invoice_callback_returns_payment_url(monkeypatch) -> None:
@@ -525,9 +526,16 @@ async def test_cryptobot_invoice_callback_returns_payment_url(monkeypatch) -> No
         settings: Settings,
         lang_code: str,
         pay_url: str,
+        tariff_code: str,
     ) -> str:
         keyboard_calls.append(
-            {"i18n": i18n, "settings": settings, "lang_code": lang_code, "pay_url": pay_url}
+            {
+                "i18n": i18n,
+                "settings": settings,
+                "lang_code": lang_code,
+                "pay_url": pay_url,
+                "tariff_code": tariff_code,
+            }
         )
         return "payment-keyboard"
 
@@ -565,19 +573,16 @@ async def test_cryptobot_invoice_callback_returns_payment_url(monkeypatch) -> No
             "settings": settings,
             "lang_code": "en",
             "pay_url": "https://t.me/CryptoBot?start=pay",
+            "tariff_code": "1m",
         }
     ]
     assert session_factory.session.commits == 1
     assert callback.answers == [{"text": None}]
-    assert callback_message.edits == [
-        {
-            "text": (
-                "Invoice created. Use the payment button below to complete your purchase.\n"
-                "https://t.me/CryptoBot?start=pay"
-            ),
-            "reply_markup": "payment-keyboard",
-        }
-    ]
+    edit = callback_message.edits[0]
+    assert edit["reply_markup"] == "payment-keyboard"
+    assert "Invoice created" in edit["text"]
+    # The pay URL now lives only on the button, not in the message body.
+    assert "https://t.me/CryptoBot?start=pay" not in edit["text"]
 
 
 async def test_cryptobot_invoice_callback_allows_missing_injected_client() -> None:
@@ -642,6 +647,7 @@ async def test_xrocket_invoice_callback_returns_payment_url(monkeypatch) -> None
         settings: Settings,
         lang_code: str,
         pay_url: str,
+        tariff_code: str,
         *,
         payment_key: str = "buy.pay.cryptobot",
     ) -> str:
@@ -651,6 +657,7 @@ async def test_xrocket_invoice_callback_returns_payment_url(monkeypatch) -> None
                 "settings": settings,
                 "lang_code": lang_code,
                 "pay_url": pay_url,
+                "tariff_code": tariff_code,
                 "payment_key": payment_key,
             }
         )
@@ -689,20 +696,16 @@ async def test_xrocket_invoice_callback_returns_payment_url(monkeypatch) -> None
             "settings": settings,
             "lang_code": "en",
             "pay_url": "https://t.me/xrocket?start=pay",
+            "tariff_code": "1m",
             "payment_key": "buy.pay.xrocket",
         }
     ]
     assert session_factory.session.commits == 1
     assert callback.answers == [{"text": None}]
-    assert callback_message.edits == [
-        {
-            "text": (
-                "Invoice created. Use the payment button below to complete your purchase.\n"
-                "https://t.me/xrocket?start=pay"
-            ),
-            "reply_markup": "payment-keyboard",
-        }
-    ]
+    edit = callback_message.edits[0]
+    assert edit["reply_markup"] == "payment-keyboard"
+    assert "Invoice created" in edit["text"]
+    assert "https://t.me/xrocket?start=pay" not in edit["text"]
 
 
 async def test_xrocket_invoice_callback_allows_missing_injected_client() -> None:
@@ -860,7 +863,7 @@ async def test_cryptobot_invoice_callback_provider_errors_do_not_send_pay_url(
     assert callback_message.edits == []
 
 
-async def test_cryptobot_invoice_callback_alert_fallback_includes_payment_url(monkeypatch) -> None:
+async def test_cryptobot_invoice_callback_alert_fallback_shows_created_text(monkeypatch) -> None:
     import bot.handlers.buy as buy_module
 
     async def fake_ensure_minimal_user(session: FakeSession, **kwargs: Any) -> FakeUserRecord:
@@ -891,15 +894,11 @@ async def test_cryptobot_invoice_callback_alert_fallback_includes_payment_url(mo
         cryptobot_client=object(),
     )
 
-    assert callback.answers == [
-        {
-            "text": (
-                "Invoice created. Use the payment button below to complete your purchase.\n"
-                "https://t.me/CryptoBot?start=pay"
-            ),
-            "show_alert": True,
-        }
-    ]
+    assert len(callback.answers) == 1
+    answer = callback.answers[0]
+    assert answer["show_alert"] is True
+    assert "Invoice created" in answer["text"]
+    assert "https://t.me/CryptoBot?start=pay" not in answer["text"]  # URL no longer in the text
 
 
 async def test_cryptobot_invoice_callback_transport_errors_do_not_bubble(monkeypatch) -> None:

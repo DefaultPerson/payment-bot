@@ -7,6 +7,8 @@ from bot.config import Settings
 from bot.core.i18n import JsonI18n
 from bot.keyboards import icons as icon_module
 from bot.keyboards.menu import main_menu_keyboard, payment_keyboard, tariff_detail_keyboard
+from bot.models import UserStatus
+from bot.services.pricing import quote_tariff
 
 ALL = set(icon_module.MENU_ICONS.values())
 
@@ -55,31 +57,31 @@ def test_main_menu_buttons_carry_mapped_icons() -> None:
     )
 
 
-def test_pay_buttons_get_provider_icons() -> None:
+def test_pay_buttons_have_no_icons() -> None:
+    settings = Settings(stars={"enabled": True}, xrocket={"enabled": True})
     keyboard = tariff_detail_keyboard(
-        JsonI18n(),
-        "1m",
-        "en",
-        Settings(stars={"enabled": True}, xrocket={"enabled": True}),
+        JsonI18n(), "1m", "en", settings, quote_tariff(settings, "1m", UserStatus.basic), 500
     )
     by_cb = _by_callback(keyboard)
 
-    assert by_cb["pay:cryptobot:1m"] == icon_module.MENU_ICONS["buy.pay.cryptobot"]
-    assert by_cb["pay:stars:1m"] == icon_module.MENU_ICONS["buy.pay.stars"]
-    assert by_cb["pay:xrocket:1m"] == icon_module.MENU_ICONS["buy.pay.xrocket"]
+    # Payment buttons carry the price in the label, no custom-emoji icon.
+    assert by_cb["pay:cryptobot:1m"] is None
+    assert by_cb["pay:stars:1m"] is None
+    assert by_cb["pay:xrocket:1m"] is None
 
 
-def test_payment_keyboard_icon_follows_provider_key() -> None:
+def test_payment_keyboard_pay_button_has_no_icon() -> None:
     keyboard = payment_keyboard(
         JsonI18n(),
         Settings(),
         "en",
-        pay_url="https://t.me/xrocket?start=pay",
+        "https://t.me/xrocket?start=pay",
+        "1m",
         payment_key="buy.pay.xrocket",
     )
     pay_button = keyboard.inline_keyboard[0][0]
 
-    assert pay_button.icon_custom_emoji_id == icon_module.MENU_ICONS["buy.pay.xrocket"]
+    assert pay_button.icon_custom_emoji_id is None
 
 
 def test_apply_valid_icon_ids_drops_unknown_ids() -> None:
