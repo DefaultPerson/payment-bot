@@ -17,6 +17,7 @@ from bot.core.metrics import PaymentBotMetrics
 from bot.core.service_events import fmt_amount, fmt_dt, money, render_event, user_mention
 from bot.keyboards import close_keyboard
 from bot.repos.invoices import lock_invoice_by_id
+from bot.repos.users import get_user_by_tg_id
 from bot.services.access import send_access_links
 from bot.services.message_ttl import schedule_deletion
 from bot.services.payments import (
@@ -74,13 +75,17 @@ async def successful_payment(
         logger.exception("failed to process Stars successful payment")
         if metrics is not None:
             metrics.record_payment(provider="stars", status="error")
-        await message.answer(i18n.gettext("error.generic", _message_language(message, i18n)))
+        await message.answer(
+            i18n.gettext("error.generic", await _error_language(message, i18n, session_factory))
+        )
         return
     except Exception:
         logger.exception("rejected Stars successful payment")
         if metrics is not None:
             metrics.record_payment(provider="stars", status="error")
-        await message.answer(i18n.gettext("error.generic", _message_language(message, i18n)))
+        await message.answer(
+            i18n.gettext("error.generic", await _error_language(message, i18n, session_factory))
+        )
         return
 
     if metrics is not None:
@@ -227,9 +232,25 @@ def _payment_event_text(result: PaidInvoiceResult) -> str:
     )
 
 
-def _message_language(message: Message, i18n: JsonI18n) -> str:
-    user = message.from_user
-    return i18n.resolve_language(user.language_code if user else None)
+async def _error_language(
+    message: Message,
+    i18n: JsonI18n,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> str:
+    """The payer's STORED language for error messages, so a RU user whose Telegram client is set
+    to English still sees errors in Russian. Falls back to the app fallback language (NOT the
+    client locale) when the user cannot be loaded (e.g. the DB itself just failed)."""
+    tg_id = getattr(getattr(message, "from_user", None), "id", None)
+    if tg_id is not None:
+        # Best effort: a failing language lookup must never mask the original error.
+        try:
+            async with session_scope(session_factory) as session:
+                user = await get_user_by_tg_id(session, tg_id)
+                if user is not None:
+                    return user.lang_code
+        except Exception:
+            logger.debug("error-language lookup failed", exc_info=True)
+    return i18n.fallback_language
 
 
 def create_stars_router() -> Router:

@@ -192,7 +192,9 @@ class Invoice(Base):
         nullable=False,
     )
     provider_invoice_id: Mapped[str | None] = mapped_column(String(128))
-    telegram_payment_charge_id: Mapped[str | None] = mapped_column(String(128))
+    # Telegram Stars charge ids exceed 128 chars (observed ~131) — widened to 255 (migration
+    # 0011) so mark_stars_invoice_paid does not fail with StringDataRightTruncationError.
+    telegram_payment_charge_id: Mapped[str | None] = mapped_column(String(255))
     tariff_id: Mapped[int | None] = mapped_column(ForeignKey("tariffs.id", ondelete="SET NULL"))
     promo_id: Mapped[int | None] = mapped_column(ForeignKey("promos.id", ondelete="SET NULL"))
     promo_code: Mapped[str | None] = mapped_column(String(64))

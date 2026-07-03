@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
+from types import SimpleNamespace
 from typing import Any
 
 from bot.config import Settings
@@ -212,9 +213,13 @@ async def test_successful_payment_answers_generic_when_processing_rejects(
         msg = "invoice amount mismatch"
         raise ValueError(msg)
 
-    monkeypatch.setattr(stars_module, "process_paid_stars_invoice", fake_process)
+    async def fake_get_user(session: Any, tg_id: int) -> Any:
+        return SimpleNamespace(lang_code="ru")  # payer's stored language
 
-    message = FakeMessage()
+    monkeypatch.setattr(stars_module, "process_paid_stars_invoice", fake_process)
+    monkeypatch.setattr(stars_module, "get_user_by_tg_id", fake_get_user)
+
+    message = FakeMessage()  # from_user.language_code == "en" (Telegram client locale)
     metrics = FakeMetrics()
 
     await stars_module.successful_payment(
@@ -227,7 +232,9 @@ async def test_successful_payment_answers_generic_when_processing_rejects(
         metrics=metrics,
     )
 
-    assert message.answers == [{"text": "Something went wrong. Please try again later."}]
+    # The error renders in the payer's STORED language (ru), not the English client locale
+    # (the reported bug: paid in RU, saw an English error).
+    assert message.answers == [{"text": "Что-то пошло не так. Попробуйте позже."}]
     assert metrics.payments == [("stars", "error", None)]
 
 
@@ -351,3 +358,31 @@ async def test_successful_payment_retries_access_for_idempotent_undelivered_char
     assert answer["text"] == "Payment received. Your access has been activated."
     assert answer["reply_markup"].inline_keyboard[0][0].callback_data == "dismiss"  # ❌ close
     assert metrics.payments == [("stars", "duplicate", None)]
+
+
+async def test_error_language_uses_stored_language_not_client_locale(monkeypatch) -> None:
+    import bot.handlers.stars as stars_module
+
+    async def fake_get_user(session: Any, tg_id: int) -> Any:
+        return SimpleNamespace(lang_code="ru")  # stored RU
+
+    monkeypatch.setattr(stars_module, "get_user_by_tg_id", fake_get_user)
+
+    message = FakeMessage()  # from_user.language_code == "en" (Telegram client locale)
+    lang = await stars_module._error_language(message, JsonI18n(), FakeSessionFactory())
+
+    assert lang == "ru"  # the stored language wins over the English client locale
+
+
+async def test_error_language_falls_back_to_app_language_when_user_missing(monkeypatch) -> None:
+    import bot.handlers.stars as stars_module
+
+    async def fake_get_user(session: Any, tg_id: int) -> Any:
+        return None
+
+    monkeypatch.setattr(stars_module, "get_user_by_tg_id", fake_get_user)
+
+    message = FakeMessage()  # client locale "en"
+    lang = await stars_module._error_language(message, JsonI18n(), FakeSessionFactory())
+
+    assert lang == "ru"  # app fallback language, not the English client locale
