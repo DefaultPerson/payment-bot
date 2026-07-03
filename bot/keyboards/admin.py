@@ -8,6 +8,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from bot.config import Settings
 from bot.core.i18n import JsonI18n
+from bot.keyboards.icons import icon_for
 from bot.models import Promo, PromoKind
 from bot.services.stats import StatsPeriod
 
@@ -38,8 +39,15 @@ PROMO_PAGE_SIZE = 5
 _STATS_PERIODS = (StatsPeriod.today, StatsPeriod.d7, StatsPeriod.d30, StatsPeriod.all)
 
 
-def _btn(text: str, callback_data: str) -> InlineKeyboardButton:
-    return InlineKeyboardButton(text=text, callback_data=callback_data)
+def _btn(
+    text: str, callback_data: str, *, icon_key: str | None = None
+) -> InlineKeyboardButton:
+    """Admin button, optionally carrying the configured custom-emoji icon for ``icon_key``."""
+    return InlineKeyboardButton(
+        text=text,
+        callback_data=callback_data,
+        icon_custom_emoji_id=icon_for(icon_key),
+    )
 
 
 def _t(i18n: JsonI18n, lang: str, key: str) -> str:
@@ -62,7 +70,9 @@ def root_keyboard(i18n: JsonI18n, lang: str) -> InlineKeyboardMarkup:
 
 def cancel_keyboard(i18n: JsonI18n, lang: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
-        inline_keyboard=[[_btn(_t(i18n, lang, "admin.button.cancel"), CB_ADM_CANCEL)]],
+        inline_keyboard=[
+            [_btn(_t(i18n, lang, "admin.button.cancel"), CB_ADM_CANCEL, icon_key="nav.cancel")]
+        ],
     )
 
 
@@ -70,14 +80,16 @@ def skip_cancel_keyboard(i18n: JsonI18n, lang: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [_btn(_t(i18n, lang, "admin.button.skip"), CB_ADM_SKIP)],
-            [_btn(_t(i18n, lang, "admin.button.cancel"), CB_ADM_CANCEL)],
+            [_btn(_t(i18n, lang, "admin.button.cancel"), CB_ADM_CANCEL, icon_key="nav.cancel")],
         ]
     )
 
 
 def back_keyboard(i18n: JsonI18n, lang: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
-        inline_keyboard=[[_btn(_t(i18n, lang, "admin.button.back"), CB_ADM_ROOT)]],
+        inline_keyboard=[
+            [_btn(_t(i18n, lang, "admin.button.back"), CB_ADM_ROOT, icon_key="nav.back")]
+        ],
     )
 
 
@@ -109,7 +121,7 @@ def promo_list_keyboard(
             ]
         )
     rows.append([_btn(_t(i18n, lang, "admin.promo.button.new"), CB_ADM_PROMO_NEW)])
-    rows.append([_btn(_t(i18n, lang, "admin.button.back"), CB_ADM_ROOT)])
+    rows.append([_btn(_t(i18n, lang, "admin.button.back"), CB_ADM_ROOT, icon_key="nav.back")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -123,7 +135,7 @@ def promo_kind_keyboard(i18n: JsonI18n, lang: str) -> InlineKeyboardMarkup:
         ]
         for kind in PromoKind
     ]
-    rows.append([_btn(_t(i18n, lang, "admin.button.cancel"), CB_ADM_CANCEL)])
+    rows.append([_btn(_t(i18n, lang, "admin.button.cancel"), CB_ADM_CANCEL, icon_key="nav.cancel")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -141,7 +153,7 @@ def promo_tariffs_keyboard(
         mark = "✅ " if tariff.code in selected else ""
         rows.append([_btn(f"{mark}{tariff.code}", f"{PFX_ADM_PROMO_TARIFF}{tariff.code}")])
     rows.append([_btn(_t(i18n, lang, "admin.promo.tariffs.done"), CB_ADM_PROMO_TARIFF_DONE)])
-    rows.append([_btn(_t(i18n, lang, "admin.button.cancel"), CB_ADM_CANCEL)])
+    rows.append([_btn(_t(i18n, lang, "admin.button.cancel"), CB_ADM_CANCEL, icon_key="nav.cancel")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -149,7 +161,7 @@ def promo_confirm_keyboard(i18n: JsonI18n, lang: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [_btn(_t(i18n, lang, "admin.promo.button.confirm"), CB_ADM_PROMO_CONFIRM)],
-            [_btn(_t(i18n, lang, "admin.button.cancel"), CB_ADM_CANCEL)],
+            [_btn(_t(i18n, lang, "admin.button.cancel"), CB_ADM_CANCEL, icon_key="nav.cancel")],
         ]
     )
 
@@ -165,6 +177,6 @@ def stats_keyboard(i18n: JsonI18n, lang: str, *, active: StatsPeriod) -> InlineK
     return InlineKeyboardMarkup(
         inline_keyboard=[
             period_row,
-            [_btn(_t(i18n, lang, "admin.button.back"), CB_ADM_ROOT)],
+            [_btn(_t(i18n, lang, "admin.button.back"), CB_ADM_ROOT, icon_key="nav.back")],
         ]
     )

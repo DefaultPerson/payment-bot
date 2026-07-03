@@ -105,6 +105,23 @@ def test_icon_for_returns_none_for_missing_or_none_key() -> None:
     assert icon_module.icon_for("does.not.exist") is None
 
 
+def test_admin_nav_buttons_carry_standard_icons() -> None:
+    from bot.keyboards.admin import (
+        CB_ADM_CANCEL,
+        CB_ADM_ROOT,
+        back_keyboard,
+        cancel_keyboard,
+    )
+
+    i18n = JsonI18n()
+    back = _by_callback(back_keyboard(i18n, "en"))
+    cancel = _by_callback(cancel_keyboard(i18n, "en"))
+
+    # Admin back/cancel reuse the standardized nav icons (📰 / ❌).
+    assert back[CB_ADM_ROOT] == icon_module.MENU_ICONS["nav.back"]
+    assert cancel[CB_ADM_CANCEL] == icon_module.MENU_ICONS["nav.cancel"]
+
+
 class _FakeSticker:
     def __init__(self, custom_emoji_id: str) -> None:
         self.custom_emoji_id = custom_emoji_id
