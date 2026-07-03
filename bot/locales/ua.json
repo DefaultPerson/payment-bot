@@ -85,6 +85,7 @@
   "referral.start.rebind_rejected": "Реферер уже заданий і не може бути змінений.",
   "referral.text": "Реферальна програма\n\nПосилання для запрошення: {invite_link}\nРеферали: {referral_count}\nЗароблено за весь час: ${referral_earned_usd}\nДоступно до виводу: ${referral_unpaid_earned_usd} з ${min_withdraw_usd} мінімуму\n\nКоли накопичиться мінімум, напишіть у підтримку для ручної виплати.",
   "payment.success.text": "Оплату отримано. Доступ активовано.",
+  "payment.duplicate.refunded": "Цей рахунок уже оплачено — повторний платіж повернено.",
   "stars.invoice.description": "Доступ Hydra Monitors: {months} міс.",
   "access.links.text": "{sparkles} Ваші посилання доступу:\n\n{links}\n\nВідкрийте посилання та натисніть «Подати заявку» — заявку схвалюємо автоматично, поки активна підписка.",
   "access.links.footer": "Більше про можливості та інструменти можна дізнатися в <a href=\"{docs_url}\">документації</a>.",

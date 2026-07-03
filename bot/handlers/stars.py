@@ -22,6 +22,7 @@ from bot.services.access import send_access_links
 from bot.services.message_ttl import schedule_deletion
 from bot.services.payments import (
     PaidInvoiceResult,
+    StarsDuplicateChargeError,
     StarsSuccessfulPayment,
     process_paid_stars_invoice,
     validate_stars_pre_checkout,
@@ -71,6 +72,25 @@ async def successful_payment(
                 now=datetime.now(UTC),
                 settings=settings,
             )
+    except StarsDuplicateChargeError as duplicate:
+        # Reusable invoice-link tapped again after paying: refund the duplicate charge so the
+        # user does not lose stars, and tell them (in their language) it was already paid.
+        # Refund the ACTUAL payer of this charge (message.from_user) — refund_star_payment ties
+        # a charge to the user who made it, which is not necessarily the invoice owner if a
+        # shareable invoice link was forwarded.
+        payer_id = getattr(getattr(message, "from_user", None), "id", None)
+        logger.info("refunding duplicate Stars charge", extra={"tg_id": payer_id})
+        if payer_id is not None:
+            try:
+                await bot.refund_star_payment(
+                    payer_id, duplicate.telegram_payment_charge_id
+                )
+            except Exception:
+                logger.exception("failed to refund duplicate Stars charge")
+        if metrics is not None:
+            metrics.record_payment(provider="stars", status="refunded")
+        await message.answer(i18n.gettext("payment.duplicate.refunded", duplicate.lang_code))
+        return
     except SQLAlchemyError:
         logger.exception("failed to process Stars successful payment")
         if metrics is not None:

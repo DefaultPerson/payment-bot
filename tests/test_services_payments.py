@@ -25,6 +25,7 @@ from bot.models import (
 from bot.payments.cryptobot import CryptoBotInvoice
 from bot.payments.xrocket import XRocketAPIError, XRocketInvoice
 from bot.services.payments import (
+    StarsDuplicateChargeError,
     StarsSuccessfulPayment,
     process_paid_cryptobot_invoice,
     process_paid_stars_invoice,
@@ -968,6 +969,29 @@ async def test_process_paid_stars_invoice_extends_subscription_once() -> None:
             "invoice_payload": "stars:payload",
         },
     }
+
+
+async def test_process_paid_stars_invoice_raises_duplicate_for_repaid_one_shot() -> None:
+    session = FakeAsyncSession()
+    now = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
+    user = make_user()
+    # A one-shot invoice already paid with charge-1 (subscription_period None = one-shot).
+    invoice = make_stars_invoice(status=InvoiceStatus.paid, charge_id="charge-1")
+    invoice.provider_payload["subscription_period"] = None
+    session.users.append(user)
+    session.invoices.append(invoice)
+
+    # A NEW charge (charge-2) arrives — the reusable invoice link was tapped again.
+    with pytest.raises(StarsDuplicateChargeError) as excinfo:
+        await process_paid_stars_invoice(
+            session,
+            successful_payment=make_stars_payment(charge_id="charge-2"),
+            now=now,
+        )
+
+    assert excinfo.value.tg_id == user.tg_id
+    assert excinfo.value.telegram_payment_charge_id == "charge-2"
+    assert excinfo.value.lang_code == user.lang_code
 
 
 async def test_process_paid_stars_invoice_accepts_success_after_local_ttl_expires() -> None:

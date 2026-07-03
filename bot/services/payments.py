@@ -596,6 +596,18 @@ async def validate_stars_pre_checkout(
     return StarsPreCheckoutResult(ok=True, invoice=invoice)
 
 
+class StarsDuplicateChargeError(Exception):
+    """A one-shot Stars invoice that is already paid received a NEW charge — the reusable
+    invoice-link pay button was tapped again after paying. Carries what the handler needs to
+    refund the duplicate charge and notify the payer in their language."""
+
+    def __init__(self, *, tg_id: int, telegram_payment_charge_id: str, lang_code: str) -> None:
+        super().__init__("Stars invoice already paid; duplicate charge to refund")
+        self.tg_id = tg_id
+        self.telegram_payment_charge_id = telegram_payment_charge_id
+        self.lang_code = lang_code
+
+
 async def process_paid_stars_invoice(
     session: AsyncSession,
     *,
@@ -621,8 +633,15 @@ async def process_paid_stars_invoice(
 
     if invoice.status is InvoiceStatus.paid:
         if _stars_subscription_period_from_invoice(invoice) is None:
-            msg = "Stars invoice is already paid"
-            raise ValueError(msg)
+            # One-shot invoice already paid, but a NEW charge id arrived (the idempotency guard
+            # above only dedupes the SAME charge) — the reusable Stars invoice-link button was
+            # tapped again. Signal the handler to refund this duplicate charge.
+            paid_user = await _load_paid_invoice_user(session, invoice.user_id)
+            raise StarsDuplicateChargeError(
+                tg_id=paid_user.tg_id,
+                telegram_payment_charge_id=successful_payment.telegram_payment_charge_id,
+                lang_code=paid_user.lang_code,
+            )
         return await _process_paid_stars_recurring_invoice(
             session,
             parent_invoice=invoice,

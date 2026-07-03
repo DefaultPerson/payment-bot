@@ -386,3 +386,45 @@ async def test_error_language_falls_back_to_app_language_when_user_missing(monke
     lang = await stars_module._error_language(message, JsonI18n(), FakeSessionFactory())
 
     assert lang == "ru"  # app fallback language, not the English client locale
+
+
+async def test_successful_payment_refunds_duplicate_stars_charge(monkeypatch) -> None:
+    import bot.handlers.stars as stars_module
+
+    refunds: list[tuple[int, str]] = []
+
+    class FakeRefundBot:
+        async def refund_star_payment(
+            self, user_id: int, telegram_payment_charge_id: str
+        ) -> bool:
+            refunds.append((user_id, telegram_payment_charge_id))
+            return True
+
+    async def fake_process(session: FakeSession, **kwargs: Any) -> PaidInvoiceResult:
+        del session, kwargs
+        # tg_id here is the invoice OWNER (999), deliberately different from the payer (700).
+        raise stars_module.StarsDuplicateChargeError(
+            tg_id=999, telegram_payment_charge_id="charge-2", lang_code="ru"
+        )
+
+    monkeypatch.setattr(stars_module, "process_paid_stars_invoice", fake_process)
+
+    message = FakeMessage()  # from_user.id == 700 (the actual payer of this charge)
+    metrics = FakeMetrics()
+
+    await stars_module.successful_payment(
+        message,
+        settings=Settings(access={"protected_chats": []}),
+        i18n=JsonI18n(),
+        session_factory=FakeSessionFactory(),
+        bot=FakeRefundBot(),
+        service_channel=FakeServiceChannel(),
+        metrics=metrics,
+    )
+
+    # A re-tapped reusable invoice link double-charges → the duplicate is auto-refunded to the
+    # ACTUAL payer (700, message.from_user — not the invoice owner 999) and they are told it
+    # was already paid.
+    assert refunds == [(700, "charge-2")]
+    assert message.answers == [{"text": "Этот счёт уже оплачен — повторный платёж возвращён."}]
+    assert metrics.payments == [("stars", "refunded", None)]
