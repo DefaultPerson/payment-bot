@@ -8,14 +8,14 @@ from bot.config import Settings
 from bot.core.i18n import JsonI18n
 from bot.keyboards import CB_BACK_TARIFFS, CB_PROMO, CB_PROMO_BUY_PREFIX, CB_PROMO_CANCEL
 from bot.models import PromoKind
-from tests.test_handlers_user import (
+from tests.handlers.test_handlers_user import (
     FakeCallback,
     FakeChat,
     FakeSession,
     FakeSessionFactory,
     FakeTelegramUser,
 )
-from tests.test_handlers_user import (
+from tests.handlers.test_handlers_user import (
     FakeMessage as CallbackFakeMessage,
 )
 

@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-LOCALES_DIR = Path(__file__).resolve().parents[1] / "bot" / "locales"
+LOCALES_DIR = Path(__file__).resolve().parents[2] / "bot" / "locales"
 _LOCALE_ITEMS = [
     (path.name, key, value)
     for path in sorted(LOCALES_DIR.glob("*.json"))

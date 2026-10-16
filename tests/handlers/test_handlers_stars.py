@@ -9,8 +9,8 @@ from typing import Any
 from bot.config import Settings
 from bot.core.i18n import JsonI18n
 from bot.services.payments import PaidInvoiceResult, StarsPreCheckoutResult
-from tests.test_handlers_user import FakeSession, FakeSessionFactory, FakeTelegramUser
-from tests.test_services_payments import make_stars_invoice
+from tests.handlers.test_handlers_user import FakeSession, FakeSessionFactory, FakeTelegramUser
+from tests.services.test_services_payments import make_stars_invoice
 
 
 @dataclass(slots=True)
@@ -197,7 +197,7 @@ async def test_successful_payment_processes_invoice_and_sends_access(monkeypatch
     assert access_calls[0]["tg_id"] == 700
     assert access_calls[0]["lang_code"] == "en"
     assert service_channel.messages
-    # The access-links message is the only confirmation now; no extra "payment received" message.
+    # The access-links message is the only confirmation; no extra "payment received" message.
     assert message.answers == []
     assert metrics.payments == [("stars", "paid", Decimal("81.44"))]
 
@@ -231,8 +231,7 @@ async def test_successful_payment_answers_generic_when_processing_rejects(
         metrics=metrics,
     )
 
-    # The error renders in the payer's STORED language (ru), not the English client locale
-    # (the reported bug: paid in RU, saw an English error).
+    # The error renders in the payer's STORED language (ru), not the English client locale.
     assert message.answers == [{"text": "Что-то пошло не так. Попробуйте позже."}]
     assert metrics.payments == [("stars", "error", None)]
 
@@ -353,7 +352,7 @@ async def test_successful_payment_retries_access_for_idempotent_undelivered_char
     assert access_calls[0]["bot"] is bot
     assert access_calls[0]["tg_id"] == 700
     assert mark_calls[0]["invoice_id"] == 55
-    # The access-links message is the only confirmation now; no extra "payment received" message.
+    # The access-links message is the only confirmation; no extra "payment received" message.
     assert message.answers == []
     assert metrics.payments == [("stars", "duplicate", None)]
 

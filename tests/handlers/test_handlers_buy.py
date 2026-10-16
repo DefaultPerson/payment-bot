@@ -17,7 +17,7 @@ from bot.models import InvoiceStatus, PromoKind, UserStatus
 from bot.payments.cryptobot import CryptoBotAPIError, CryptoBotInvoice
 from bot.payments.xrocket import XRocketAPIError
 from bot.services.pricing import PromoSnapshot, quote_tariff
-from tests.test_handlers_user import (
+from tests.handlers.test_handlers_user import (
     FakeBadRequestMessage,
     FakeCallback,
     FakeChat,
@@ -278,7 +278,7 @@ async def test_tariff_callback_edits_quote_detail(monkeypatch) -> None:
     text = callback_message.edits[0]["text"]
     assert "3 months" in text
     assert "Hydra Monitors" in text  # tariff/plan label
-    # The invoice breakdown moved to the invoice page; the method screen carries no prices.
+    # The method screen carries no prices; the breakdown is on the invoice page.
     assert "$173.35" not in text
     assert "$168.15" not in text
     assert callback.answers == [{"text": None}]
@@ -385,7 +385,7 @@ async def test_stars_invoice_callback_frames_invoice_link_like_url_providers(mon
 
     assert service_calls[0]["session_factory"] is session_factory
     assert service_calls[0]["tariff_code"] == "1m"
-    # Stars now pays via an XTR invoice LINK on a URL button, not a separate native card.
+    # Stars pays via an XTR invoice link on a URL button, not a separate native card.
     link = link_calls[0]
     assert link["title"] == "Hydra Monitors"
     assert link["description"] == "Hydra Monitors access: 1 month"
@@ -476,7 +476,7 @@ def test_format_quote_text_shows_tariff_and_duration_without_breakdown() -> None
 
     assert "3 months" in text
     assert "Hydra Monitors" in text  # plan label
-    assert "$" not in text  # the full breakdown moved to the invoice page
+    assert "$" not in text  # the full breakdown is on the invoice page
 
 
 def test_invoice_created_text_shows_per_method_breakdown_with_promo() -> None:
@@ -629,7 +629,7 @@ async def test_cryptobot_invoice_callback_returns_payment_url(monkeypatch) -> No
     edit = callback_message.edits[0]
     assert edit["reply_markup"] == "payment-keyboard"
     assert "Invoice created" in edit["text"]
-    # The pay URL now lives only on the button, not in the message body.
+    # The pay URL lives only on the button, not in the message body.
     assert "https://t.me/CryptoBot?start=pay" not in edit["text"]
 
 
@@ -935,7 +935,7 @@ async def test_cryptobot_invoice_callback_alert_fallback_shows_created_text(monk
     answer = callback.answers[0]
     assert answer["show_alert"] is True
     assert "Invoice created" in answer["text"]
-    assert "https://t.me/CryptoBot?start=pay" not in answer["text"]  # URL no longer in the text
+    assert "https://t.me/CryptoBot?start=pay" not in answer["text"]  # URL only on the button
 
 
 async def test_cryptobot_invoice_callback_transport_errors_do_not_bubble(monkeypatch) -> None:

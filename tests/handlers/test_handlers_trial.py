@@ -12,7 +12,7 @@ from bot.keyboards import CB_TRIAL_CANCEL, CB_TRIAL_CONFIRM, CB_TRIAL_START
 from bot.models import Subscription, SubscriptionSource, User
 from bot.repos.subscriptions import extend_manual_subscription
 from bot.repos.users import ensure_minimal_user
-from tests.test_handlers_user import FakeCallback, FakeChat, FakeMessage, FakeTelegramUser
+from tests.handlers.test_handlers_user import FakeCallback, FakeChat, FakeMessage, FakeTelegramUser
 
 TG_ID = 7007
 

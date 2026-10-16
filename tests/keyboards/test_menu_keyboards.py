@@ -91,7 +91,7 @@ def test_build_commands_includes_user_commands() -> None:
 
 
 def test_build_commands_excludes_admin_commands() -> None:
-    # Admin actions moved to the inline admin panel; the slash-command menu has no admin entries.
+    # Admin actions live in the inline admin panel; the slash-command menu has no admin entries.
     names = command_names(menu_module().build_commands(JsonI18n(), "en", is_admin=True))
 
     assert names == {"/start", "/language"}
@@ -146,7 +146,7 @@ def test_main_menu_keyboard_contains_user_buttons_and_link_row() -> None:
     callbacks = keyboard_callback_data(keyboard)
     # Core callback buttons remain.
     assert {keyboards.CB_BUY, keyboards.CB_PROFILE, keyboards.CB_LANGUAGE} <= callbacks
-    # Promo/referral buttons removed; support is now a direct URL button (no callback).
+    # No promo/referral buttons; support is a direct URL button (no callback).
     assert keyboards.CB_PROMO not in callbacks
     assert keyboards.CB_REFERRAL not in callbacks
     assert keyboards.CB_SUPPORT not in callbacks
@@ -365,7 +365,7 @@ def test_tariff_detail_keyboard_contains_cryptobot_payment_action() -> None:
     )
 
     assert f"{keyboards.CB_CRYPTOBOT_PREFIX}3m" in keyboard_callback_data(keyboard)
-    # Label now carries the per-method price (gross + fee), so match a substring.
+    # Label carries the per-method price (gross + fee), so match a substring.
     assert any("CryptoBot" in text for text in keyboard_texts(keyboard))
 
 
@@ -438,7 +438,7 @@ def test_payment_keyboard_has_pay_url_support_and_cancel() -> None:
     urls = keyboard_urls(keyboard)
     callbacks = keyboard_callback_data(keyboard)
     assert "https://t.me/CryptoBot?start=pay" in urls
-    assert "https://t.me/HydraSupport" in urls  # support link now on the invoice page
+    assert "https://t.me/HydraSupport" in urls  # support link on the invoice page
     assert f"{keyboards.CB_TARIFF_PREFIX}1m" in callbacks  # cancel → methods
     assert keyboards.CB_MENU in callbacks  # "Главное меню" button → main menu
 
@@ -461,7 +461,7 @@ def test_payment_keyboard_can_use_xrocket_provider_label() -> None:
 
 
 def test_locale_files_include_profile_display_contract_keys() -> None:
-    locales_dir = Path(__file__).resolve().parents[1] / "bot" / "locales"
+    locales_dir = Path(__file__).resolve().parents[2] / "bot" / "locales"
 
     for locale_path in locales_dir.glob("*.json"):
         locale_data = json.loads(locale_path.read_text(encoding="utf-8"))

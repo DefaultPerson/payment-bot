@@ -9,7 +9,7 @@ from bot.config import Settings
 from bot.core.i18n import JsonI18n
 from bot.models import UserStatus
 from bot.repos.referrals import InsufficientReferralBalance
-from tests.test_handlers_user import (
+from tests.handlers.test_handlers_user import (
     FakeCallback,
     FakeChat,
     FakeMessage,

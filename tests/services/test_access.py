@@ -293,7 +293,7 @@ async def test_send_access_links_survives_unkickable_owner() -> None:
     # Regression: a user who OWNS a disallowed chat cannot be kicked (Telegram replies
     # "Bad Request: can't remove chat owner"). The kick is a best-effort reconciliation and
     # must not abort access-link delivery — a paid user still gets their links instead of a
-    # generic error. This was the second Stars-payment failure after the charge_id truncation.
+    # generic error.
     class OwnerBot(FakeBot):
         async def ban_chat_member(self, **kwargs: Any) -> None:
             raise RuntimeError("Bad Request: can't remove chat owner")

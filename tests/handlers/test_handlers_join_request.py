@@ -79,7 +79,7 @@ class FakeBot:
         self.approvals.append(kwargs)
 
     async def decline_chat_join_request(self, **kwargs: Any) -> None:
-        # The handler must NEVER decline any more. Recorded so the `declines == []`
+        # The handler must never decline. Recorded so the `declines == []`
         # assertions below catch a regression that re-introduces a decline.
         self.declines.append(kwargs)
 

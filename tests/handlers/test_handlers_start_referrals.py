@@ -6,7 +6,7 @@ from typing import Any
 from bot.config import Settings
 from bot.core.i18n import JsonI18n
 from bot.services.referrals import ReferralBindResult, ReferralBindStatus
-from tests.test_handlers_user import (
+from tests.handlers.test_handlers_user import (
     FakeChat,
     FakeMessage,
     FakeSession,

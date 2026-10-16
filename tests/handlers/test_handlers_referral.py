@@ -7,7 +7,7 @@ from typing import Any
 from bot.config import Settings
 from bot.core.i18n import JsonI18n
 from bot.repos.referrals import ReferralStats
-from tests.test_handlers_user import (
+from tests.handlers.test_handlers_user import (
     FakeCallback,
     FakeChat,
     FakeInaccessibleMessage,

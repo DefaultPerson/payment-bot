@@ -50,7 +50,7 @@ def test_naive_expiry_is_treated_as_utc() -> None:
 
 
 def test_new_six_month_buyer_is_not_instantly_gold() -> None:
-    # Regression: a single 6m buy used to grant permanent Gold with zero waiting.
+    # A single 6m buy must not grant Gold before any time is lived.
     status = effective_status(UserStatus.basic, 180, NOW + timedelta(days=180), NOW, None)
     assert status is UserStatus.basic
 

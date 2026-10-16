@@ -18,7 +18,7 @@ from sqlalchemy.pool import StaticPool
 from bot.models import Base, Subscription, SubscriptionSource, User, UserStatus
 
 _MIGRATION_PATH = (
-    Path(__file__).resolve().parent.parent
+    Path(__file__).resolve().parents[2]
     / "alembic"
     / "versions"
     / "20260701_0010_loyalty_status_reset.py"
