@@ -2,7 +2,7 @@
 
 Stars has no test network, so the cheap way to exercise the live Stars flow is a
 tiny ``test_only`` tariff (see ``config.toml``) paid with real Stars, then refunded
-here. The bot deliberately does not expose a refund command (see docs/task.md §10),
+here. The bot deliberately does not expose a refund command (see docs/reference.md §10),
 so this console tool is the supported path.
 
 Usage:
