@@ -1,4 +1,4 @@
-.PHONY: init-env lock test lint alembic-sql docker-build up down
+.PHONY: init-env lock test lint alembic-sql docker-build
 
 init-env:
 	@if [ ! -f .env ]; then cp .env.example .env; echo ".env created"; else echo ".env already exists"; fi
@@ -17,10 +17,4 @@ alembic-sql:
 	DATABASE_URL=$${DATABASE_URL:-postgresql+asyncpg://postgres:pb@localhost:5432/payment_bot} uv run --python 3.13 alembic upgrade head --sql
 
 docker-build:
-	docker build -t hydra-payment-bot:phase1 .
-
-up:
-	docker compose up --build
-
-down:
-	docker compose down
+	docker build -t hydra-payment-bot .

@@ -2,14 +2,14 @@
 
 Telegram payment bot for Hydra Monitors subscriptions.
 
-This repository state contains Phase 8: the service scaffold, subscription
-domain models, localized menus, admin-only manual grants, CryptoBot and optional
-xRocket purchase flows, Telegram Stars payments, referrals, lifecycle
-notifications, and Prometheus/Grafana observability.
+Features: localized menus (ru/ua/en), plans and tariffs, CryptoBot, xRocket,
+Telegram Stars and Tribute payments, loyalty tiers, promo codes, referrals with a
+spendable balance, a one-time trial, lifecycle notifications, an inline admin
+panel, and Prometheus metrics.
 
 ## Local Requirements
 
-- Docker with Compose
+- Docker
 - uv
 - PostgreSQL 17 running outside this compose stack
 
@@ -60,16 +60,14 @@ Telegram commands currently implemented:
 /language
 /promo <code>
 /referral
-/grant <user_id> <days>   # admins only
-/refset <user_id> <percent>   # admins only
-/broadcast   # admins only — opens the interactive broadcast composer
 ```
 
-`/broadcast` (admins, in a private chat) first asks which segment to target
-(all/active/inactive), then opens the `aiogram-broadcast` interactive composer:
-send the message content (text/media), optionally add inline URL buttons, preview,
-and send now or schedule for later. Scheduled broadcasts use an in-memory APScheduler
-job store and are not persisted across restarts.
+Admins (`ADMIN_IDS`) get an inline admin panel in the main menu: grant access,
+personal referral percent, referral balance reset, promo codes, broadcast and stats.
+Broadcast first asks which segment to target (all/active/inactive), then opens the
+`aiogram-broadcast` interactive composer: send the message content (text/media),
+optionally add inline URL buttons, preview, and send now or schedule for later.
+Scheduled broadcasts are stored in a Redis APScheduler job store.
 
 ## CryptoBot
 
@@ -104,14 +102,14 @@ accepted only on a user's first `/start`; later deep links do not change an
 existing user. Successful paid CryptoBot and Telegram Stars invoices create a
 manual-payout earning for the referrer from `invoice.net`. `[referral]`
 controls the default percent, minimum withdrawal amount, and referrer-change
-policy. Admins can set a personal percent for current and future referrals with
-`/refset <user_id> <percent>`. Profile and referral views show lifetime earned
+policy. Admins can set a personal percent for current and future referrals from
+the admin panel. Profile and referral views show lifetime earned
 USD and unpaid USD available toward the manual withdrawal minimum.
 
 Telegram Stars payments are configured in `[stars]`. The bot sends Stars
-invoices with `currency = "XTR"` and an empty provider token. The 1-month tariff
-uses `subscription_period = 2592000` for a recurring Stars subscription; longer
-tariffs are one-shot invoices. `app_store_fee_percent` and `star_usd_rate`
+invoices with `currency = "XTR"` and an empty provider token through
+`createInvoiceLink`. Every tariff is a one-shot invoice; renewal is manual.
+`app_store_fee_percent` and `star_usd_rate`
 control the Star amount used to preserve the configured USD access price. Stars
 invoice accounting is stored in USD gross/fee/net fields, while the XTR charge
 amount and Telegram payment payload stay in provider metadata.
@@ -137,7 +135,7 @@ service-channel payment event and one-time invite links.
 Run the bot:
 
 ```bash
-docker compose up --build
+uv run --python 3.13 python -m bot
 ```
 
 The HTTP server inside the container listens on `127.0.0.1:8080` (override the bind
@@ -179,8 +177,7 @@ uv run python -m bot.tools.refund_star --invoice-id <id>
 
 ## Observability
 
-The HTTP server exposes Prometheus metrics at `/metrics`. Import the Grafana
-dashboard from `ops/grafana/payment-bot-dashboard.json`.
+The HTTP server exposes Prometheus metrics at `/metrics`.
 
 Run the local metric load smoke without external services:
 
