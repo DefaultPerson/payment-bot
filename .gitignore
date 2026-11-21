@@ -39,7 +39,7 @@ htmlcov/
 # Logs
 *.log
 
-# SQLite (membership-checker-bot data)
+# SQLite
 *.db
 *.sqlite
 *.sqlite3
@@ -51,10 +51,10 @@ data/
 # Local git worktrees
 .worktrees/
 
-# Payment bot runtime files (service now lives at repo root)
+# Runtime files
 config.toml
 logs/
 .ruff_cache/
 
-# Decommission backups (contain PII — keep local only, do NOT push)
-/access-manager-backup-2026-06-13/
+# Local notes and planning docs
+docs/
