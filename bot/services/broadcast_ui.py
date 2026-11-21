@@ -39,6 +39,10 @@ _DONE_TEXT = {
         "📢 Запланированная рассылка завершена: "
         "отправлено {successful}/{total}, ошибок: {failed}."
     ),
+    "ua": (
+        "📢 Заплановану розсилку завершено: "
+        "надіслано {successful}/{total}, помилок: {failed}."
+    ),
     "en": "📢 Scheduled broadcast finished: {successful}/{total} sent, {failed} failed.",
 }
 

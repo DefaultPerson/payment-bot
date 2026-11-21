@@ -56,6 +56,19 @@ async def test_run_scheduled_broadcast_sends_copies_and_notifies(monkeypatch) ->
     assert "2/2" in text
 
 
+async def test_run_scheduled_broadcast_notifies_in_ukrainian(monkeypatch) -> None:
+    async def fake_copy(bot: Any, chat_id: int, message_data: dict[str, Any]) -> bool:
+        return True
+
+    bot = FakeBot()
+    monkeypatch.setattr(bui, "send_message_copy", fake_copy)
+    monkeypatch.setattr(bui, "_bot", bot)
+
+    await bui.run_scheduled_broadcast([1001], {"text": "hi"}, chat_id=500, language="ua")
+
+    assert bot.messages[0][1].startswith("📢 Заплановану розсилку завершено")
+
+
 async def test_run_scheduled_broadcast_without_bot_is_noop(monkeypatch) -> None:
     called = False
 
