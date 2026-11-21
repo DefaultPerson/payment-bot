@@ -2,7 +2,7 @@
 
 Icons come from the public "tgiosicons" pack (https://t.me/addemoji/tgiosicons) and
 are attached to buttons via ``InlineKeyboardButton.icon_custom_emoji_id`` (Bot API 9.4+).
-The bot owner has Telegram Premium, so @HMPTbot is allowed to render custom emoji; for an
+A bot whose owner has Telegram Premium is allowed to render custom emoji; for an
 ineligible bot Telegram simply omits the icon (the send still succeeds).
 
 Each id is validated against ``getCustomEmojiStickers`` at startup

@@ -1,13 +1,7 @@
 # Production deployment for Coolify (Build Pack: Docker Compose).
 #
-# Postgres and Redis are EXTERNAL and intentionally NOT defined here:
-#   - Postgres: external Postgres over a private network
-#               -> HOST:5432, one database per service.
-#   - Redis:    the app server's local redis (HOST:6379),
-#               one db-index per service.
-#
-# The container reaches those private IPs via the host's private-network routing
-# (normal bridge networking on the server — no host networking needed here).
+# Postgres and Redis are EXTERNAL and intentionally NOT defined here: point
+# DATABASE_URL and REDIS_URL at instances the container can reach.
 #
 # Provide every value below as a Coolify Environment Variable (mark tokens as
 # secrets). Business config (tariffs, chats, loyalty, ...) comes either from a
